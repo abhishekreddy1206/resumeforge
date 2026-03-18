@@ -16,10 +16,9 @@ const SOURCE_INSTRUCTIONS: Record<string, string> = {
 - Any notable contributions (high star repos, active open source)`,
 
   stackoverflow: `This is StackOverflow profile data. Extract:
-- Top tags as technical skills with proficiency based on answer scores (high score = expert)
-- Reputation as a signal of expertise level
+- Top tags as technical skills
 - Badge counts as indicators of community contribution
-- Tag answer counts to gauge depth of knowledge`,
+- Tag answer counts to identify areas of knowledge`,
 
   linkedin: `This is LinkedIn profile data (pasted text). Extract:
 - Work experience not already in the profile
@@ -44,13 +43,11 @@ RULES:
 - Do NOT fabricate experience or skills not evidenced by the data
 - Deduplicate skills (don't add "JavaScript" if "JavaScript" already exists)
 - For skills, categorize as: language, framework, tool, database, cloud, or soft
-- Set proficiency based on evidence (e.g., many SO answers = advanced/expert)
-
 Return the merged profile as JSON with this structure:
 {
   "summary": "enhanced summary incorporating new info",
   "projects": [{ "name": "...", "description": "...", "url": "...", "skills": ["..."] }],
-  "skills": [{ "name": "...", "category": "language|framework|tool|database|cloud|soft", "proficiency": "beginner|intermediate|advanced|expert" }],
+  "skills": [{ "name": "...", "category": "language|framework|tool|database|cloud|soft" }],
   "experiences": [{ "company": "...", "title": "...", "startDate": "...", "endDate": "...", "bullets": ["..."], "skills": ["..."] }]
 }
 

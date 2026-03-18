@@ -49,7 +49,6 @@ interface Skill {
   id: string;
   name: string;
   category: string;
-  proficiency: string;
 }
 
 interface Profile {

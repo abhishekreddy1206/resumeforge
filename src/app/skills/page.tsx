@@ -15,7 +15,6 @@ interface Skill {
   id: string;
   name: string;
   category: string;
-  proficiency: string;
 }
 
 const CATEGORY_CONFIG: Record<
@@ -52,13 +51,6 @@ const CATEGORY_CONFIG: Record<
     color: "text-rose-700",
     bg: "bg-rose-50 border-rose-200",
   },
-};
-
-const PROFICIENCY_STYLES: Record<string, string> = {
-  expert: "bg-primary text-primary-foreground",
-  advanced: "bg-primary/80 text-primary-foreground",
-  intermediate: "bg-primary/20 text-primary",
-  beginner: "bg-muted text-muted-foreground",
 };
 
 export default function SkillsPage() {
@@ -136,11 +128,12 @@ export default function SkillsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Skills</h1>
         <p className="text-muted-foreground mt-1">
-          {skills.length} skills across {categories.length} categories
+          {skills.length} skills across {categories.length} categories —
+          extracted from your resume, GitHub, and other sources
         </p>
       </div>
 
-      {/* Summary Bar */}
+      {/* Filter Bar */}
       <Card className="shadow-sm">
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-3">
@@ -178,19 +171,6 @@ export default function SkillsPage() {
         </CardContent>
       </Card>
 
-      {/* Proficiency Legend */}
-      <div className="flex items-center gap-4 text-sm">
-        <span className="text-muted-foreground font-medium">Proficiency:</span>
-        {["expert", "advanced", "intermediate", "beginner"].map((level) => (
-          <div key={level} className="flex items-center gap-1.5">
-            <div
-              className={`w-3 h-3 rounded-full ${PROFICIENCY_STYLES[level]}`}
-            />
-            <span className="capitalize text-muted-foreground">{level}</span>
-          </div>
-        ))}
-      </div>
-
       {/* Skills Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {Object.entries(filteredGrouped).map(([category, categorySkills]) => {
@@ -215,7 +195,8 @@ export default function SkillsPage() {
                   {categorySkills.map((skill) => (
                     <Badge
                       key={skill.id}
-                      className={`${PROFICIENCY_STYLES[skill.proficiency]} border-0 px-3 py-1 text-xs font-medium`}
+                      variant="secondary"
+                      className="px-3 py-1 text-xs font-medium"
                     >
                       {skill.name}
                     </Badge>
@@ -226,42 +207,6 @@ export default function SkillsPage() {
           );
         })}
       </div>
-
-      {/* Skill Distribution */}
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle>Skill Distribution</CardTitle>
-          <CardDescription>
-            Breakdown by proficiency level
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {["expert", "advanced", "intermediate", "beginner"].map((level) => {
-              const count = skills.filter(
-                (s) => s.proficiency === level
-              ).length;
-              const pct = skills.length > 0 ? (count / skills.length) * 100 : 0;
-              return (
-                <div key={level} className="space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium capitalize">{level}</span>
-                    <span className="text-muted-foreground">
-                      {count} skill{count !== 1 ? "s" : ""} ({Math.round(pct)}%)
-                    </span>
-                  </div>
-                  <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${PROFICIENCY_STYLES[level]}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -7,10 +7,10 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Resume Parsing** — Upload PDF or DOCX resumes. AI extracts experience, education, skills, and projects into a structured profile.
 - **Job Analysis** — Paste a job URL or description. AI identifies required skills, seniority level, and key requirements.
 - **Tailored Resume Generation** — AI creates ATS-optimized resumes with action verbs, quantified impact, and keyword matching for each specific job.
-- **Profile Enrichment** — Import data from GitHub (repos, languages), StackOverflow (top tags, reputation), or LinkedIn (paste text) to strengthen your profile.
+- **Profile Enrichment** — Import data from GitHub (repos, languages), StackOverflow (top tags), or LinkedIn (paste text) to strengthen your profile.
+- **Skills Extraction** — Skills are automatically extracted and categorized from your resume, GitHub, StackOverflow, and LinkedIn sources.
 - **Multiple Formats** — Export as PDF (styled with react-pdf) or DOCX (ATS-safe formatting with tab stops, no tables).
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
-- **Skills Dashboard** — View all skills by category with proficiency levels and distribution charts.
 
 ## Tech Stack
 
@@ -30,6 +30,7 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 
 ```bash
 # Install dependencies
+cd resumeforge
 npm install
 
 # Set up your environment
@@ -69,9 +70,9 @@ src/
 │       ├── resume/                 # Resume generation + download
 │       └── skills/                 # Skills listing
 ├── lib/
-│   ├── claude/                     # AI skills (see below)
+│   ├── claude/                     # AI modules
 │   │   ├── client.ts              # Shared Anthropic client + helpers
-│   │   ├── index.ts               # Re-exports all skills
+│   │   ├── index.ts               # Re-exports all AI modules
 │   │   └── skills/
 │   │       ├── resume-parser.ts   # Parse resume text → structured data
 │   │       ├── job-analyzer.ts    # Analyze job description → requirements
@@ -89,23 +90,18 @@ src/
 └── generated/prisma/               # Prisma generated client
 ```
 
-## Adding a New Claude Skill
+## Adding a New AI Module
 
-Skills are modular AI capabilities in `src/lib/claude/skills/`. Each skill is a focused function that uses Claude to perform a specific task.
+AI modules are modular functions in `src/lib/claude/skills/`. Each module uses Claude to perform a specific task.
 
 ### Steps
 
-1. **Create the skill file** at `src/lib/claude/skills/your-skill.ts`:
+1. **Create the module file** at `src/lib/claude/skills/your-module.ts`:
 
 ```typescript
 import { askJson } from "../client";
 
-/**
- * Skill: Your Skill Name
- *
- * Brief description of what this skill does.
- */
-export async function yourSkillFunction(input: string) {
+export async function yourModuleFunction(input: string) {
   return askJson(`Your prompt here...
 
 Input:
@@ -116,13 +112,13 @@ ${input}`);
 2. **Re-export from the index** in `src/lib/claude/index.ts`:
 
 ```typescript
-export { yourSkillFunction } from "./skills/your-skill";
+export { yourModuleFunction } from "./skills/your-module";
 ```
 
 3. **Use it** in an API route or anywhere server-side:
 
 ```typescript
-import { yourSkillFunction } from "@/lib/claude";
+import { yourModuleFunction } from "@/lib/claude";
 ```
 
 ### Available helpers in `client.ts`
@@ -133,13 +129,6 @@ import { yourSkillFunction } from "@/lib/claude";
 | `askJson(prompt)` | `Record<string, unknown>` | Structured JSON responses (auto-extracts from code blocks) |
 | `extractJson(text)` | `Record<string, unknown>` | Manual JSON extraction from text |
 
-### Skill Ideas
-
-- **Cover Letter Writer** — Generate tailored cover letters matching JD tone
-- **Skills Gap Analyzer** — Compare profile vs job and highlight gaps
-- **Interview Prep** — Generate likely interview questions from job description
-- **Salary Estimator** — Estimate salary range based on role + skills + location
-
 ## Data Models
 
 | Model | Description |
@@ -148,13 +137,13 @@ import { yourSkillFunction } from "@/lib/claude";
 | `Experience` | Work history with bullets and skills (JSON) |
 | `Education` | Degrees, schools, GPA |
 | `Project` | Portfolio projects with skills |
-| `Skill` | Name, category, proficiency level (unique per profile) |
+| `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Job` | Job title, company, description, required skills |
 | `Resume` | Generated resume record with file path and format |
 
 ## Workflow
 
-1. **Upload** — PDF/DOCX parsed to text, Claude structures into Profile
-2. **Enrich** (optional) — GitHub API / StackOverflow API / LinkedIn paste, Claude merges into Profile
+1. **Upload** — PDF/DOCX parsed to text, Claude structures into Profile (including skills extraction)
+2. **Enrich** (optional) — GitHub API / StackOverflow API / LinkedIn paste, Claude merges into Profile with additional skills
 3. **Add Job** — URL scraped or text pasted, Claude extracts requirements
 4. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`

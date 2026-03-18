@@ -35,7 +35,6 @@ interface ParsedResume {
   skills: Array<{
     name: string;
     category: string;
-    proficiency: string;
   }>;
 }
 
@@ -89,8 +88,7 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
   "skills": [
     {
       "name": "Skill Name",
-      "category": "language|framework|tool|database|cloud|soft",
-      "proficiency": "beginner|intermediate|advanced|expert"
+      "category": "language|framework|tool|database|cloud|soft"
     }
   ]
 }

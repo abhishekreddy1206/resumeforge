@@ -47,13 +47,11 @@ async function mergeEnrichedData(
       },
       update: {
         category: skill.category || "tool",
-        proficiency: skill.proficiency || "intermediate",
       },
       create: {
         profileId,
         name: skill.name,
         category: skill.category || "tool",
-        proficiency: skill.proficiency || "intermediate",
       },
     });
   }

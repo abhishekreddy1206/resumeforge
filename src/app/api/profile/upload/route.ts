@@ -120,11 +120,9 @@ export async function POST(request: NextRequest) {
             (skill: {
               name: string;
               category: string;
-              proficiency?: string;
             }) => ({
               name: skill.name,
               category: skill.category,
-              proficiency: skill.proficiency || "intermediate",
             })
           ),
         },

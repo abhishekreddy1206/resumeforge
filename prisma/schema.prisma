@@ -67,11 +67,10 @@ model Project {
 }
 
 model Skill {
-  id          String @id @default(cuid())
-  profileId   String
-  name        String
-  category    String // language, framework, tool, database, cloud, soft
-  proficiency String @default("intermediate") // beginner, intermediate, advanced, expert
+  id        String @id @default(cuid())
+  profileId String
+  name      String
+  category  String // language, framework, tool, database, cloud, soft
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
