@@ -30,44 +30,142 @@ function validateExternalUrl(url: string): void {
 export async function scrapeJobUrl(url: string): Promise<string> {
   validateExternalUrl(url);
 
+  console.log(`[web-scraper] Fetching URL: ${url}`);
+
   const response = await fetch(url, {
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
     },
+    redirect: "follow",
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch URL: ${response.status}`);
+    throw new Error(`Failed to fetch URL (HTTP ${response.status}). The site may block automated requests.`);
   }
 
   const html = await response.text();
+  console.log(`[web-scraper] Fetched ${html.length} chars of HTML`);
+
   const $ = cheerio.load(html);
 
-  // Remove scripts, styles, and nav elements
-  $("script, style, nav, header, footer, iframe, noscript").remove();
+  // Try JSON-LD structured data first (works for many job boards)
+  const jsonLdText = $('script[type="application/ld+json"]')
+    .toArray()
+    .map((el) => {
+      try {
+        const data = JSON.parse($(el).html() || "");
+        if (data["@type"] === "JobPosting") {
+          const parts = [
+            data.title && `Title: ${data.title}`,
+            data.hiringOrganization?.name && `Company: ${data.hiringOrganization.name}`,
+            data.jobLocation?.address?.addressLocality && `Location: ${data.jobLocation.address.addressLocality}`,
+            data.description,
+            data.qualifications,
+            data.responsibilities,
+          ].filter(Boolean);
+          return parts.join("\n\n");
+        }
+      } catch {
+        // not valid JSON or not a job posting
+      }
+      return "";
+    })
+    .find((t) => t.length > 100);
 
-  // Try common job description selectors
+  if (jsonLdText) {
+    console.log(`[web-scraper] Extracted JSON-LD job posting (${jsonLdText.length} chars)`);
+    return jsonLdText.slice(0, 15000);
+  }
+
+  // Try SPA data injection patterns (Next.js, Nuxt, etc.)
+  const spaDataText = $("script")
+    .toArray()
+    .map((el) => {
+      const content = $(el).html() || "";
+      // Next.js __NEXT_DATA__
+      const nextMatch = content.match(/__NEXT_DATA__\s*=\s*(\{[\s\S]+\})/);
+      if (nextMatch) {
+        try {
+          const data = JSON.parse(nextMatch[1]);
+          const str = JSON.stringify(data);
+          // Heuristic: if the JSON blob mentions job-related fields it's useful
+          if (/description|qualifications|responsibilities|jobTitle/i.test(str)) {
+            return str.replace(/[{}"\\[\]]/g, " ").replace(/\s+/g, " ").trim();
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return "";
+    })
+    .find((t) => t.length > 100);
+
+  if (spaDataText) {
+    console.log(`[web-scraper] Extracted SPA data (${spaDataText.length} chars)`);
+    return spaDataText.slice(0, 15000);
+  }
+
+  // Remove noise elements
+  $("script, style, nav, footer, iframe, noscript, svg, img, link, meta").remove();
+
+  // Try common job description selectors (ordered by specificity)
   const selectors = [
+    // Lever
+    '[class*="posting-"]',
+    ".posting-page",
+    // Greenhouse
+    "#content",
+    ".job__description",
     '[class*="job-description"]',
     '[class*="jobDescription"]',
-    '[class*="posting-"]',
+    // Ashby
+    '[class*="ashby-job"]',
+    // Workday
+    '[data-automation-id="jobPostingDescription"]',
+    // Apple Jobs
+    '[class*="jd-"]',
+    '[data-testid*="job"]',
+    // General
     '[id*="job-description"]',
+    '[id*="jobDescription"]',
+    '[class*="job-detail"]',
+    '[class*="jobDetail"]',
+    '[class*="job-post"]',
     '[class*="description"]',
+    // Structural
     "article",
     "main",
     '[role="main"]',
+    ".content",
+    "#main-content",
   ];
 
   for (const selector of selectors) {
     const el = $(selector);
-    if (el.length && el.text().trim().length > 200) {
-      return el.text().trim();
+    if (el.length) {
+      const text = el.text().replace(/\s+/g, " ").trim();
+      if (text.length > 100) {
+        console.log(`[web-scraper] Matched selector "${selector}" (${text.length} chars)`);
+        return text.slice(0, 15000);
+      }
     }
   }
 
   // Fallback: get body text
-  return $("body").text().trim().slice(0, 10000);
+  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  console.log(`[web-scraper] Falling back to body text (${bodyText.length} chars)`);
+
+  if (bodyText.length < 50) {
+    throw new Error(
+      "Could not extract job description from URL. The page may require JavaScript to render. Try pasting the job description text directly instead."
+    );
+  }
+
+  return bodyText.slice(0, 15000);
 }
 
 interface GitHubUser {

@@ -21,10 +21,12 @@ export async function GET(
     const filePath = path.join(process.cwd(), resume.filePath);
     const buffer = await fs.readFile(filePath);
 
-    const contentType =
-      resume.format === "pdf"
-        ? "application/pdf"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const contentTypes: Record<string, string> = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      latex: "application/x-tex",
+    };
+    const contentType = contentTypes[resume.format] || "application/octet-stream";
 
     const fileName = path.basename(resume.filePath);
 

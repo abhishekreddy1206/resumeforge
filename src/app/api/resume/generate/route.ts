@@ -3,8 +3,15 @@ import { prisma } from "@/lib/db";
 import { generateTailoredResume, critiqueResume } from "@/lib/claude";
 import { generatePdf } from "@/lib/generators/pdf";
 import { generateDocx } from "@/lib/generators/docx";
+import { generateLatex } from "@/lib/generators/latex";
 import fs from "fs/promises";
 import path from "path";
+
+// In-memory cache for async critique results
+const critiqueCache = new Map<
+  string,
+  { status: "pending" | "done" | "error"; data?: unknown; error?: string }
+>();
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,22 +24,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!["pdf", "docx"].includes(format)) {
+    if (!["pdf", "docx", "latex"].includes(format)) {
       return NextResponse.json(
-        { error: "Format must be 'pdf' or 'docx'" },
+        { error: "Format must be 'pdf', 'docx', or 'latex'" },
         { status: 400 }
       );
     }
 
-    // Get profile
-    const profile = await prisma.profile.findFirst({
-      include: {
-        experiences: true,
-        educations: true,
-        projects: true,
-        skills: true,
-      },
-    });
+    // Fetch profile and job in parallel
+    const [profile, job] = await Promise.all([
+      prisma.profile.findFirst({
+        include: {
+          experiences: true,
+          educations: true,
+          projects: true,
+          skills: true,
+        },
+      }),
+      prisma.job.findUnique({ where: { id: jobId } }),
+    ]);
 
     if (!profile) {
       return NextResponse.json(
@@ -41,8 +51,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get job
-    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
@@ -77,7 +85,7 @@ export async function POST(request: NextRequest) {
       jobAnalysis
     );
 
-    // Create output directory
+    // Create output directory and generate file
     const sanitize = (s: string) =>
       s
         .replace(/[^a-zA-Z0-9\s-]/g, "")
@@ -91,16 +99,18 @@ export async function POST(request: NextRequest) {
     );
     await fs.mkdir(dirPath, { recursive: true });
 
-    // Generate file
     const timestamp = Date.now();
-    const fileName = `resume-${sanitize(profile.name)}-${timestamp}.${format}`;
+    const ext = format === "latex" ? "tex" : format;
+    const fileName = `resume-${sanitize(profile.name)}-${timestamp}.${ext}`;
     const filePath = path.join(dirPath, fileName);
 
     let buffer: Buffer;
     if (format === "pdf") {
       buffer = await generatePdf(tailoredContent);
-    } else {
+    } else if (format === "docx") {
       buffer = await generateDocx(tailoredContent);
+    } else {
+      buffer = await generateLatex(tailoredContent);
     }
 
     await fs.writeFile(filePath, buffer);
@@ -115,13 +125,26 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Run critique on the generated resume
-    const critique = await critiqueResume(tailoredContent, jobAnalysis);
+    // Fire critique asynchronously — don't block the response
+    critiqueCache.set(resume.id, { status: "pending" });
+    critiqueResume(tailoredContent, jobAnalysis)
+      .then((critique) => {
+        critiqueCache.set(resume.id, { status: "done", data: critique });
+      })
+      .catch((err) => {
+        console.error("Async critique failed:", err);
+        critiqueCache.set(resume.id, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Critique failed",
+        });
+      });
 
+    // Return immediately with the resume (no critique yet)
     return NextResponse.json({
       ...resume,
       tailoredContent,
-      critique,
+      critique: null,
+      critiqueStatus: "pending",
     });
   } catch (error) {
     console.error("Resume generation error:", error);
@@ -130,4 +153,33 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// GET endpoint to poll for critique status
+export async function GET(request: NextRequest) {
+  const resumeId = request.nextUrl.searchParams.get("resumeId");
+  if (!resumeId) {
+    return NextResponse.json(
+      { error: "resumeId query param required" },
+      { status: 400 }
+    );
+  }
+
+  const entry = critiqueCache.get(resumeId);
+  if (!entry) {
+    return NextResponse.json({ status: "not_found" });
+  }
+
+  if (entry.status === "done") {
+    // Clean up cache after delivery
+    critiqueCache.delete(resumeId);
+    return NextResponse.json({ status: "done", critique: entry.data });
+  }
+
+  if (entry.status === "error") {
+    critiqueCache.delete(resumeId);
+    return NextResponse.json({ status: "error", error: entry.error });
+  }
+
+  return NextResponse.json({ status: "pending" });
 }

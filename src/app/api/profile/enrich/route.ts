@@ -155,6 +155,11 @@ export async function POST(request: NextRequest) {
         "stackoverflow"
       );
 
+      await prisma.profile.update({
+        where: { id: profile.id },
+        data: { stackoverflowId: userId },
+      });
+
       await mergeEnrichedData(profile.id, enriched);
     } else if (source === "linkedin") {
       // LinkedIn text is parsed like a resume
@@ -172,6 +177,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    await prisma.profile.update({
+      where: { id: profile.id },
+      data: { lastEnrichedAt: new Date() },
+    });
 
     const updated = await prisma.profile.findFirst({
       include: {

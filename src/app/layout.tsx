@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Cormorant_Garamond, DM_Mono } from "next/font/google";
+import Link from "next/link";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { NavLinks } from "@/components/nav-links";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -11,6 +14,20 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
+
+const dmMono = DM_Mono({
+  variable: "--font-dm-mono",
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
@@ -26,41 +43,78 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${dmMono.variable} antialiased min-h-screen bg-background paper-bg`}
       >
-        <nav className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-            <a href="/" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">
-                  RF
-                </span>
+        <TooltipProvider>
+          {/* Magazine masthead navigation */}
+          <nav className="border-b border-border bg-card/95 backdrop-blur-xl sticky top-0 z-50">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6">
+              <div className="h-14 sm:h-16 flex items-center justify-between gap-6">
+                {/* Brand */}
+                <Link href="/" className="flex items-center gap-3 shrink-0 group">
+                  <div className="w-7 h-7 bg-primary flex items-center justify-center shrink-0">
+                    <span
+                      className="text-primary-foreground font-bold text-xs tracking-widest"
+                      style={{ fontFamily: "var(--font-dm-mono)" }}
+                    >
+                      RF
+                    </span>
+                  </div>
+                  <span
+                    className="text-xl sm:text-2xl text-foreground font-medium hidden sm:inline"
+                    style={{
+                      fontFamily: "var(--font-cormorant)",
+                      fontStyle: "italic",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ResumeForge
+                  </span>
+                </Link>
+
+                {/* Desktop nav */}
+                <NavLinks />
+
+                {/* Mobile nav */}
+                <NavLinks mobile />
               </div>
-              <span className="text-lg font-semibold tracking-tight">
+            </div>
+            {/* Vermillion accent rule */}
+            <div className="h-0.5 bg-primary" />
+          </nav>
+
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+            {children}
+          </main>
+
+          <footer className="border-t border-border mt-20 py-6">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between">
+              <span
+                className="text-muted-foreground"
+                style={{
+                  fontFamily: "var(--font-dm-mono)",
+                  fontSize: "0.6rem",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                }}
+              >
                 ResumeForge
               </span>
-            </a>
-            <div className="flex items-center gap-1">
-              {[
-                { href: "/", label: "Dashboard" },
-                { href: "/profile", label: "Profile" },
-                { href: "/jobs", label: "Jobs" },
-                { href: "/skills", label: "Skills" },
-                { href: "/generate", label: "Generate" },
-              ].map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  className="px-3 py-2 text-sm font-medium text-muted-foreground rounded-md hover:text-foreground hover:bg-accent transition-colors"
-                >
-                  {link.label}
-                </a>
-              ))}
+              <span
+                className="text-muted-foreground"
+                style={{
+                  fontFamily: "var(--font-dm-mono)",
+                  fontSize: "0.6rem",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                }}
+              >
+                AI-Powered Resume Builder
+              </span>
             </div>
-          </div>
-        </nav>
-        <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
-        <Toaster />
+          </footer>
+          <Toaster />
+        </TooltipProvider>
       </body>
     </html>
   );

@@ -15,11 +15,13 @@ model Profile {
   phone     String?
   location  String?
   summary   String?
-  linkedin  String?
-  github    String?
-  website   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  linkedin       String?
+  github         String?
+  website        String?
+  stackoverflowId String?
+  lastEnrichedAt  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   experiences Experience[]
   educations  Education[]
@@ -87,6 +89,7 @@ model Job {
   requirements String?  // JSON array of {requirement, classification, confidence, bridgeNote}
   atsKeywords  String?  // JSON object of {technical, domain, tools, softSkills}
   seniority    String?  // junior|mid|senior|staff|principal
+  sponsorship  String?  // available|unavailable|unspecified — visa/work authorization status
   createdAt    DateTime @default(now())
 
   resumes Resume[]

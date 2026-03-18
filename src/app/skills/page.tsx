@@ -1,15 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Skill {
   id: string;
@@ -17,41 +11,49 @@ interface Skill {
   category: string;
 }
 
-const CATEGORY_CONFIG: Record<
-  string,
-  { label: string; color: string; bg: string }
-> = {
-  language: {
-    label: "Languages",
-    color: "text-blue-700",
-    bg: "bg-blue-50 border-blue-200",
-  },
-  framework: {
-    label: "Frameworks",
-    color: "text-violet-700",
-    bg: "bg-violet-50 border-violet-200",
-  },
-  tool: {
-    label: "Tools",
-    color: "text-amber-700",
-    bg: "bg-amber-50 border-amber-200",
-  },
-  database: {
-    label: "Databases",
-    color: "text-green-700",
-    bg: "bg-green-50 border-green-200",
-  },
-  cloud: {
-    label: "Cloud & DevOps",
-    color: "text-sky-700",
-    bg: "bg-sky-50 border-sky-200",
-  },
-  soft: {
-    label: "Soft Skills",
-    color: "text-rose-700",
-    bg: "bg-rose-50 border-rose-200",
-  },
+const CATEGORY_CONFIG: Record<string, { label: string; num: string }> = {
+  language:  { label: "Languages",    num: "01" },
+  framework: { label: "Frameworks",   num: "02" },
+  tool:      { label: "Tools",        num: "03" },
+  database:  { label: "Databases",    num: "04" },
+  cloud:     { label: "Cloud & DevOps", num: "05" },
+  soft:      { label: "Soft Skills",  num: "06" },
 };
+
+const monoStyle: React.CSSProperties = {
+  fontFamily: "var(--font-dm-mono)",
+  fontSize: "0.625rem",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase" as const,
+  fontWeight: 500,
+};
+
+function SkillsSkeleton() {
+  return (
+    <div className="space-y-0">
+      <div className="border-b border-border pb-10 pt-2">
+        <Skeleton className="h-3 w-16 mb-8" />
+        <Skeleton className="h-14 w-48 mb-2" />
+        <Skeleton className="h-3 w-40" />
+      </div>
+      <div className="flex gap-2 py-6 border-b border-border">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-7 w-24 rounded-sm" />)}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 pt-8">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="border-b border-border pb-8 mb-8 pr-0 sm:pr-8">
+            <Skeleton className="h-3 w-24 mb-4" />
+            <div className="flex flex-wrap gap-1.5">
+              {[1, 2, 3, 4, 5].map((j) => (
+                <Skeleton key={j} className="h-6 w-20 rounded-sm" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -69,144 +71,130 @@ export default function SkillsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <SkillsSkeleton />;
 
   if (skills.length === 0) {
     return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Skills</h1>
-          <p className="text-muted-foreground mt-1">
-            Your technical and professional skills
+      <div className="space-y-0">
+        <div className="border-b border-border pb-10 pt-2 anim-fade-up">
+          <p className="text-muted-foreground mb-6" style={monoStyle}>Skills</p>
+          <h1
+            className="text-foreground leading-none mb-2"
+            style={{
+              fontFamily: "var(--font-cormorant)",
+              fontStyle: "italic",
+              fontSize: "clamp(2.5rem, 6vw, 4rem)",
+              fontWeight: 400,
+            }}
+          >
+            No skills yet
+          </h1>
+          <div className="section-divider mt-5 mb-5" />
+          <p className="text-muted-foreground text-sm mb-6 max-w-sm leading-relaxed">
+            Upload your resume to automatically extract and categorize your skills,
+            or enrich your profile from GitHub.
           </p>
+          <a href="/profile" className={buttonVariants({ className: "rounded-sm" })}>
+            Upload Resume
+          </a>
         </div>
-        <Card className="shadow-sm">
-          <CardContent className="py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-              <svg
-                className="w-8 h-8 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-lg mb-2">No skills yet</h3>
-            <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-              Upload your resume to automatically extract and categorize your
-              skills, or enrich your profile from GitHub.
-            </p>
-            <a href="/profile" className={buttonVariants()}>
-              Upload Resume
-            </a>
-          </CardContent>
-        </Card>
       </div>
     );
   }
 
   const categories = Object.keys(grouped);
   const filteredGrouped =
-    filter === "all"
-      ? grouped
-      : { [filter]: grouped[filter] || [] };
+    filter === "all" ? grouped : { [filter]: grouped[filter] || [] };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Skills</h1>
-        <p className="text-muted-foreground mt-1">
-          {skills.length} skills across {categories.length} categories —
-          extracted from your resume, GitHub, and other sources
+    <div className="space-y-0">
+      {/* ── Header ─── */}
+      <section className="border-b border-border pb-10 pt-2 anim-fade-up">
+        <p className="text-muted-foreground mb-6" style={monoStyle}>
+          Skills · {categories.length} categories
         </p>
-      </div>
+        <h1
+          className="text-foreground leading-none"
+          style={{
+            fontFamily: "var(--font-cormorant)",
+            fontStyle: "italic",
+            fontSize: "clamp(2.5rem, 6vw, 4rem)",
+            fontWeight: 400,
+          }}
+        >
+          {skills.length}{" "}
+          <span className="text-primary">skills</span> tracked
+        </h1>
+        <div className="section-divider mt-5" />
+      </section>
 
-      {/* Filter Bar */}
-      <Card className="shadow-sm">
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === "all"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              All ({skills.length})
-            </button>
-            {categories.map((cat) => {
-              const config = CATEGORY_CONFIG[cat] || {
-                label: cat,
-                color: "text-foreground",
-                bg: "bg-muted",
-              };
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setFilter(cat)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    filter === cat
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {config.label} ({grouped[cat].length})
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Skills Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {Object.entries(filteredGrouped).map(([category, categorySkills]) => {
-          const config = CATEGORY_CONFIG[category] || {
-            label: category,
-            color: "text-foreground",
-            bg: "bg-muted border-border",
-          };
+      {/* ── Filter Bar ─── */}
+      <section className="py-5 border-b border-border flex flex-wrap gap-1.5 anim-fade-up-1">
+        <button
+          onClick={() => setFilter("all")}
+          className={`px-3 py-1.5 text-xs transition-all rounded-sm border ${
+            filter === "all"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+          }`}
+          style={monoStyle}
+        >
+          All ({skills.length})
+        </button>
+        {categories.map((cat) => {
+          const config = CATEGORY_CONFIG[cat] || { label: cat, num: "—" };
           return (
-            <Card key={category} className={`shadow-sm border ${config.bg}`}>
-              <CardHeader className="pb-3">
-                <CardTitle className={`text-lg ${config.color}`}>
-                  {config.label}
-                </CardTitle>
-                <CardDescription>
-                  {categorySkills.length} skill
-                  {categorySkills.length !== 1 ? "s" : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
+            <button
+              key={cat}
+              onClick={() => setFilter(cat)}
+              className={`px-3 py-1.5 transition-all rounded-sm border ${
+                filter === cat
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+              }`}
+              style={monoStyle}
+            >
+              {config.label} ({grouped[cat].length})
+            </button>
+          );
+        })}
+      </section>
+
+      {/* ── Skills Grid ─── */}
+      <section className="pt-10 anim-fade-up-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-x-12">
+          {Object.entries(filteredGrouped).map(([category, categorySkills]) => {
+            const config = CATEGORY_CONFIG[category] || { label: category, num: "—" };
+            return (
+              <div key={category}>
+                <div className="flex items-baseline gap-3 mb-4">
+                  <span className="text-primary" style={{ ...monoStyle, fontSize: "0.6rem" }}>
+                    {config.num}
+                  </span>
+                  <p className="text-foreground" style={monoStyle}>
+                    {config.label}
+                  </p>
+                  <span className="text-muted-foreground ml-auto" style={monoStyle}>
+                    {categorySkills.length}
+                  </span>
+                </div>
+                <div className="h-px bg-border mb-4" />
+                <div className="flex flex-wrap gap-1.5">
                   {categorySkills.map((skill) => (
                     <Badge
                       key={skill.id}
                       variant="secondary"
-                      className="px-3 py-1 text-xs font-medium"
+                      className="text-xs rounded-sm hover:bg-primary/10 hover:text-primary transition-colors cursor-default"
                     >
                       {skill.name}
                     </Badge>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

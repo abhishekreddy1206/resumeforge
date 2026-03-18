@@ -14,3 +14,6 @@ export { generateTailoredResume } from "./skills/resume-writer";
 export { enrichFromExternalSource } from "./skills/profile-enricher";
 export { critiqueResume } from "./skills/resume-critic";
 export type { ResumeCritique } from "./skills/resume-critic";
+export { editProfile } from "./skills/profile-editor";
+export { matchProfileToJob } from "./skills/profile-matcher";
+export type { MatchResult } from "./skills/profile-matcher";
