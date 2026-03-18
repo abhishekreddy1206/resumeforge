@@ -46,6 +46,9 @@ export async function POST(request: NextRequest) {
         url: url || null,
         description: jobText,
         skills: JSON.stringify(analysis.skills || []),
+        requirements: JSON.stringify(analysis.requirements || []),
+        atsKeywords: JSON.stringify(analysis.atsKeywords || {}),
+        seniority: analysis.seniority || null,
       },
     });
 

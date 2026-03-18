@@ -17,7 +17,7 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 16 (App Router, TypeScript) |
-| AI | Claude API via `@anthropic-ai/sdk` |
+| AI | Claude Code CLI (uses your Claude Code subscription, no API credits needed) |
 | Database | SQLite via Prisma |
 | UI | Tailwind CSS + shadcn/ui |
 | PDF Parsing | pdf-parse |
@@ -35,7 +35,6 @@ npm install
 
 # Set up your environment
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
 
 # Run database migration
 npx prisma migrate dev
@@ -51,8 +50,11 @@ Open [http://localhost:3000](http://localhost:3000).
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | SQLite path (default: `file:./prisma/dev.db`) |
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
 | `GITHUB_TOKEN` | No | GitHub personal access token for higher API rate limits |
+
+### Prerequisites
+
+- **Claude Code** must be installed and authenticated (`claude` CLI available in PATH). AI features run through your Claude Code subscription — no separate API credits needed.
 
 ## Project Structure
 
@@ -71,7 +73,7 @@ src/
 │       └── skills/                 # Skills listing
 ├── lib/
 │   ├── claude/                     # AI modules
-│   │   ├── client.ts              # Shared Anthropic client + helpers
+│   │   ├── client.ts              # Claude Code CLI wrapper + helpers
 │   │   ├── index.ts               # Re-exports all AI modules
 │   │   └── skills/
 │   │       ├── resume-parser.ts   # Parse resume text → structured data

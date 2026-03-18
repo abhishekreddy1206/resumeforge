@@ -78,13 +78,16 @@ model Skill {
 }
 
 model Job {
-  id          String   @id @default(cuid())
-  title       String
-  company     String
-  url         String?
-  description String
-  skills      String?  // JSON array of required skill names
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  title        String
+  company      String
+  url          String?
+  description  String
+  skills       String?  // JSON array of required skill names
+  requirements String?  // JSON array of {requirement, classification, confidence, bridgeNote}
+  atsKeywords  String?  // JSON object of {technical, domain, tools, softSkills}
+  seniority    String?  // junior|mid|senior|staff|principal
+  createdAt    DateTime @default(now())
 
   resumes Resume[]
 }

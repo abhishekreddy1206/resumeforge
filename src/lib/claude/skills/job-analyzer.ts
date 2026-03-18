@@ -1,10 +1,25 @@
 import { askJson } from "../client";
 
+interface RequirementMapping {
+  requirement: string;
+  classification: "direct" | "bridge" | "gap";
+  confidence?: "high" | "medium" | "low";
+  bridgeNote?: string;
+}
+
+interface ATSKeywords {
+  technical: string[];
+  domain: string[];
+  tools: string[];
+  softSkills: string[];
+}
+
 interface JobAnalysis {
   title: string;
   company: string;
   skills: string[];
-  requirements: string[];
+  requirements: RequirementMapping[];
+  atsKeywords: ATSKeywords;
   seniority: string;
   summary: string;
 }
@@ -12,19 +27,55 @@ interface JobAnalysis {
 /**
  * Skill: Job Analyzer
  *
- * Analyzes a job description and extracts structured data:
- * title, company, required skills, seniority, and summary.
+ * Analyzes a job description with deep requirement classification:
+ * - Direct: exact match likely in candidate profile
+ * - Bridge: transferable skill with confidence level
+ * - Gap: cannot be claimed, needs acknowledgment
+ *
+ * Also extracts categorized ATS keywords for verbatim matching.
  */
 export async function analyzeJobDescription(description: string): Promise<JobAnalysis> {
-  return askJson(`Analyze the following job description and extract structured data. Return ONLY valid JSON:
+  return askJson(`Analyze the following job description and extract structured data with deep requirement classification.
+
+REQUIREMENT CLASSIFICATION:
+For each requirement in the JD, classify it as:
+- "direct": The requirement is a common/standard skill likely found on matching resumes
+- "bridge": The requirement can be satisfied by transferable experience. Include a bridgeNote explaining the transfer (e.g., "PostgreSQL experience transfers to MySQL — relational DB fundamentals are shared") and a confidence level (high/medium/low)
+- "gap": The requirement is highly specific and unlikely to be claimed without direct experience
+
+ATS KEYWORD EXTRACTION:
+Extract the top keywords from the JD, categorized by type. These will be used for verbatim matching in the resume. Focus on exact terms used in the JD, not synonyms.
+
+Return ONLY valid JSON:
 
 {
   "title": "Job Title",
   "company": "Company Name",
   "skills": ["required skill 1", "required skill 2"],
-  "requirements": ["key requirement 1", "key requirement 2"],
+  "requirements": [
+    {
+      "requirement": "5+ years Python experience",
+      "classification": "direct"
+    },
+    {
+      "requirement": "Experience with Kubernetes",
+      "classification": "bridge",
+      "confidence": "high",
+      "bridgeNote": "Docker Swarm/ECS experience transfers — container orchestration fundamentals shared"
+    },
+    {
+      "requirement": "Domain expertise in fintech payments",
+      "classification": "gap"
+    }
+  ],
+  "atsKeywords": {
+    "technical": ["Python", "React", "microservices"],
+    "domain": ["payments", "fintech", "compliance"],
+    "tools": ["Kubernetes", "Terraform", "DataDog"],
+    "softSkills": ["cross-functional", "mentorship", "stakeholder management"]
+  },
   "seniority": "junior|mid|senior|staff|principal",
-  "summary": "Brief summary of the role"
+  "summary": "Brief summary of the role and what the ideal candidate looks like"
 }
 
 Job description:

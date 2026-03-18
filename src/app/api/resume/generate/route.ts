@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateTailoredResume } from "@/lib/claude";
+import { generateTailoredResume, critiqueResume } from "@/lib/claude";
 import { generatePdf } from "@/lib/generators/pdf";
 import { generateDocx } from "@/lib/generators/docx";
 import fs from "fs/promises";
@@ -66,6 +66,9 @@ export async function POST(request: NextRequest) {
       company: job.company,
       description: job.description,
       skills: job.skills ? JSON.parse(job.skills) : [],
+      requirements: job.requirements ? JSON.parse(job.requirements) : [],
+      atsKeywords: job.atsKeywords ? JSON.parse(job.atsKeywords) : {},
+      seniority: job.seniority,
     };
 
     // Generate tailored resume content with Claude
@@ -112,9 +115,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Run critique on the generated resume
+    const critique = await critiqueResume(tailoredContent, jobAnalysis);
+
     return NextResponse.json({
       ...resume,
       tailoredContent,
+      critique,
     });
   } catch (error) {
     console.error("Resume generation error:", error);
