@@ -1,6 +1,35 @@
 import * as cheerio from "cheerio";
 
+const BLOCKED_IP_PATTERNS = [
+  /^localhost$/i,
+  /^127\./,
+  /^0\.0\.0\.0$/,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^\[?::1\]?$/,
+  /^\[?fe80:/i,
+  /^\[?fc00:/i,
+  /^\[?fd/i,
+];
+
+function validateExternalUrl(url: string): void {
+  const parsed = new URL(url);
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Only http and https URLs are allowed");
+  }
+
+  const hostname = parsed.hostname;
+  if (BLOCKED_IP_PATTERNS.some((p) => p.test(hostname))) {
+    throw new Error("URLs pointing to internal or private addresses are not allowed");
+  }
+}
+
 export async function scrapeJobUrl(url: string): Promise<string> {
+  validateExternalUrl(url);
+
   const response = await fetch(url, {
     headers: {
       "User-Agent":

@@ -38,10 +38,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save uploaded file
+    // Save uploaded file with a safe generated name
     const uploadsDir = path.join(process.cwd(), "uploads");
     await fs.mkdir(uploadsDir, { recursive: true });
-    await fs.writeFile(path.join(uploadsDir, file.name), buffer);
+    const safeName = `${crypto.randomUUID()}${ext}`;
+    await fs.writeFile(path.join(uploadsDir, safeName), buffer);
 
     // Use Claude to parse the resume text into structured data
     const parsed = await parseResumeText(text);
