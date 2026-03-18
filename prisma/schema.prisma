@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  location  String?
+  summary   String?
+  linkedin  String?
+  github    String?
+  website   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  experiences Experience[]
+  educations  Education[]
+  projects    Project[]
+  skills      Skill[]
+  resumes     Resume[]
+}
+
+model Experience {
+  id        String   @id @default(cuid())
+  profileId String
+  company   String
+  title     String
+  startDate String
+  endDate   String?
+  current   Boolean  @default(false)
+  bullets   String   // JSON array of strings
+  skills    String?  // JSON array of skill names
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Education {
+  id        String  @id @default(cuid())
+  profileId String
+  school    String
+  degree    String
+  field     String?
+  startDate String?
+  endDate   String?
+  gpa       String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id          String  @id @default(cuid())
+  profileId   String
+  name        String
+  description String?
+  url         String?
+  skills      String? // JSON array of skill names
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id          String @id @default(cuid())
+  profileId   String
+  name        String
+  category    String // language, framework, tool, database, cloud, soft
+  proficiency String @default("intermediate") // beginner, intermediate, advanced, expert
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, name])
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  title       String
+  company     String
+  url         String?
+  description String
+  skills      String?  // JSON array of required skill names
+  createdAt   DateTime @default(now())
+
+  resumes Resume[]
+}
+
+model Resume {
+  id        String   @id @default(cuid())
+  profileId String
+  jobId     String
+  format    String   // pdf, docx
+  filePath  String
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}

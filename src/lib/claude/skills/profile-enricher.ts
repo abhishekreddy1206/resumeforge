@@ -1,0 +1,64 @@
+import { askJson } from "../client";
+
+/**
+ * Skill: Profile Enricher
+ *
+ * Merges external source data (GitHub, StackOverflow, LinkedIn)
+ * into an existing profile. Adds skills, projects, and experience
+ * without removing existing data.
+ */
+
+const SOURCE_INSTRUCTIONS: Record<string, string> = {
+  github: `This is GitHub profile data. Extract:
+- Top repositories as projects (name, description, URL, languages used)
+- Programming languages and tools as skills
+- Bio information to enrich the summary
+- Any notable contributions (high star repos, active open source)`,
+
+  stackoverflow: `This is StackOverflow profile data. Extract:
+- Top tags as technical skills with proficiency based on answer scores (high score = expert)
+- Reputation as a signal of expertise level
+- Badge counts as indicators of community contribution
+- Tag answer counts to gauge depth of knowledge`,
+
+  linkedin: `This is LinkedIn profile data (pasted text). Extract:
+- Work experience not already in the profile
+- Skills and endorsements
+- Education details
+- Certifications
+- Summary/headline to enrich the professional summary`,
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function enrichFromExternalSource(
+  existingProfile: Record<string, any>,
+  externalData: Record<string, any>,
+  source: string
+) {
+  return askJson(`Merge the following ${source} data into the existing candidate profile.
+
+${SOURCE_INSTRUCTIONS[source] || "Extract relevant professional information."}
+
+RULES:
+- Do NOT remove existing data — only add or enhance
+- Do NOT fabricate experience or skills not evidenced by the data
+- Deduplicate skills (don't add "JavaScript" if "JavaScript" already exists)
+- For skills, categorize as: language, framework, tool, database, cloud, or soft
+- Set proficiency based on evidence (e.g., many SO answers = advanced/expert)
+
+Return the merged profile as JSON with this structure:
+{
+  "summary": "enhanced summary incorporating new info",
+  "projects": [{ "name": "...", "description": "...", "url": "...", "skills": ["..."] }],
+  "skills": [{ "name": "...", "category": "language|framework|tool|database|cloud|soft", "proficiency": "beginner|intermediate|advanced|expert" }],
+  "experiences": [{ "company": "...", "title": "...", "startDate": "...", "endDate": "...", "bullets": ["..."], "skills": ["..."] }]
+}
+
+Only include sections that have new data to add. Omit empty arrays.
+
+Existing Profile:
+${JSON.stringify(existingProfile, null, 2)}
+
+${source.charAt(0).toUpperCase() + source.slice(1)} Data:
+${JSON.stringify(externalData, null, 2)}`);
+}
