@@ -30,10 +30,17 @@ export async function GET(
 
     const fileName = path.basename(resume.filePath);
 
+    // Support ?inline=1 for embedding PDFs in iframes
+    const url = new URL(_request.url);
+    const inline = url.searchParams.get("inline") === "1";
+    const disposition = inline && resume.format === "pdf"
+      ? `inline; filename="${fileName}"`
+      : `attachment; filename="${fileName}"`;
+
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": disposition,
       },
     });
   } catch (error) {

@@ -7,10 +7,18 @@ import {
   Packer,
   TabStopPosition,
   TabStopType,
+  HeadingLevel,
+  convertInchesToTwip,
 } from "docx";
 import type { ResumeData } from "@/lib/types";
 
-const ACCENT = "2E4057";
+const COLORS = {
+  primary: "1A1A1A",
+  secondary: "4A4A4A",
+  muted: "6B7280",
+  accent: "2563EB",
+  divider: "D1D5DB",
+};
 
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
@@ -18,35 +26,45 @@ function sectionHeading(text: string): Paragraph {
       new TextRun({
         text: text.toUpperCase(),
         bold: true,
-        size: 22,
-        color: ACCENT,
+        size: 21, // 10.5pt
+        color: COLORS.primary,
         font: "Calibri",
+        characterSpacing: 60, // tracking
       }),
     ],
-    spacing: { before: 240, after: 120 },
+    spacing: { before: 200, after: 60 },
     border: {
       bottom: {
-        color: ACCENT,
-        space: 1,
+        color: COLORS.divider,
+        space: 2,
         style: BorderStyle.SINGLE,
-        size: 6,
+        size: 4,
       },
     },
   });
 }
 
-export async function generateDocx(data: ResumeData): Promise<Buffer> {
-  const sections: Paragraph[] = [];
+function contactSeparator(): TextRun {
+  return new TextRun({
+    text: "  |  ",
+    size: 17,
+    color: COLORS.divider,
+    font: "Calibri",
+  });
+}
 
-  // Name — large, bold, centered
-  sections.push(
+export async function generateDocx(data: ResumeData): Promise<Buffer> {
+  const children: Paragraph[] = [];
+
+  // ── Name ──
+  children.push(
     new Paragraph({
       children: [
         new TextRun({
           text: data.name,
           bold: true,
-          size: 28,
-          color: ACCENT,
+          size: 32, // 16pt
+          color: COLORS.primary,
           font: "Calibri",
         }),
       ],
@@ -55,7 +73,7 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     })
   );
 
-  // Contact info — single line, pipe separated, centered
+  // ── Contact ──
   const contactParts = [
     data.email,
     data.phone,
@@ -63,142 +81,180 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     data.linkedin,
     data.github,
     data.website,
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
 
   if (contactParts.length > 0) {
-    sections.push(
+    const contactRuns: TextRun[] = [];
+    contactParts.forEach((part, i) => {
+      if (i > 0) contactRuns.push(contactSeparator());
+      const display = part.startsWith("http")
+        ? part.replace(/https?:\/\/(www\.)?/, "").replace(/\/$/, "")
+        : part;
+      contactRuns.push(
+        new TextRun({
+          text: display,
+          size: 17, // 8.5pt
+          color: COLORS.muted,
+          font: "Calibri",
+        })
+      );
+    });
+
+    children.push(
       new Paragraph({
-        children: [
-          new TextRun({
-            text: contactParts.join("  |  "),
-            size: 18,
-            color: "555555",
-            font: "Calibri",
-          }),
-        ],
+        children: contactRuns,
         alignment: AlignmentType.CENTER,
-        spacing: { after: 160 },
+        spacing: { after: 40 },
       })
     );
   }
 
-  // Professional Summary
+  // Thick rule under header
+  children.push(
+    new Paragraph({
+      children: [],
+      spacing: { before: 0, after: 40 },
+      border: {
+        bottom: {
+          color: COLORS.primary,
+          space: 1,
+          style: BorderStyle.SINGLE,
+          size: 12,
+        },
+      },
+    })
+  );
+
+  // ── Summary ──
   if (data.summary) {
-    sections.push(sectionHeading("Professional Summary"));
-    sections.push(
+    children.push(sectionHeading("Summary"));
+    children.push(
       new Paragraph({
         children: [
           new TextRun({
             text: data.summary,
-            size: 20,
+            size: 19, // 9.5pt
+            color: COLORS.secondary,
             font: "Calibri",
           }),
         ],
-        spacing: { after: 80 },
+        spacing: { after: 60 },
       })
     );
   }
 
-  // Experience — tab stops for right-aligned dates
+  // ── Experience ──
   if (data.experiences && data.experiences.length > 0) {
-    sections.push(sectionHeading("Experience"));
+    children.push(sectionHeading("Experience"));
     for (const exp of data.experiences) {
       // Title | Company \t Date
-      sections.push(
+      children.push(
         new Paragraph({
           tabStops: [
             { type: TabStopType.RIGHT, position: TabStopPosition.MAX },
           ],
           children: [
             new TextRun({
-              text: `${exp.title} | ${exp.company}`,
+              text: exp.title,
               bold: true,
-              size: 21,
+              size: 20, // 10pt
+              color: COLORS.primary,
+              font: "Calibri",
+            }),
+            new TextRun({
+              text: `  |  ${exp.company}`,
+              size: 19,
+              italics: true,
+              color: COLORS.secondary,
               font: "Calibri",
             }),
             new TextRun({ text: "\t" }),
             new TextRun({
               text: `${exp.startDate} – ${exp.endDate || "Present"}`,
-              italics: true,
-              size: 19,
-              color: "666666",
+              size: 17,
+              color: COLORS.muted,
               font: "Calibri",
             }),
           ],
-          spacing: { before: 100, after: 40 },
+          spacing: { before: 80, after: 30 },
         })
       );
-      // Bullets — action verb first, quantified impact
+
       for (const bullet of exp.bullets || []) {
-        sections.push(
+        children.push(
           new Paragraph({
             children: [
               new TextRun({
                 text: bullet,
-                size: 20,
+                size: 19,
+                color: COLORS.secondary,
                 font: "Calibri",
               }),
             ],
             bullet: { level: 0 },
-            spacing: { after: 20 },
+            spacing: { after: 15 },
+            indent: { left: convertInchesToTwip(0.25) },
           })
         );
       }
     }
   }
 
-  // Projects
+  // ── Projects ──
   if (data.projects && data.projects.length > 0) {
-    sections.push(sectionHeading("Projects"));
+    children.push(sectionHeading("Projects"));
     for (const proj of data.projects) {
-      const children: TextRun[] = [
+      const projRuns: TextRun[] = [
         new TextRun({
           text: proj.name,
           bold: true,
-          size: 20,
+          size: 19,
+          color: COLORS.primary,
           font: "Calibri",
         }),
       ];
       if (proj.url) {
-        children.push(
+        projRuns.push(
           new TextRun({
-            text: ` — ${proj.url}`,
-            size: 18,
-            color: "666666",
+            text: `  —  ${proj.url.replace(/https?:\/\/(www\.)?/, "").replace(/\/$/, "")}`,
+            size: 17,
+            color: COLORS.accent,
             font: "Calibri",
           })
         );
       }
-      sections.push(
+      children.push(
         new Paragraph({
-          children,
-          spacing: { before: 60 },
+          children: projRuns,
+          spacing: { before: 60, after: 15 },
         })
       );
       if (proj.description) {
-        sections.push(
+        children.push(
           new Paragraph({
             children: [
               new TextRun({
                 text: proj.description,
-                size: 20,
+                size: 19,
+                color: COLORS.secondary,
                 font: "Calibri",
               }),
             ],
             bullet: { level: 0 },
-            spacing: { after: 20 },
+            spacing: { after: 15 },
+            indent: { left: convertInchesToTwip(0.25) },
           })
         );
       }
     }
   }
 
-  // Education — degree | institution \t year
+  // ── Education ──
   if (data.educations && data.educations.length > 0) {
-    sections.push(sectionHeading("Education"));
+    children.push(sectionHeading("Education"));
     for (const edu of data.educations) {
-      const degreeText = `${edu.degree}${edu.field ? `, ${edu.field}` : ""} | ${edu.school}`;
-      sections.push(
+      const degreeText = `${edu.degree}${edu.field ? `, ${edu.field}` : ""}`;
+      children.push(
         new Paragraph({
           tabStops: [
             { type: TabStopType.RIGHT, position: TabStopPosition.MAX },
@@ -207,60 +263,73 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
             new TextRun({
               text: degreeText,
               bold: true,
-              size: 20,
+              size: 19,
+              color: COLORS.primary,
               font: "Calibri",
             }),
             new TextRun({ text: "\t" }),
             new TextRun({
               text: edu.endDate || "",
-              italics: true,
-              size: 19,
-              color: "666666",
+              size: 17,
+              color: COLORS.muted,
               font: "Calibri",
             }),
           ],
-          spacing: { before: 60, after: 20 },
+          spacing: { before: 60, after: 10 },
         })
       );
+
+      const schoolRuns: TextRun[] = [
+        new TextRun({
+          text: edu.school,
+          italics: true,
+          size: 19,
+          color: COLORS.secondary,
+          font: "Calibri",
+        }),
+      ];
       if (edu.gpa) {
-        sections.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: `GPA: ${edu.gpa}`,
-                size: 19,
-                color: "666666",
-                font: "Calibri",
-              }),
-            ],
-            spacing: { after: 40 },
+        schoolRuns.push(
+          new TextRun({
+            text: `  |  GPA: ${edu.gpa}`,
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
           })
         );
       }
+      children.push(
+        new Paragraph({
+          children: schoolRuns,
+          spacing: { after: 30 },
+        })
+      );
     }
   }
 
-  // Skills — grouped by category, JD-required first
+  // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
-    sections.push(sectionHeading("Skills"));
+    children.push(sectionHeading("Technical Skills"));
     for (const [category, skillList] of Object.entries(data.skills)) {
       if (skillList.length > 0) {
-        sections.push(
+        children.push(
           new Paragraph({
             children: [
               new TextRun({
                 text: `${category.charAt(0).toUpperCase() + category.slice(1)}: `,
                 bold: true,
-                size: 20,
+                size: 19,
+                color: COLORS.primary,
                 font: "Calibri",
               }),
               new TextRun({
                 text: skillList.join(", "),
-                size: 20,
+                size: 19,
+                color: COLORS.secondary,
                 font: "Calibri",
               }),
             ],
-            spacing: { after: 30 },
+            spacing: { after: 20 },
           })
         );
       }
@@ -274,14 +343,14 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
           page: {
             size: { width: 12240, height: 15840 }, // US Letter
             margin: {
-              top: 1080, // 0.75 inch — tighter fit per skill guidelines
-              bottom: 1080,
-              left: 1080,
-              right: 1080,
+              top: 720,   // 0.5 inch
+              bottom: 720,
+              left: 900,   // ~0.625 inch
+              right: 900,
             },
           },
         },
-        children: sections,
+        children,
       },
     ],
   });

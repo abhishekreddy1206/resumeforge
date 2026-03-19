@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkillsChatPanel } from "@/components/skills-chat-panel";
+import { MessageSquare } from "lucide-react";
 
 interface Skill {
   id: string;
@@ -60,8 +62,9 @@ export default function SkillsPage() {
   const [grouped, setGrouped] = useState<Record<string, Skill[]>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
+  const [chatOpen, setChatOpen] = useState(false);
 
-  useEffect(() => {
+  function loadSkills() {
     fetch("/api/skills")
       .then((r) => r.json())
       .then((data) => {
@@ -69,6 +72,10 @@ export default function SkillsPage() {
         setGrouped(data.grouped || {});
       })
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadSkills();
   }, []);
 
   if (loading) return <SkillsSkeleton />;
@@ -107,24 +114,44 @@ export default function SkillsPage() {
     filter === "all" ? grouped : { [filter]: grouped[filter] || [] };
 
   return (
-    <div className="space-y-0">
+    <div className={`space-y-0 ${chatOpen ? "lg:mr-[420px]" : ""} transition-[margin] duration-200`}>
+      <SkillsChatPanel
+        open={chatOpen}
+        onOpenChange={setChatOpen}
+        onSkillsUpdated={loadSkills}
+        currentSkills={skills}
+      />
+
       {/* ── Header ─── */}
       <section className="border-b border-border pb-10 pt-2 anim-fade-up">
-        <p className="text-muted-foreground mb-6" style={monoStyle}>
-          Skills · {categories.length} categories
-        </p>
-        <h1
-          className="text-foreground leading-none"
-          style={{
-            fontFamily: "var(--font-cormorant)",
-            fontStyle: "italic",
-            fontSize: "clamp(2.5rem, 6vw, 4rem)",
-            fontWeight: 400,
-          }}
-        >
-          {skills.length}{" "}
-          <span className="text-primary">skills</span> tracked
-        </h1>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-muted-foreground mb-6" style={monoStyle}>
+              Skills · {categories.length} categories
+            </p>
+            <h1
+              className="text-foreground leading-none"
+              style={{
+                fontFamily: "var(--font-cormorant)",
+                fontStyle: "italic",
+                fontSize: "clamp(2.5rem, 6vw, 4rem)",
+                fontWeight: 400,
+              }}
+            >
+              {skills.length}{" "}
+              <span className="text-primary">skills</span> tracked
+            </h1>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 rounded-sm shrink-0"
+            onClick={() => setChatOpen(!chatOpen)}
+          >
+            <MessageSquare className="w-4 h-4" />
+            {chatOpen ? "Close Chat" : "Edit with AI"}
+          </Button>
+        </div>
         <div className="section-divider mt-5" />
       </section>
 

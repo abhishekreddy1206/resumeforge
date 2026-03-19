@@ -3,13 +3,40 @@ import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrl } from "@/lib/parsers/web";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const jobs = await prisma.job.findMany({
-      orderBy: { createdAt: "desc" },
-      include: { resumes: true },
+    const page = Math.max(1, parseInt(request.nextUrl.searchParams.get("page") || "1", 10));
+    const pageSize = Math.min(50, Math.max(1, parseInt(request.nextUrl.searchParams.get("pageSize") || "10", 10)));
+    const hasResumes = request.nextUrl.searchParams.get("hasResumes") === "true";
+    const skip = (page - 1) * pageSize;
+
+    const where = hasResumes ? { resumes: { some: {} } } : {};
+
+    const [jobs, total] = await Promise.all([
+      prisma.job.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        include: {
+          resumes: true,
+          profileVersions: {
+            orderBy: { score: "desc" },
+            take: 1,
+            select: { id: true, score: true, delta: true, resumes: { select: { id: true, format: true } } },
+          },
+        },
+        skip,
+        take: pageSize,
+      }),
+      prisma.job.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      jobs,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
     });
-    return NextResponse.json(jobs);
   } catch (error) {
     console.error("Jobs fetch error:", error);
     return NextResponse.json(

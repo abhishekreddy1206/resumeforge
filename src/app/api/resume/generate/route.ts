@@ -7,15 +7,37 @@ import { generateLatex } from "@/lib/generators/latex";
 import fs from "fs/promises";
 import path from "path";
 
-// In-memory cache for async critique results
+// In-memory cache for async critique results (with TTL cleanup)
 const critiqueCache = new Map<
   string,
-  { status: "pending" | "done" | "error"; data?: unknown; error?: string }
+  { status: "pending" | "done" | "error"; data?: unknown; error?: string; createdAt: number }
 >();
+
+// Evict stale entries older than 5 minutes
+function evictStaleCritiqueEntries() {
+  const maxAge = 5 * 60 * 1000;
+  const now = Date.now();
+  for (const [key, entry] of critiqueCache) {
+    if (now - entry.createdAt > maxAge) critiqueCache.delete(key);
+  }
+}
+
+function safeJsonParse(value: unknown, fallback: unknown = []): unknown {
+  if (typeof value !== "string") return value ?? fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function isValidProfileOverride(p: unknown): p is Record<string, unknown> {
+  return typeof p === "object" && p !== null && "name" in p && "experiences" in p;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { jobId, format = "pdf" } = await request.json();
+    const { jobId, format = "pdf", profileOverride, profileVersionId } = await request.json();
 
     if (!jobId) {
       return NextResponse.json(
@@ -55,27 +77,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    // Prepare profile data for Claude
-    const profileData = {
-      ...profile,
-      experiences: profile.experiences.map((e) => ({
-        ...e,
-        bullets: JSON.parse(e.bullets),
-        skills: e.skills ? JSON.parse(e.skills) : [],
-      })),
-      projects: profile.projects.map((p) => ({
-        ...p,
-        skills: p.skills ? JSON.parse(p.skills) : [],
-      })),
-    };
+    // Use profileOverride (from chat-based generation) or serialize from DB
+    const profileData =
+      profileOverride && isValidProfileOverride(profileOverride)
+        ? profileOverride
+        : {
+            ...profile,
+            experiences: profile.experiences.map((e) => ({
+              ...e,
+              bullets: safeJsonParse(e.bullets, []),
+              skills: safeJsonParse(e.skills, []),
+            })),
+            projects: profile.projects.map((p) => ({
+              ...p,
+              skills: safeJsonParse(p.skills, []),
+            })),
+          };
 
     const jobAnalysis = {
       title: job.title,
       company: job.company,
       description: job.description,
-      skills: job.skills ? JSON.parse(job.skills) : [],
-      requirements: job.requirements ? JSON.parse(job.requirements) : [],
-      atsKeywords: job.atsKeywords ? JSON.parse(job.atsKeywords) : {},
+      skills: safeJsonParse(job.skills, []),
+      requirements: safeJsonParse(job.requirements, []),
+      atsKeywords: safeJsonParse(job.atsKeywords, {}),
       seniority: job.seniority,
     };
 
@@ -122,20 +147,23 @@ export async function POST(request: NextRequest) {
         jobId: job.id,
         format,
         filePath: path.relative(process.cwd(), filePath),
+        ...(profileVersionId ? { profileVersionId } : {}),
       },
     });
 
     // Fire critique asynchronously — don't block the response
-    critiqueCache.set(resume.id, { status: "pending" });
+    evictStaleCritiqueEntries();
+    critiqueCache.set(resume.id, { status: "pending", createdAt: Date.now() });
     critiqueResume(tailoredContent, jobAnalysis)
       .then((critique) => {
-        critiqueCache.set(resume.id, { status: "done", data: critique });
+        critiqueCache.set(resume.id, { status: "done", data: critique, createdAt: Date.now() });
       })
       .catch((err) => {
         console.error("Async critique failed:", err);
         critiqueCache.set(resume.id, {
           status: "error",
           error: err instanceof Error ? err.message : "Critique failed",
+          createdAt: Date.now(),
         });
       });
 

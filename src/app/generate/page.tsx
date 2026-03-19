@@ -258,16 +258,17 @@ function GenerateContent() {
   const [generating, setGenerating] = useState(false);
   const [progressStep, setProgressStep] = useState(0);
   const [result, setResult] = useState<GeneratedResume | null>(null);
+  const [critiqueFailed, setCritiqueFailed] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/jobs").then((r) => r.json()),
+      fetch("/api/jobs?pageSize=50&hasResumes=true").then((r) => r.json()),
       fetch("/api/profile").then((r) => ({ ok: r.ok })),
     ])
       .then(([j, p]) => {
-        setJobs(j);
+        setJobs(j.jobs || j);
         setHasProfile(p.ok);
         if (preselectedJobId) setSelectedJobId(preselectedJobId);
       })
@@ -290,9 +291,19 @@ function GenerateContent() {
 
   // Poll for critique when result has pending critique
   useEffect(() => {
-    if (!result || result.critique || !result.id) return;
+    if (!result || result.critique || critiqueFailed || !result.id) return;
+
+    let pollCount = 0;
+    const maxPolls = 80; // ~4 minutes at 3s intervals
 
     const interval = setInterval(async () => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(interval);
+        setCritiqueFailed(true);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/resume/generate?resumeId=${result.id}`);
         if (!res.ok) return;
@@ -303,6 +314,11 @@ function GenerateContent() {
           clearInterval(interval);
         } else if (data.status === "error") {
           clearInterval(interval);
+          setCritiqueFailed(true);
+        } else if (data.status === "not_found") {
+          // Cache was cleared (e.g. server restart) — stop polling
+          clearInterval(interval);
+          setCritiqueFailed(true);
         }
       } catch {
         // retry next interval
@@ -310,13 +326,14 @@ function GenerateContent() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [result]);
+  }, [result, critiqueFailed]);
 
   async function handleGenerate() {
     if (!selectedJobId) return;
 
     setGenerating(true);
     setResult(null);
+    setCritiqueFailed(false);
     setProgressStep(0);
     try {
       const res = await fetch("/api/resume/generate", {
@@ -646,6 +663,10 @@ function GenerateContent() {
           {/* Critique */}
           {result.critique ? (
             <CritiqueSection critique={result.critique} />
+          ) : critiqueFailed ? (
+            <div className="border border-border p-5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              AI critique timed out — your resume is still ready to download above.
+            </div>
           ) : (
             <div className="border border-border p-5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />

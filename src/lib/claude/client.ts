@@ -1,6 +1,7 @@
 import { spawn, execSync } from "child_process";
 
-const TIMEOUT_MS = 120_000; // 2 minutes
+const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+const MAX_TIMEOUT_MS = 300_000; // 5 minutes
 
 // Resolve the full path to claude CLI at startup so spawned subprocesses can find it
 const CLAUDE_PATH = (() => {
@@ -42,14 +43,70 @@ export function extractJson(text: string): Record<string, unknown> {
     });
     throw new Error("Could not parse JSON from response");
   }
-  return JSON.parse(jsonMatch[1]);
+
+  try {
+    return JSON.parse(jsonMatch[1]);
+  } catch (firstErr) {
+    // Attempt to repair truncated JSON by closing open strings/braces
+    const repaired = repairJson(jsonMatch[1]);
+    if (repaired) {
+      log.warn("Repaired truncated JSON", {
+        originalLength: jsonMatch[1].length,
+      });
+      return repaired;
+    }
+    throw firstErr;
+  }
+}
+
+/**
+ * Attempt to repair truncated JSON (e.g., unterminated strings).
+ * Returns parsed object on success, null on failure.
+ */
+function repairJson(raw: string): Record<string, unknown> | null {
+  let s = raw.trim();
+
+  // If string ends abruptly inside a JSON string value, close it
+  // Count unescaped quotes to see if we're inside a string
+  let inString = false;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && inString) {
+      i++; // skip escaped char
+      continue;
+    }
+    if (s[i] === '"') inString = !inString;
+  }
+
+  if (inString) {
+    // We're inside an unterminated string — close it
+    // Remove any trailing incomplete escape sequence
+    s = s.replace(/\\$/, "");
+    s += '"';
+  }
+
+  // Close any open braces/brackets
+  const openBraces = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+  const openBrackets = (s.match(/\[/g) || []).length - (s.match(/\]/g) || []).length;
+
+  // Remove trailing comma before we close
+  s = s.replace(/,\s*$/, "");
+
+  for (let i = 0; i < openBrackets; i++) s += "]";
+  for (let i = 0; i < openBraces; i++) s += "}";
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Send a prompt to Claude via the Claude Code CLI (`claude -p`).
  * Uses your Claude Code subscription — no API credits needed.
  */
-export async function ask(prompt: string): Promise<string> {
+export async function ask(prompt: string, options?: { timeoutMs?: number }): Promise<string> {
+  const timeoutMs = Math.min(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const promptPreview = prompt.slice(0, 100).replace(/\n/g, " ");
   log.info(`Sending prompt (${prompt.length} chars): "${promptPreview}..."`);
   const startTime = Date.now();
@@ -68,10 +125,10 @@ export async function ask(prompt: string): Promise<string> {
     let stderr = "";
 
     const timer = setTimeout(() => {
-      log.error("Claude CLI timed out", { timeoutMs: TIMEOUT_MS, promptPreview });
+      log.error("Claude CLI timed out", { timeoutMs, promptPreview });
       proc.kill("SIGTERM");
-      reject(new Error("Claude CLI timed out after " + TIMEOUT_MS + "ms"));
-    }, TIMEOUT_MS);
+      reject(new Error("Claude CLI timed out after " + timeoutMs + "ms"));
+    }, timeoutMs);
 
     proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
@@ -122,9 +179,10 @@ export async function ask(prompt: string): Promise<string> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function askJson<T = Record<string, any>>(
-  prompt: string
+  prompt: string,
+  options?: { timeoutMs?: number }
 ): Promise<T> {
-  const text = await ask(prompt);
+  const text = await ask(prompt, options);
   try {
     return extractJson(text) as T;
   } catch (err) {

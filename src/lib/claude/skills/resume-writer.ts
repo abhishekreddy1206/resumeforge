@@ -126,5 +126,5 @@ Candidate Profile:
 ${JSON.stringify(profile, null, 2)}
 
 Target Job:
-${JSON.stringify(jobAnalysis, null, 2)}`);
+${JSON.stringify(jobAnalysis, null, 2)}`, { timeoutMs: 240_000 });
 }

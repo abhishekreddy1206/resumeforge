@@ -204,7 +204,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className={`space-y-6 sm:space-y-8 transition-all duration-200 ${chatOpen ? "lg:mr-[420px]" : ""}`}>
       {/* ── Header ── */}
       <div className="border-b border-border pb-10 pt-2 anim-fade-up flex items-end justify-between gap-4">
         <div>
@@ -233,13 +233,13 @@ export default function ProfilePage() {
         </div>
         {profile && (
           <Button
-            onClick={() => setChatOpen(true)}
+            onClick={() => setChatOpen(!chatOpen)}
             size="icon"
-            variant="outline"
-            className="rounded-sm h-10 w-10 border-primary/30 hover:bg-primary/10 hover:border-primary/50 transition-all shrink-0 mb-1"
+            variant={chatOpen ? "default" : "outline"}
+            className={`rounded-sm h-10 w-10 transition-all shrink-0 mb-1 ${chatOpen ? "" : "border-primary/30 hover:bg-primary/10 hover:border-primary/50"}`}
             title="Edit with AI"
           >
-            <MessageSquare className="w-4 h-4 text-primary" />
+            <MessageSquare className="w-4 h-4" />
           </Button>
         )}
       </div>

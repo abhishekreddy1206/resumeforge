@@ -72,11 +72,11 @@ export default function Dashboard() {
   useEffect(() => {
     Promise.all([
       fetch("/api/profile").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/jobs").then((r) => r.json()),
+      fetch("/api/jobs?pageSize=50").then((r) => r.json()),
     ])
       .then(([p, j]) => {
         setProfile(p);
-        setJobs(j);
+        setJobs(j.jobs || j);
         if (p) {
           fetch("/api/profile/refresh", { method: "POST" })
             .then((r) => r.json())
@@ -188,7 +188,7 @@ export default function Dashboard() {
               </a>
               {jobs.length > 0 && (
                 <a
-                  href="/generate"
+                  href="/jobs"
                   className={buttonVariants({
                     variant: "outline",
                     size: "default",
@@ -313,7 +313,7 @@ export default function Dashboard() {
               {jobs.slice(0, 5).map((job, i) => (
                 <a
                   key={job.id}
-                  href={`/generate?jobId=${job.id}`}
+                  href="/jobs"
                   className={`flex items-center justify-between py-3.5 group transition-colors hover:text-primary ${
                     i > 0 ? "border-t border-border" : ""
                   }`}

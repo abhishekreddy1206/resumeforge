@@ -12,147 +12,169 @@ function esc(text: string): string {
     .replace(/\|/g, "\\textbar{}");
 }
 
+/** Escape URL for use inside \href{} — braces and backslashes break LaTeX */
+function escUrl(url: string): string {
+  return url
+    .replace(/\\/g, "/")
+    .replace(/[{}]/g, "")
+    .replace(/%/g, "\\%")
+    .replace(/#/g, "\\#");
+}
+
 /** Convert URL to clickable hyperref, truncating display text */
 function href(url: string, display?: string): string {
-  return `\\href{${url}}{${esc(display || url)}}`;
+  return `\\href{${escUrl(url)}}{${esc(display || url)}}`;
+}
+
+/** Clean display URL */
+function cleanUrl(url: string): string {
+  return url
+    .replace(/https?:\/\/(www\.)?/, "")
+    .replace(/\/$/, "");
 }
 
 export async function generateLatex(data: ResumeData): Promise<Buffer> {
-  const lines: string[] = [];
+  const L: string[] = [];
 
-  // Preamble — clean, ATS-friendly, single-column
-  lines.push(String.raw`\documentclass[10pt,a4paper]{article}`);
-  lines.push(String.raw`\usepackage[utf8]{inputenc}`);
-  lines.push(String.raw`\usepackage[T1]{fontenc}`);
-  lines.push(String.raw`\usepackage{lmodern}`);
-  lines.push(String.raw`\usepackage[margin=0.65in]{geometry}`);
-  lines.push(String.raw`\usepackage{enumitem}`);
-  lines.push(String.raw`\usepackage{titlesec}`);
-  lines.push(String.raw`\usepackage{hyperref}`);
-  lines.push(String.raw`\usepackage{xcolor}`);
-  lines.push(String.raw`\usepackage{fontawesome5}`);
-  lines.push("");
-  lines.push(String.raw`% Colors`);
-  lines.push(String.raw`\definecolor{accent}{HTML}{2E4057}`);
-  lines.push(String.raw`\definecolor{subtle}{HTML}{555555}`);
-  lines.push("");
-  lines.push(String.raw`% Hyperref setup`);
-  lines.push(String.raw`\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,pdfborder={0 0 0}}`);
-  lines.push("");
-  lines.push(String.raw`% Section formatting`);
-  lines.push(String.raw`\titleformat{\section}{\large\bfseries\color{accent}\uppercase}{}{0em}{}[\titlerule]`);
-  lines.push(String.raw`\titlespacing*{\section}{0pt}{12pt}{6pt}`);
-  lines.push("");
-  lines.push(String.raw`% Tight lists`);
-  lines.push(String.raw`\setlist[itemize]{nosep,left=0pt..1.5em,label=\textcolor{accent}{\textbullet}}`);
-  lines.push("");
-  lines.push(String.raw`% Remove page numbers for single page`);
-  lines.push(String.raw`\pagestyle{empty}`);
-  lines.push("");
-  lines.push(String.raw`\begin{document}`);
-  lines.push("");
+  // ── Preamble ──
+  L.push(String.raw`\documentclass[10pt,letterpaper]{article}`);
+  L.push(String.raw`\usepackage[utf8]{inputenc}`);
+  L.push(String.raw`\usepackage[T1]{fontenc}`);
+  L.push(String.raw`\usepackage{lmodern}`);
+  L.push(String.raw`\usepackage[margin=0.55in,top=0.45in,bottom=0.45in]{geometry}`);
+  L.push(String.raw`\usepackage{enumitem}`);
+  L.push(String.raw`\usepackage{titlesec}`);
+  L.push(String.raw`\usepackage{hyperref}`);
+  L.push(String.raw`\usepackage{xcolor}`);
+  L.push(String.raw`\usepackage{fontawesome5}`);
+  L.push(String.raw`\usepackage{tabularx}`);
+  L.push("");
+  L.push(String.raw`% Colors`);
+  L.push(String.raw`\definecolor{primary}{HTML}{1A1A1A}`);
+  L.push(String.raw`\definecolor{secondary}{HTML}{4A4A4A}`);
+  L.push(String.raw`\definecolor{muted}{HTML}{6B7280}`);
+  L.push(String.raw`\definecolor{accent}{HTML}{2563EB}`);
+  L.push(String.raw`\definecolor{rule}{HTML}{D1D5DB}`);
+  L.push("");
+  L.push(String.raw`% Hyperref setup`);
+  L.push(String.raw`\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,pdfborder={0 0 0}}`);
+  L.push("");
+  L.push(String.raw`% Section formatting — clean with thin rule`);
+  L.push(String.raw`\titleformat{\section}{\normalsize\bfseries\color{primary}\uppercase}{}{0em}{}[\vspace{-3pt}\textcolor{rule}{\rule{\textwidth}{0.4pt}}]`);
+  L.push(String.raw`\titlespacing*{\section}{0pt}{10pt}{4pt}`);
+  L.push("");
+  L.push(String.raw`% Tight lists`);
+  L.push(String.raw`\setlist[itemize]{nosep,left=0pt..1.2em,label=\textcolor{muted}{\textbullet},itemsep=1pt}`);
+  L.push("");
+  L.push(String.raw`% No page numbers`);
+  L.push(String.raw`\pagestyle{empty}`);
+  L.push("");
+  L.push(String.raw`% Paragraph spacing`);
+  L.push(String.raw`\setlength{\parindent}{0pt}`);
+  L.push(String.raw`\setlength{\parskip}{0pt}`);
+  L.push("");
+  L.push(String.raw`\begin{document}`);
+  L.push("");
 
-  // Header — name centered, contact row below
-  lines.push(String.raw`\begin{center}`);
-  lines.push(String.raw`  {\LARGE\bfseries ${esc(data.name)}}\\[4pt]`);
+  // ── Header ──
+  L.push(String.raw`\begin{center}`);
+  L.push(String.raw`  {\Large\bfseries\color{primary} ${esc(data.name)}}\\[5pt]`);
 
   const contactParts: string[] = [];
   if (data.email) contactParts.push(`\\faEnvelope\\ ${esc(data.email)}`);
   if (data.phone) contactParts.push(`\\faPhone\\ ${esc(data.phone)}`);
   if (data.location) contactParts.push(`\\faMapMarker*\\ ${esc(data.location)}`);
   if (data.linkedin)
-    contactParts.push(
-      `\\faLinkedin\\ ${href(data.linkedin, data.linkedin.replace(/https?:\/\/(www\.)?linkedin\.com\/in\//, "").replace(/\/$/, ""))}`
-    );
+    contactParts.push(`\\faLinkedin\\ ${href(data.linkedin, cleanUrl(data.linkedin))}`);
   if (data.github)
-    contactParts.push(
-      `\\faGithub\\ ${href(data.github, data.github.replace(/https?:\/\/(www\.)?github\.com\//, "").replace(/\/$/, ""))}`
-    );
+    contactParts.push(`\\faGithub\\ ${href(data.github, cleanUrl(data.github))}`);
   if (data.website)
-    contactParts.push(
-      `\\faGlobe\\ ${href(data.website, data.website.replace(/https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}`
-    );
+    contactParts.push(`\\faGlobe\\ ${href(data.website, cleanUrl(data.website))}`);
 
   if (contactParts.length > 0) {
-    lines.push(`  {\\small\\color{subtle} ${contactParts.join(" \\enspace\\textbar\\enspace ")}}\\\\`);
+    L.push(`  {\\small\\color{muted} ${contactParts.join(" \\enspace{\\color{rule}\\textbar}\\enspace ")}}`);
   }
-  lines.push(String.raw`\end{center}`);
-  lines.push(String.raw`\vspace{-8pt}`);
-  lines.push("");
+  L.push(String.raw`\end{center}`);
+  L.push(String.raw`\vspace{-2pt}`);
+  L.push(String.raw`{\color{primary}\hrule height 1pt}`);
+  L.push(String.raw`\vspace{4pt}`);
+  L.push("");
 
-  // Summary
+  // ── Summary ──
   if (data.summary) {
-    lines.push(String.raw`\section{Summary}`);
-    lines.push(esc(data.summary));
-    lines.push("");
+    L.push(String.raw`\section*{\normalsize\textbf{SUMMARY}}`);
+    L.push(String.raw`\vspace{-3pt}\textcolor{rule}{\rule{\textwidth}{0.4pt}}\vspace{3pt}`);
+    L.push(String.raw`{\color{secondary} ${esc(data.summary)}}`);
+    L.push("");
   }
 
-  // Experience
+  // ── Experience ──
   if (data.experiences && data.experiences.length > 0) {
-    lines.push(String.raw`\section{Experience}`);
+    L.push(String.raw`\section{Experience}`);
     for (const exp of data.experiences) {
-      lines.push(String.raw`\textbf{${esc(exp.title)}} \hfill {\small\color{subtle} ${esc(exp.startDate)} -- ${esc(exp.endDate || "Present")}}\\`);
-      lines.push(String.raw`\textit{${esc(exp.company)}}\\[-4pt]`);
+      L.push(String.raw`\textbf{${esc(exp.title)}} \enspace{\color{muted}\textbar}\enspace \textit{${esc(exp.company)}} \hfill {\small\color{muted} ${esc(exp.startDate)} -- ${esc(exp.endDate || "Present")}}\\[-2pt]`);
       if (exp.bullets && exp.bullets.length > 0) {
-        lines.push(String.raw`\begin{itemize}`);
+        L.push(String.raw`\begin{itemize}`);
         for (const bullet of exp.bullets) {
-          lines.push(`  \\item ${esc(bullet)}`);
+          L.push(`  \\item ${esc(bullet)}`);
         }
-        lines.push(String.raw`\end{itemize}`);
+        L.push(String.raw`\end{itemize}`);
       }
-      lines.push(String.raw`\vspace{2pt}`);
+      L.push(String.raw`\vspace{3pt}`);
     }
-    lines.push("");
+    L.push("");
   }
 
-  // Projects
+  // ── Projects ──
   if (data.projects && data.projects.length > 0) {
-    lines.push(String.raw`\section{Projects}`);
+    L.push(String.raw`\section{Projects}`);
     for (const proj of data.projects) {
       const projTitle = proj.url
         ? `\\textbf{${href(proj.url, proj.name)}}`
         : `\\textbf{${esc(proj.name)}}`;
-      lines.push(`${projTitle}\\\\`);
+      L.push(`${projTitle}\\\\[-2pt]`);
       if (proj.description) {
-        lines.push(String.raw`\begin{itemize}`);
-        lines.push(`  \\item ${esc(proj.description)}`);
-        lines.push(String.raw`\end{itemize}`);
+        L.push(String.raw`\begin{itemize}`);
+        L.push(`  \\item ${esc(proj.description)}`);
+        L.push(String.raw`\end{itemize}`);
       }
-      lines.push(String.raw`\vspace{2pt}`);
+      L.push(String.raw`\vspace{2pt}`);
     }
-    lines.push("");
+    L.push("");
   }
 
-  // Education
+  // ── Education ──
   if (data.educations && data.educations.length > 0) {
-    lines.push(String.raw`\section{Education}`);
+    L.push(String.raw`\section{Education}`);
     for (const edu of data.educations) {
       const degreeText = edu.field
         ? `${edu.degree}, ${edu.field}`
         : edu.degree;
-      lines.push(String.raw`\textbf{${esc(degreeText)}} \hfill {\small\color{subtle} ${esc(edu.endDate || "")}}\\`);
-      lines.push(String.raw`\textit{${esc(edu.school)}}${edu.gpa ? ` \\enspace\\textbar\\enspace GPA: ${esc(edu.gpa)}` : ""}\\[-4pt]`);
-      lines.push(String.raw`\vspace{2pt}`);
+      L.push(String.raw`\textbf{${esc(degreeText)}} \hfill {\small\color{muted} ${esc(edu.endDate || "")}}\\[-2pt]`);
+      const gpaText = edu.gpa
+        ? ` \\enspace{\\color{muted}\\textbar}\\enspace {\\small\\color{muted} GPA: ${esc(edu.gpa)}}`
+        : "";
+      L.push(String.raw`\textit{\color{secondary} ${esc(edu.school)}}${gpaText}\\[2pt]`);
     }
-    lines.push("");
+    L.push("");
   }
 
-  // Skills — grouped by category on one line each
+  // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
-    lines.push(String.raw`\section{Skills}`);
+    L.push(String.raw`\section{Technical Skills}`);
     for (const [category, skillList] of Object.entries(data.skills)) {
       if (skillList.length > 0) {
         const label = category.charAt(0).toUpperCase() + category.slice(1);
-        lines.push(
-          `\\textbf{${esc(label)}:} ${skillList.map(esc).join(", ")}\\\\[2pt]`
+        L.push(
+          `\\textbf{${esc(label)}:} {\\color{secondary} ${skillList.map(esc).join(", ")}}\\\\[2pt]`
         );
       }
     }
-    lines.push("");
+    L.push("");
   }
 
-  lines.push(String.raw`\end{document}`);
+  L.push(String.raw`\end{document}`);
 
-  const latex = lines.join("\n");
+  const latex = L.join("\n");
   return Buffer.from(latex, "utf-8");
 }

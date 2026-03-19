@@ -2,9 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { matchProfileToJob } from "@/lib/claude";
 
+function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
+  if (typeof value !== "string") return value ?? fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { jobId } = await request.json();
+    const { jobId, force } = await request.json();
 
     if (!jobId) {
       return NextResponse.json(
@@ -39,6 +48,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Return cached match if it's still fresh (profile hasn't changed since)
+    if (
+      !force &&
+      job.matchResult &&
+      job.matchedAt &&
+      job.matchedAt >= profile.updatedAt
+    ) {
+      const cached = safeJsonParse(job.matchResult);
+      if (cached) {
+        return NextResponse.json({ jobId, ...cached, cached: true });
+      }
+    }
+
     // Prepare profile data (parse JSON fields)
     const profileData = {
       name: profile.name,
@@ -48,8 +70,8 @@ export async function POST(request: NextRequest) {
         title: e.title,
         startDate: e.startDate,
         endDate: e.endDate,
-        bullets: JSON.parse(e.bullets),
-        skills: e.skills ? JSON.parse(e.skills) : [],
+        bullets: safeJsonParse(e.bullets, []),
+        skills: safeJsonParse(e.skills, []),
       })),
       educations: profile.educations.map((e) => ({
         school: e.school,
@@ -59,7 +81,7 @@ export async function POST(request: NextRequest) {
       projects: profile.projects.map((p) => ({
         name: p.name,
         description: p.description,
-        skills: p.skills ? JSON.parse(p.skills) : [],
+        skills: safeJsonParse(p.skills, []),
       })),
       skills: profile.skills.map((s) => ({
         name: s.name,
@@ -71,13 +93,22 @@ export async function POST(request: NextRequest) {
     const jobAnalysis = {
       title: job.title,
       company: job.company,
-      skills: job.skills ? JSON.parse(job.skills) : [],
-      requirements: job.requirements ? JSON.parse(job.requirements) : [],
-      atsKeywords: job.atsKeywords ? JSON.parse(job.atsKeywords) : {},
+      skills: safeJsonParse(job.skills, []),
+      requirements: safeJsonParse(job.requirements, []),
+      atsKeywords: safeJsonParse(job.atsKeywords, {}),
       seniority: job.seniority,
     };
 
     const match = await matchProfileToJob(profileData, jobAnalysis);
+
+    // Persist the match result
+    await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        matchResult: JSON.stringify(match),
+        matchedAt: new Date(),
+      },
+    });
 
     return NextResponse.json({ jobId, ...match });
   } catch (error) {

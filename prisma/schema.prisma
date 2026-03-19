@@ -27,7 +27,8 @@ model Profile {
   educations  Education[]
   projects    Project[]
   skills      Skill[]
-  resumes     Resume[]
+  resumes          Resume[]
+  profileVersions  ProfileVersion[]
 }
 
 model Experience {
@@ -90,19 +91,52 @@ model Job {
   atsKeywords  String?  // JSON object of {technical, domain, tools, softSkills}
   seniority    String?  // junior|mid|senior|staff|principal
   sponsorship  String?  // available|unavailable|unspecified — visa/work authorization status
+  matchResult  String?  // JSON — cached profile match analysis
+  matchedAt    DateTime? // when match was last computed (stale if profile.updatedAt > this)
   createdAt    DateTime @default(now())
 
-  resumes Resume[]
+  resumes         Resume[]
+  profileVersions ProfileVersion[]
+  chatSessions    ChatSession[]
 }
 
-model Resume {
+model ProfileVersion {
   id        String   @id @default(cuid())
   profileId String
   jobId     String
-  format    String   // pdf, docx
-  filePath  String
+  snapshot  String   // JSON — full profile data at time of save
+  score     Float    // ATS match score when saved
+  delta     Float?   // score improvement over original
+  label     String?  // optional user label e.g. "Optimized for Google SWE"
   createdAt DateTime @default(now())
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resumes Resume[]
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  type      String   // profile | job | skills
+  jobId     String?
+  title     String?
+  messages  String   // JSON array of {role, content, ...metadata}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model Resume {
+  id               String   @id @default(cuid())
+  profileId        String
+  jobId            String
+  profileVersionId String?
+  format           String   // pdf, docx, latex
+  filePath         String
+  createdAt        DateTime @default(now())
+
+  profile        Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  job            Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profileVersion ProfileVersion? @relation(fields: [profileVersionId], references: [id])
 }

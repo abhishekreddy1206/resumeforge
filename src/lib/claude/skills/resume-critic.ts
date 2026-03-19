@@ -124,5 +124,5 @@ Resume content:
 ${JSON.stringify(resume, null, 2)}
 
 Target Job:
-${JSON.stringify(jobAnalysis, null, 2)}`);
+${JSON.stringify(jobAnalysis, null, 2)}`, { timeoutMs: 240_000 });
 }

@@ -6,7 +6,7 @@ import {
   User,
   Briefcase,
   Sparkles,
-  FileText,
+  History,
 } from "lucide-react";
 
 const navLinks = [
@@ -14,7 +14,7 @@ const navLinks = [
   { href: "/profile", label: "Profile", icon: User },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/skills", label: "Skills", icon: Sparkles },
-  { href: "/generate", label: "Generate", icon: FileText },
+  { href: "/versions", label: "Versions", icon: History },
 ];
 
 const monoStyle: React.CSSProperties = {

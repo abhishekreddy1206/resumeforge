@@ -10,6 +10,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Profile Chat** — Conversational profile editor: describe changes in plain English and preview/apply them without re-uploading your resume.
 - **Job Matching** — AI scores compatibility between your profile and a job, identifying strengths, gaps, and recommended improvements.
 - **Resume Critique** — AI critiques a generated resume against the job description and suggests targeted improvements.
+- **Job Chat** — Per-job resume advisory chat: get improvement tips, apply them to your profile, rescore, and save optimized profile versions when your ATS score improves.
+- **Profile Versions** — Save and browse optimized profile snapshots with ATS scores; generate resumes directly from any saved version.
 - **Profile Enrichment** — Import data from GitHub (repos, languages), StackOverflow (top tags), or LinkedIn (paste text) to strengthen your profile.
 - **Skills Extraction** — Skills are automatically extracted and categorized from your resume, GitHub, StackOverflow, and LinkedIn sources.
 - **Multiple Formats** — Export as PDF (styled with react-pdf), DOCX (ATS-safe formatting with tab stops, no tables), or LaTeX (high-quality typesetting).
@@ -64,18 +66,21 @@ src/
 ├── app/
 │   ├── page.tsx                    # Dashboard
 │   ├── profile/page.tsx            # Upload resume, enrich profile, chat editor
-│   ├── jobs/page.tsx               # Add/view job descriptions, match scoring
+│   ├── jobs/page.tsx               # Add/view job descriptions, match scoring, job chat
 │   ├── skills/page.tsx             # Skills dashboard
 │   ├── generate/page.tsx           # Generate tailored resumes
+│   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
 │   └── api/
 │       ├── profile/
 │       │   ├── route.ts            # Profile CRUD + upload
 │       │   ├── enrich/             # Enrich from GitHub/StackOverflow/LinkedIn
 │       │   ├── refresh/            # Re-parse profile from stored resume
-│       │   └── chat/               # Conversational profile editor (POST + apply)
+│       │   ├── chat/               # Conversational profile editor (POST + apply)
+│       │   └── versions/           # Profile version CRUD (GET/POST, GET/DELETE by id)
 │       ├── jobs/
 │       │   ├── route.ts            # Job CRUD + analysis
-│       │   └── match/              # Profile-to-job compatibility scoring
+│       │   ├── match/              # Profile-to-job compatibility scoring
+│       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
 │       ├── resume/                 # Resume generation + download
 │       └── skills/                 # Skills listing
 ├── lib/
@@ -89,7 +94,9 @@ src/
 │   │       ├── resume-critic.ts   # Critique resume against job description
 │   │       ├── profile-enricher.ts # Merge external source data into profile
 │   │       ├── profile-editor.ts  # Conversational profile editing via chat
-│   │       └── profile-matcher.ts # Score profile-job compatibility
+│   │       ├── profile-matcher.ts # Score profile-job compatibility
+│   │       ├── resume-advisor.ts  # Per-job resume improvement advice
+│   │       └── resume-tip-applier.ts # Apply AI-suggested tips to profile data
 │   ├── parsers/
 │   │   ├── pdf.ts                 # PDF text extraction
 │   │   ├── docx.ts                # DOCX text extraction
@@ -102,6 +109,7 @@ src/
 ├── components/
 │   ├── nav-links.tsx              # App navigation
 │   ├── profile-chat-panel.tsx     # Conversational profile editor UI
+│   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
 │   └── ui/                        # shadcn/ui components
 └── generated/prisma/               # Prisma generated client
 ```
@@ -156,8 +164,9 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 | `Education` | Degrees, schools, GPA |
 | `Project` | Portfolio projects with skills |
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
-| `Job` | Job title, company, description, required skills, sponsorship flag |
-| `Resume` | Generated resume record with file path and format |
+| `Job` | Job title, company, description, required skills, sponsorship flag, cached match result |
+| `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
+| `Resume` | Generated resume record with file path, format, and optional profile version link |
 
 ## Workflow
 
@@ -165,5 +174,7 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 2. **Enrich** (optional) — GitHub API / StackOverflow API / LinkedIn paste, Claude merges into Profile with additional skills
 3. **Chat** (optional) — Describe profile changes in plain English; preview and apply edits conversationally
 4. **Add Job** — URL scraped or text pasted, Claude extracts requirements
-5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating
-6. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX/LaTeX created, saved to `resumes/{company}/{role}/`
+5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating (results cached on Job)
+6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
+7. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX/LaTeX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
+8. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version

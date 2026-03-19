@@ -23,38 +23,47 @@ import {
   Clock,
   Trash2,
 } from "lucide-react";
-import { computeDetailedDiff, serializeProfile } from "@/lib/utils/profile-diff";
-import { ProfileDiffView } from "@/components/diff-view";
+import { computeSkillsDiff } from "@/lib/utils/profile-diff";
+import { SkillsDiffView } from "@/components/diff-view";
+
+interface SkillItem {
+  id?: string;
+  name: string;
+  category: string;
+}
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updatedProfile?: Record<string, any>;
+  updatedSkills?: SkillItem[];
 }
 
-interface ProfileChatPanelProps {
+interface ChatSessionMeta {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+interface SkillsChatPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  profile: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onProfileUpdate: (profile: any) => void;
+  onSkillsUpdated: () => void;
+  currentSkills?: SkillItem[];
 }
 
-export function ProfileChatPanel({
+export function SkillsChatPanel({
   open,
   onOpenChange,
-  profile,
-  onProfileUpdate,
-}: ProfileChatPanelProps) {
+  onSkillsUpdated,
+  currentSkills = [],
+}: SkillsChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [isMobile, setIsMobile] = useState(true);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
-  const [savedSessions, setSavedSessions] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
+  const [savedSessions, setSavedSessions] = useState<ChatSessionMeta[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,9 +87,10 @@ export function ProfileChatPanel({
     }
   }, [open]);
 
+  // Load saved sessions list
   useEffect(() => {
     if (open) {
-      fetch("/api/chats?type=profile")
+      fetch("/api/chats?type=skills")
         .then((r) => r.json())
         .then((data) => setSavedSessions(data.sessions || []))
         .catch(() => {});
@@ -93,9 +103,15 @@ export function ProfileChatPanel({
   const saveSession = useCallback(async (msgs?: ChatMessage[]) => {
     const toSave = msgs || messages;
     if (toSave.length === 0) return;
-    const serialized = toSave.map((m) => ({ role: m.role, content: m.content }));
+    const serialized = toSave.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
     const firstUserMsg = toSave.find((m) => m.role === "user");
-    const title = firstUserMsg ? firstUserMsg.content.slice(0, 60) : "Profile chat";
+    const title = firstUserMsg
+      ? firstUserMsg.content.slice(0, 60)
+      : "Skills chat";
+
     try {
       const currentId = chatSessionIdRef.current;
       if (currentId) {
@@ -108,7 +124,11 @@ export function ProfileChatPanel({
         const res = await fetch("/api/chats", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "profile", title, messages: serialized }),
+          body: JSON.stringify({
+            type: "skills",
+            title,
+            messages: serialized,
+          }),
         });
         if (res.ok) {
           const session = await res.json();
@@ -117,7 +137,7 @@ export function ProfileChatPanel({
         }
       }
     } catch (err) {
-      console.error("[profile-chat] save session failed:", err);
+      console.error("[skills-chat] save session failed:", err);
     }
   }, [messages]);
 
@@ -137,28 +157,39 @@ export function ProfileChatPanel({
   async function loadSession(id: string) {
     try {
       const res = await fetch(`/api/chats/${id}`);
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
-      setMessages((data.messages || []).map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })));
+      setMessages(
+        (data.messages || []).map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }))
+      );
       setChatSessionId(id);
       setShowHistory(false);
-    } catch { toast.error("Failed to load chat"); }
+    } catch {
+      toast.error("Failed to load chat history");
+    }
   }
 
   async function deleteSession(id: string) {
     try {
       await fetch(`/api/chats/${id}`, { method: "DELETE" });
       setSavedSessions((prev) => prev.filter((s) => s.id !== id));
-      if (chatSessionId === id) { setChatSessionId(null); setMessages([]); }
-    } catch { toast.error("Failed to delete chat"); }
+      if (chatSessionId === id) {
+        setChatSessionId(null);
+        setMessages([]);
+      }
+    } catch {
+      toast.error("Failed to delete chat");
+    }
   }
 
   function handleNewChat() {
     if (messages.length > 0) saveSession();
-    setMessages([]); setChatSessionId(null); setShowHistory(false);
+    setMessages([]);
+    setChatSessionId(null);
+    setShowHistory(false);
   }
 
   async function handleSend() {
@@ -175,14 +206,10 @@ export function ProfileChatPanel({
         content: m.content,
       }));
 
-      const res = await fetch("/api/profile/chat", {
+      const res = await fetch("/api/skills/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage,
-          profileData: serializeProfile(profile),
-          history,
-        }),
+        body: JSON.stringify({ message: userMessage, history }),
       });
 
       if (!res.ok) {
@@ -196,7 +223,7 @@ export function ProfileChatPanel({
         {
           role: "assistant",
           content: data.reply,
-          updatedProfile: data.updatedProfile,
+          updatedSkills: data.updatedSkills,
         },
       ]);
     } catch (err) {
@@ -215,14 +242,13 @@ export function ProfileChatPanel({
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function handleApply(updatedProfile: Record<string, any>) {
+  async function handleApply(updatedSkills: SkillItem[]) {
     setApplying(true);
     try {
-      const res = await fetch("/api/profile/chat/apply", {
+      const res = await fetch("/api/skills/chat/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedProfile),
+        body: JSON.stringify({ skills: updatedSkills }),
       });
 
       if (!res.ok) {
@@ -230,14 +256,17 @@ export function ProfileChatPanel({
         throw new Error(err.error);
       }
 
-      const savedProfile = await res.json();
-      onProfileUpdate(savedProfile);
-      toast.success("Profile updated!");
+      onSkillsUpdated();
+      toast.success("Skills updated!");
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.updatedProfile === updatedProfile
-            ? { ...m, updatedProfile: undefined, content: m.content + " (Applied)" }
+          m.updatedSkills === updatedSkills
+            ? {
+                ...m,
+                updatedSkills: undefined,
+                content: m.content + " (Applied)",
+              }
             : m
         )
       );
@@ -250,12 +279,15 @@ export function ProfileChatPanel({
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleDiscard(updatedProfile: Record<string, any>) {
+  function handleDiscard(updatedSkills: SkillItem[]) {
     setMessages((prev) =>
       prev.map((m) =>
-        m.updatedProfile === updatedProfile
-          ? { ...m, updatedProfile: undefined, content: m.content + " (Discarded)" }
+        m.updatedSkills === updatedSkills
+          ? {
+              ...m,
+              updatedSkills: undefined,
+              content: m.content + " (Discarded)",
+            }
           : m
       )
     );
@@ -266,17 +298,28 @@ export function ProfileChatPanel({
       {/* Header */}
       <div className="px-5 py-4 border-b border-border/50 shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <h3 className="text-base font-medium">Edit Profile with AI</h3>
+          <h3 className="text-base font-medium">Edit Skills with AI</h3>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowHistory(!showHistory)} title="Chat history">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setShowHistory(!showHistory)}
+            title="Chat history"
+          >
             <Clock className="w-4 h-4" />
           </Button>
           {!isMobile && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onOpenChange(false)}
+            >
               <XIcon className="w-4 h-4" />
             </Button>
           )}
@@ -287,22 +330,53 @@ export function ProfileChatPanel({
       {showHistory && (
         <div className="border-b border-border/50 px-4 py-3 space-y-2 bg-muted/30 max-h-[200px] overflow-y-auto">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saved Chats</p>
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleNewChat}>New Chat</Button>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Saved Chats
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={handleNewChat}
+            >
+              New Chat
+            </Button>
           </div>
           {savedSessions.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">No saved chats yet</p>
-          ) : savedSessions.map((s) => (
-            <div key={s.id} className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-muted/60 ${chatSessionId === s.id ? "bg-muted" : ""}`}>
-              <button className="flex-1 text-left min-w-0" onClick={() => loadSession(s.id)}>
-                <p className="text-xs truncate">{s.title}</p>
-                <p className="text-[10px] text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</p>
-              </button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}>
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </div>
-          ))}
+            <p className="text-xs text-muted-foreground py-2">
+              No saved chats yet
+            </p>
+          ) : (
+            savedSessions.map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-muted/60 ${
+                  chatSessionId === s.id ? "bg-muted" : ""
+                }`}
+              >
+                <button
+                  className="flex-1 text-left min-w-0"
+                  onClick={() => loadSession(s.id)}
+                >
+                  <p className="text-xs truncate">{s.title}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(s.updatedAt).toLocaleDateString()}
+                  </p>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSession(s.id);
+                  }}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
+            ))
+          )}
         </div>
       )}
 
@@ -315,11 +389,10 @@ export function ProfileChatPanel({
                 <MessageSquare className="w-6 h-6 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium">Start editing</p>
+                <p className="text-sm font-medium">Manage your skills</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-[260px] mx-auto leading-relaxed">
-                  Tell me what to change in your profile. Try things like
-                  &ldquo;Rewrite my summary for backend roles&rdquo; or
-                  &ldquo;Add Docker to my skills&rdquo;
+                  Tell me what skills to add, remove, or recategorize. Try
+                  &ldquo;Add Kubernetes and Terraform to my cloud skills&rdquo;
                 </p>
               </div>
             </div>
@@ -331,7 +404,7 @@ export function ProfileChatPanel({
                 className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}
               >
                 {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0 mt-0.5">
                     <Sparkles className="w-3.5 h-3.5 text-white" />
                   </div>
                 )}
@@ -353,26 +426,25 @@ export function ProfileChatPanel({
                 )}
               </div>
 
-              {/* Changes card with diff */}
-              {msg.updatedProfile && (
+              {/* Skill changes card with diff */}
+              {msg.updatedSkills && (
                 <div className="ml-10 mr-4">
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30 p-3.5 space-y-2.5">
-                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-                      Changes Detected
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30 p-3.5 space-y-2.5">
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                      Skill Changes
                     </p>
-                    <ProfileDiffView
-                      diffs={computeDetailedDiff(
-                        serializeProfile(profile),
-                        msg.updatedProfile
+                    <SkillsDiffView
+                      diff={computeSkillsDiff(
+                        currentSkills.map((s) => ({ name: s.name, category: s.category })),
+                        msg.updatedSkills.map((s) => ({ name: s.name, category: s.category }))
                       )}
-                      accentColor="emerald"
                     />
                     <div className="flex gap-2 pt-1">
                       <Button
                         size="sm"
-                        onClick={() => handleApply(msg.updatedProfile!)}
+                        onClick={() => handleApply(msg.updatedSkills!)}
                         disabled={applying}
-                        className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                        className="h-7 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700"
                       >
                         {applying ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
@@ -384,7 +456,7 @@ export function ProfileChatPanel({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleDiscard(msg.updatedProfile!)}
+                        onClick={() => handleDiscard(msg.updatedSkills!)}
                         className="h-7 text-xs gap-1.5"
                       >
                         <X className="w-3 h-3" />
@@ -397,10 +469,9 @@ export function ProfileChatPanel({
             </div>
           ))}
 
-          {/* Loading indicator */}
           {isLoading && (
             <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
                 <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
               </div>
               <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3">
@@ -428,7 +499,7 @@ export function ProfileChatPanel({
                 handleSend();
               }
             }}
-            placeholder="e.g., Add Python to my skills..."
+            placeholder="e.g., Add React Native to my frameworks..."
             rows={1}
             className="min-h-[40px] max-h-[120px] resize-none text-sm rounded-xl"
           />
@@ -445,7 +516,6 @@ export function ProfileChatPanel({
     </>
   );
 
-  // Mobile: Sheet overlay
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -455,7 +525,7 @@ export function ProfileChatPanel({
           showCloseButton={true}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Edit Profile with AI</SheetTitle>
+            <SheetTitle>Edit Skills with AI</SheetTitle>
           </SheetHeader>
           {chatBody}
         </SheetContent>
@@ -463,7 +533,6 @@ export function ProfileChatPanel({
     );
   }
 
-  // Desktop: fixed sticky sidebar
   if (!open) return null;
 
   return (
