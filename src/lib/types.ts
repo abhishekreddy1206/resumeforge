@@ -33,6 +33,7 @@ export interface ResumeData {
     date?: string;
     url?: string;
     doi?: string;
+    description?: string;
   }>;
   certifications?: Array<{
     name: string;
@@ -41,5 +42,12 @@ export interface ResumeData {
     expiryDate?: string;
     credentialId?: string;
     url?: string;
+  }>;
+  recommendations?: Array<{
+    recommenderName: string;
+    recommenderTitle?: string;
+    relationship?: string;
+    text: string;
+    linkedinUrl?: string;
   }>;
 }

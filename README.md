@@ -8,12 +8,17 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Job Analysis** — Paste a job URL or description. AI identifies required skills, seniority level, and key requirements.
 - **Tailored Resume Generation** — AI creates ATS-optimized resumes with action verbs, quantified impact, and keyword matching for each specific job.
 - **Profile Chat** — Conversational profile editor: describe changes in plain English and preview/apply them without re-uploading your resume.
+- **Skills Chat** — Conversational skills editor: add, remove, or recategorize skills through natural language instructions.
 - **Job Matching** — AI scores compatibility between your profile and a job, identifying strengths, gaps, and recommended improvements.
 - **Resume Critique** — AI critiques a generated resume against the job description and suggests targeted improvements.
 - **Job Chat** — Per-job resume advisory chat: get improvement tips, apply them to your profile, rescore, and save optimized profile versions when your ATS score improves.
+- **Profile Enhancement** — AI analyzes your optimization history across jobs to identify universal improvements that broadly strengthen your profile.
 - **Profile Versions** — Save and browse optimized profile snapshots with ATS scores; generate resumes directly from any saved version.
 - **Profile Enrichment** — Import data from GitHub (repos, languages), StackOverflow (top tags), or LinkedIn (paste text) to strengthen your profile.
 - **Skills Extraction** — Skills are automatically extracted and categorized from your resume, GitHub, StackOverflow, and LinkedIn sources.
+- **Publications & Certifications** — Store and display academic publications (with DOI) and professional certifications (with expiry and credential ID) on your profile.
+- **Recommendations** — Store professional recommendations with recommender name, title, relationship, and optional LinkedIn URL.
+- **Batch Job Import** — Paste multiple job URLs at once; jobs are scraped and analyzed in parallel.
 - **Multiple Formats** — Export as PDF (styled with react-pdf), DOCX (ATS-safe formatting with tab stops, no tables), or LaTeX (high-quality typesetting).
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
 
@@ -72,17 +77,29 @@ src/
 │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
 │   └── api/
 │       ├── profile/
-│       │   ├── route.ts            # Profile CRUD + upload
+│       │   ├── route.ts            # Profile CRUD
+│       │   ├── upload/             # Resume file upload + parse
 │       │   ├── enrich/             # Enrich from GitHub/StackOverflow/LinkedIn
+│       │   ├── enhance/            # AI enhancement suggestions from version history
 │       │   ├── refresh/            # Re-parse profile from stored resume
 │       │   ├── chat/               # Conversational profile editor (POST + apply)
+│       │   ├── publications/       # Publications CRUD
+│       │   │   └── fetch/          # Scrape + AI-summarize a publication from URL
+│       │   ├── certifications/     # Certifications CRUD
+│       │   │   └── parse/          # AI parse of certification text
+│       │   ├── recommendations/    # Recommendations CRUD
+│       │   │   └── parse/          # AI parse of recommendation text
 │       │   └── versions/           # Profile version CRUD (GET/POST, GET/DELETE by id)
 │       ├── jobs/
 │       │   ├── route.ts            # Job CRUD + analysis
 │       │   ├── match/              # Profile-to-job compatibility scoring
+│       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
 │       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
-│       ├── resume/                 # Resume generation + download
-│       └── skills/                 # Skills listing
+│       ├── resume/                 # Resume generation + download + critique
+│       ├── skills/
+│       │   ├── route.ts            # Skills listing
+│       │   └── chat/               # Conversational skills editor (POST + apply)
+│       └── chats/                  # Chat session CRUD (list/get/delete by id)
 ├── lib/
 │   ├── claude/                     # AI modules
 │   │   ├── client.ts              # Anthropic SDK wrapper (ask / askJson helpers)
@@ -94,9 +111,13 @@ src/
 │   │       ├── resume-critic.ts   # Critique resume against job description
 │   │       ├── profile-enricher.ts # Merge external source data into profile
 │   │       ├── profile-editor.ts  # Conversational profile editing via chat
+│   │       ├── profile-enhancer.ts # AI suggestions from optimization history
 │   │       ├── profile-matcher.ts # Score profile-job compatibility
 │   │       ├── resume-advisor.ts  # Per-job resume improvement advice
-│   │       └── resume-tip-applier.ts # Apply AI-suggested tips to profile data
+│   │       ├── resume-tip-applier.ts # Apply AI-suggested tips to profile data
+│   │       ├── skills-editor.ts   # Conversational skills editing via chat
+│   │       ├── certification-parser.ts # AI parse of certification text
+│   │       └── recommendation-parser.ts # AI parse of recommendation text
 │   ├── parsers/
 │   │   ├── pdf.ts                 # PDF text extraction
 │   │   ├── docx.ts                # DOCX text extraction
@@ -110,6 +131,8 @@ src/
 │   ├── nav-links.tsx              # App navigation
 │   ├── profile-chat-panel.tsx     # Conversational profile editor UI
 │   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
+│   ├── skills-chat-panel.tsx      # Conversational skills editor UI
+│   ├── diff-view.tsx              # Side-by-side diff view for profile changes
 │   └── ui/                        # shadcn/ui components
 └── generated/prisma/               # Prisma generated client
 ```
@@ -159,13 +182,16 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 
 | Model | Description |
 |-------|-------------|
-| `Profile` | Name, contact info, summary, links |
+| `Profile` | Name, contact info (including multiple emails), summary, links, recommendations (JSON) |
 | `Experience` | Work history with bullets and skills (JSON) |
 | `Education` | Degrees, schools, GPA |
 | `Project` | Portfolio projects with skills |
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
+| `Publication` | Academic publications with publisher, date, URL, DOI, and description |
+| `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
 | `Job` | Job title, company, description, required skills, sponsorship flag, cached match result |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
+| `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
 | `Resume` | Generated resume record with file path, format, and optional profile version link |
 
 ## Workflow

@@ -32,16 +32,29 @@ export async function scrapeJobUrl(url: string): Promise<string> {
 
   console.log(`[web-scraper] Fetching URL: ${url}`);
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-    redirect: "follow",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // Validate the final URL after redirects to prevent SSRF bypass
+  if (response.url && response.url !== url) {
+    validateExternalUrl(response.url);
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch URL (HTTP ${response.status}). The site may block automated requests.`);
@@ -166,6 +179,112 @@ export async function scrapeJobUrl(url: string): Promise<string> {
   }
 
   return bodyText.slice(0, 15000);
+}
+
+export async function scrapeArticleUrl(url: string): Promise<{
+  title: string;
+  text: string;
+  publisher?: string;
+  date?: string;
+  doi?: string;
+}> {
+  validateExternalUrl(url);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // Validate the final URL after redirects to prevent SSRF bypass
+  if (response.url && response.url !== url) {
+    validateExternalUrl(response.url);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch URL (HTTP ${response.status})`);
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+
+  // Extract title
+  const title =
+    $("meta[property='og:title']").attr("content") ||
+    $("meta[name='citation_title']").attr("content") ||
+    $("h1").first().text().trim() ||
+    $("title").text().trim() ||
+    "Untitled";
+
+  // Extract publisher / site name
+  const publisher =
+    $("meta[property='og:site_name']").attr("content") ||
+    $("meta[name='citation_journal_title']").attr("content") ||
+    $("meta[name='publisher']").attr("content") ||
+    undefined;
+
+  // Extract date
+  const date =
+    $("meta[name='citation_publication_date']").attr("content") ||
+    $("meta[property='article:published_time']").attr("content") ||
+    $("meta[name='date']").attr("content") ||
+    $("time[datetime]").first().attr("datetime") ||
+    undefined;
+
+  // Extract DOI
+  const doi =
+    $("meta[name='citation_doi']").attr("content") ||
+    $("meta[name='DOI']").attr("content") ||
+    undefined;
+
+  // Extract article text
+  $("script, style, nav, footer, iframe, noscript, svg, img, link, meta, header, aside").remove();
+
+  const articleSelectors = [
+    "article",
+    '[role="main"]',
+    ".article-body",
+    ".post-content",
+    ".entry-content",
+    '[class*="article"]',
+    "main",
+    ".content",
+    "#content",
+  ];
+
+  let text = "";
+  for (const selector of articleSelectors) {
+    const el = $(selector);
+    if (el.length) {
+      text = el.text().replace(/\s+/g, " ").trim();
+      if (text.length > 100) break;
+    }
+  }
+
+  if (!text || text.length < 100) {
+    text = $("body").text().replace(/\s+/g, " ").trim();
+  }
+
+  return {
+    title: title.slice(0, 500),
+    text: text.slice(0, 10000),
+    publisher: publisher?.slice(0, 200),
+    date: date?.slice(0, 20),
+    doi: doi?.slice(0, 100),
+  };
 }
 
 interface GitHubUser {

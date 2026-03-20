@@ -61,6 +61,10 @@ RULES:
 - Do NOT change the fundamental structure — keep the same data shape
 - For experiences: "bullets" is an array of strings, "skills" is an array of strings
 - For skills: each has "name" and "category" (language|framework|tool|database|cloud|soft)
+- For publications: each has "title", "publisher", "date", "url", "doi", "description"
+- For certifications: each has "name", "issuer", "date", "expiryDate", "credentialId", "url"
+- For recommendations: each has "recommenderName", "recommenderTitle", "relationship", "text"
+- Consider which publications, certifications, and recommendations to emphasize for this specific job
 - Be specific in your reply about what you changed and why
 - Keep the reply concise (3-5 sentences)
 

@@ -60,13 +60,14 @@ Evaluate from each reader's perspective, scoring 0-100:
 DIMENSION SCORING (weighted):
 Score each 0-100:
 1. ATS Optimization (15%) — Keyword match rate, formatting compatibility
-2. Bullet Quality (25%) — Action verbs, quantified impact, specificity
+2. Bullet Quality (20%) — Action verbs, quantified impact, specificity
 3. Narrative Coherence (15%) — Career story aligns with target role
 4. Relevance (15%) — Content tailored to this specific JD
 5. Formatting & Length (10%) — Clean, scannable, appropriate length
 6. Skills Presentation (5%) — Grouped well, JD-aligned ordering
 7. Summary Effectiveness (10%) — Compelling, keyword-rich, role-specific
 8. Authenticity (5%) — Reads as human-written, no AI fingerprints
+9. Supporting Sections (5%) — Publications, certifications, and recommendations are relevant and well-selected for this role
 
 AI FINGERPRINT SCAN:
 Check for these markers and list any found:

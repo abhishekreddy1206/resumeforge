@@ -75,6 +75,12 @@ PUBLICATIONS & CERTIFICATIONS:
 - Certifications matching JD requirements should be listed prominently
 - Omit irrelevant publications/certifications to save space
 
+RECOMMENDATIONS:
+- If the candidate has LinkedIn recommendations, select the most relevant ones for this role
+- Include recommendations that speak to skills or qualities mentioned in the JD
+- Max 2-3 recommendations to keep the resume concise
+- Omit recommendations that aren't relevant to the target role
+
 GAP ANALYSIS:
 - Strengthen bullets that already match JD requirements
 - Reframe relevant experience using JD vocabulary (reframe DURING writing, not after)
@@ -132,7 +138,8 @@ Return ONLY valid JSON with this structure:
       "publisher": "Journal/Conference",
       "date": "YYYY",
       "url": "url",
-      "doi": "DOI"
+      "doi": "DOI",
+      "description": "Brief summary if relevant (max 100 words)"
     }
   ],
   "certifications": [
@@ -143,6 +150,14 @@ Return ONLY valid JSON with this structure:
       "expiryDate": "YYYY if applicable",
       "credentialId": "ID if available",
       "url": "verification url"
+    }
+  ],
+  "recommendations": [
+    {
+      "recommenderName": "Person's Name",
+      "recommenderTitle": "Their Title",
+      "relationship": "Manager",
+      "text": "Selected recommendation text relevant to this role"
     }
   ]
 }

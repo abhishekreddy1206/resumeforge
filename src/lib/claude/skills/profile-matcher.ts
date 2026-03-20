@@ -56,6 +56,8 @@ RESUME TIPS RULES — THIS IS CRITICAL:
   - Emphasizing specific bullets that align with the job's domain
   - Reordering sections to lead with the most relevant experience
   - Using the JD's exact terminology where the candidate genuinely has the skill (ATS matching)
+  - Including relevant publications or certifications that strengthen the application
+  - Selecting recommendations that speak to skills or qualities the job requires
 - If a suggestion requires the candidate to learn something new or stretch the truth, set "grounded": false and frame it as "Consider learning X" rather than "Add X to your resume"
 - Max 5 tips, ordered by impact
 

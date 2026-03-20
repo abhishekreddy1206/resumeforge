@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -34,7 +34,18 @@ import {
   Mail,
   Plus,
   X,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  Check,
+  Sparkles,
+  Quote,
+  ArrowRight,
+  Loader2,
 } from "lucide-react";
+
+// ── Interfaces ──
 
 interface Experience {
   id: string;
@@ -77,6 +88,7 @@ interface Publication {
   date?: string;
   url?: string;
   doi?: string;
+  description?: string;
 }
 
 interface Certification {
@@ -87,6 +99,14 @@ interface Certification {
   expiryDate?: string;
   credentialId?: string;
   url?: string;
+}
+
+interface Recommendation {
+  recommenderName: string;
+  recommenderTitle?: string;
+  relationship?: string;
+  text: string;
+  linkedinUrl?: string;
 }
 
 interface Profile {
@@ -100,6 +120,7 @@ interface Profile {
   linkedin?: string;
   github?: string;
   website?: string;
+  recommendations?: string;
   experiences: Experience[];
   educations: Education[];
   projects: Project[];
@@ -108,28 +129,28 @@ interface Profile {
   certifications: Certification[];
 }
 
-function ProfileSkeleton() {
-  return (
-    <div className="space-y-6 sm:space-y-8">
-      <div>
-        <Skeleton className="h-8 w-32 mb-2" />
-        <Skeleton className="h-4 w-64" />
-      </div>
-      <Card className="shadow-sm">
-        <CardContent className="pt-6 pb-4">
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-      <Card className="shadow-sm overflow-hidden">
-        <div className="h-20 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
-        <CardContent className="pt-4 pb-6">
-          <Skeleton className="h-7 w-48 mb-2" />
-          <Skeleton className="h-4 w-72 mb-4" />
-          <Skeleton className="h-16 w-full" />
-        </CardContent>
-      </Card>
-    </div>
-  );
+interface EnhanceSuggestion {
+  category: string;
+  field: string;
+  current: string;
+  suggested: string;
+  reasoning: string;
+  impactEstimate: "high" | "medium" | "low";
+}
+
+// ── Helpers ──
+
+const monoStyle: React.CSSProperties = {
+  fontFamily: "var(--font-dm-mono)",
+  fontSize: "0.625rem",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase" as const,
+  fontWeight: 500,
+};
+
+function safeParse(val: string | undefined | null, fallback: unknown[] = []): unknown[] {
+  if (!val) return fallback;
+  try { return JSON.parse(val); } catch { return fallback; }
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -141,6 +162,163 @@ const CATEGORY_COLORS: Record<string, string> = {
   soft: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800",
 };
 
+const IMPACT_COLORS: Record<string, string> = {
+  high: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
+  medium: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300",
+  low: "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-400",
+};
+
+function SectionHeading({ icon: Icon, title, count, action }: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  count?: number;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center">
+          <Icon className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <h3
+            className="text-foreground tracking-wide"
+            style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.25rem", fontWeight: 500 }}
+          >
+            {title}
+          </h3>
+          {count !== undefined && (
+            <p className="text-muted-foreground" style={monoStyle}>
+              {count} {count === 1 ? "entry" : "entries"}
+            </p>
+          )}
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto">
+      <div>
+        <Skeleton className="h-8 w-32 mb-2" />
+        <Skeleton className="h-4 w-64" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+        <div className="space-y-6">
+          <Card><CardContent className="pt-6"><Skeleton className="h-32 w-full" /></CardContent></Card>
+          <Card><CardContent className="pt-6"><Skeleton className="h-48 w-full" /></CardContent></Card>
+        </div>
+        <div className="space-y-6">
+          <Card><CardContent className="pt-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Inline Edit Form Components ──
+
+function PublicationForm({ initial, onSave, onCancel }: {
+  initial?: Publication;
+  onSave: (data: Partial<Publication>) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(initial?.title || "");
+  const [publisher, setPublisher] = useState(initial?.publisher || "");
+  const [date, setDate] = useState(initial?.date || "");
+  const [url, setUrl] = useState(initial?.url || "");
+  const [doi, setDoi] = useState(initial?.doi || "");
+  const [description, setDescription] = useState(initial?.description || "");
+
+  return (
+    <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
+      <Input placeholder="Title *" value={title} onChange={(e) => setTitle(e.target.value)} className="h-9 text-sm" />
+      <div className="grid grid-cols-2 gap-3">
+        <Input placeholder="Publisher" value={publisher} onChange={(e) => setPublisher(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="Date (YYYY)" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-sm" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Input placeholder="URL" value={url} onChange={(e) => setUrl(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="DOI" value={doi} onChange={(e) => setDoi(e.target.value)} className="h-9 text-sm" />
+      </div>
+      <Textarea placeholder="Summary (max 100 words)" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} className="text-sm" />
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={() => onSave({ ...initial, title, publisher, date, url, doi, description })} disabled={!title.trim()}>
+          <Check className="w-3.5 h-3.5 mr-1" /> Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CertificationForm({ initial, onSave, onCancel }: {
+  initial?: Certification;
+  onSave: (data: Partial<Certification>) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name || "");
+  const [issuer, setIssuer] = useState(initial?.issuer || "");
+  const [date, setDate] = useState(initial?.date || "");
+  const [expiryDate, setExpiryDate] = useState(initial?.expiryDate || "");
+  const [credentialId, setCredentialId] = useState(initial?.credentialId || "");
+  const [url, setUrl] = useState(initial?.url || "");
+
+  return (
+    <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
+      <Input placeholder="Certification Name *" value={name} onChange={(e) => setName(e.target.value)} className="h-9 text-sm" />
+      <div className="grid grid-cols-2 gap-3">
+        <Input placeholder="Issuer (e.g., AWS)" value={issuer} onChange={(e) => setIssuer(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="Date (YYYY-MM)" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-sm" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Input placeholder="Expiry Date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="Credential ID" value={credentialId} onChange={(e) => setCredentialId(e.target.value)} className="h-9 text-sm" />
+      </div>
+      <Input placeholder="Verification URL" value={url} onChange={(e) => setUrl(e.target.value)} className="h-9 text-sm" />
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={() => onSave({ ...initial, name, issuer, date, expiryDate, credentialId, url })} disabled={!name.trim()}>
+          <Check className="w-3.5 h-3.5 mr-1" /> Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RecommendationForm({ initial, onSave, onCancel }: {
+  initial?: Recommendation;
+  onSave: (data: Recommendation) => void;
+  onCancel: () => void;
+}) {
+  const [recommenderName, setRecommenderName] = useState(initial?.recommenderName || "");
+  const [recommenderTitle, setRecommenderTitle] = useState(initial?.recommenderTitle || "");
+  const [relationship, setRelationship] = useState(initial?.relationship || "");
+  const [text, setText] = useState(initial?.text || "");
+
+  return (
+    <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
+      <div className="grid grid-cols-3 gap-3">
+        <Input placeholder="Recommender Name *" value={recommenderName} onChange={(e) => setRecommenderName(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="Title" value={recommenderTitle} onChange={(e) => setRecommenderTitle(e.target.value)} className="h-9 text-sm" />
+        <Input placeholder="Relationship" value={relationship} onChange={(e) => setRelationship(e.target.value)} className="h-9 text-sm" />
+      </div>
+      <Textarea placeholder="Recommendation text *" rows={3} value={text} onChange={(e) => setText(e.target.value)} className="text-sm" />
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={() => onSave({ recommenderName, recommenderTitle, relationship, text })} disabled={!recommenderName.trim() || !text.trim()}>
+          <Check className="w-3.5 h-3.5 mr-1" /> Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ──
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,9 +326,34 @@ export default function ProfilePage() {
   const [enriching, setEnriching] = useState(false);
   const [enrichSource, setEnrichSource] = useState("github");
   const [enrichValue, setEnrichValue] = useState("");
+  const [enrichOpen, setEnrichOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [savingEmails, setSavingEmails] = useState(false);
+
+  // CRUD states
+  const [editingPub, setEditingPub] = useState<string | null>(null);
+  const [addingPub, setAddingPub] = useState(false);
+  const [fetchingPubUrl, setFetchingPubUrl] = useState(false);
+  const [pubUrlInput, setPubUrlInput] = useState("");
+  const [expandedPub, setExpandedPub] = useState<string | null>(null);
+  const [editingCert, setEditingCert] = useState<string | null>(null);
+  const [addingCert, setAddingCert] = useState(false);
+  const [certPasteText, setCertPasteText] = useState("");
+  const [parsingCerts, setParsingCerts] = useState(false);
+  const [editingRec, setEditingRec] = useState<number | null>(null);
+  const [addingRec, setAddingRec] = useState(false);
+  const [recPasteText, setRecPasteText] = useState("");
+  const [parsingRecs, setParsingRecs] = useState(false);
+
+  // AI Enhance
+  const [enhancing, setEnhancing] = useState(false);
+  const [suggestions, setSuggestions] = useState<EnhanceSuggestion[]>([]);
+  const [enhanceInsight, setEnhanceInsight] = useState("");
+  const [acceptedSuggestions, setAcceptedSuggestions] = useState<Set<number>>(new Set());
+  const [applyingEnhance, setApplyingEnhance] = useState(false);
+
+  const enhancePanelRef = useRef<HTMLDivElement>(null);
 
   const fetchProfile = useCallback(async () => {
     const res = await fetch("/api/profile");
@@ -164,30 +367,20 @@ export default function ProfilePage() {
     fetchProfile();
   }, [fetchProfile]);
 
+  // ── Handlers ──
+
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const formData = new FormData(form);
-
     setUploading(true);
     try {
-      const res = await fetch("/api/profile/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
-
-      const data = await res.json();
-      setProfile(data);
+      const res = await fetch("/api/profile/upload", { method: "POST", body: formData });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+      setProfile(await res.json());
       toast.success("Resume parsed successfully!");
     } catch (err) {
-      toast.error(
-        `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
+      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setUploading(false);
     }
@@ -195,7 +388,6 @@ export default function ProfilePage() {
 
   async function handleEnrich() {
     if (!enrichSource || !enrichValue) return;
-
     setEnriching(true);
     try {
       const res = await fetch("/api/profile/enrich", {
@@ -203,20 +395,12 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: enrichSource, value: enrichValue }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
-
-      const data = await res.json();
-      setProfile(data);
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+      setProfile(await res.json());
       toast.success(`Profile enriched from ${enrichSource}!`);
       setEnrichValue("");
     } catch (err) {
-      toast.error(
-        `Enrichment failed: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
+      toast.error(`Enrichment failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setEnriching(false);
     }
@@ -224,12 +408,12 @@ export default function ProfilePage() {
 
   function getAdditionalEmails(): string[] {
     if (!profile?.additionalEmails) return [];
-    try {
-      const parsed = JSON.parse(profile.additionalEmails);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(profile.additionalEmails) || []; } catch { return []; }
+  }
+
+  function getRecommendations(): Recommendation[] {
+    if (!profile?.recommendations) return [];
+    try { return JSON.parse(profile.recommendations) || []; } catch { return []; }
   }
 
   async function saveAdditionalEmails(emails: string[]) {
@@ -241,26 +425,16 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...profile, additionalEmails: JSON.stringify(emails) }),
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setProfile(updated);
-        toast.success("Emails updated");
-      }
-    } catch {
-      toast.error("Failed to update emails");
-    } finally {
-      setSavingEmails(false);
-    }
+      if (res.ok) { setProfile(await res.json()); toast.success("Emails updated"); }
+    } catch { toast.error("Failed to update emails"); }
+    finally { setSavingEmails(false); }
   }
 
   function handleAddEmail() {
     const email = newEmail.trim();
     if (!email || !email.includes("@")) return;
     const current = getAdditionalEmails();
-    if (current.includes(email) || email === profile?.email) {
-      toast.error("Email already exists");
-      return;
-    }
+    if (current.includes(email) || email === profile?.email) { toast.error("Email already exists"); return; }
     saveAdditionalEmails([...current, email]);
     setNewEmail("");
   }
@@ -269,648 +443,1010 @@ export default function ProfilePage() {
     saveAdditionalEmails(getAdditionalEmails().filter((e) => e !== email));
   }
 
+  // Publication CRUD
+  async function handleSavePub(data: Partial<Publication>) {
+    try {
+      const method = data.id ? "PUT" : "POST";
+      const res = await fetch("/api/profile/publications", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(data.id ? "Publication updated" : "Publication added");
+      setEditingPub(null);
+      setAddingPub(false);
+      fetchProfile();
+    } catch { toast.error("Failed to save publication"); }
+  }
+
+  async function handleDeletePub(id: string) {
+    try {
+      await fetch("/api/profile/publications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      toast.success("Publication deleted");
+      fetchProfile();
+    } catch { toast.error("Failed to delete publication"); }
+  }
+
+  async function handleFetchPubUrl() {
+    if (!pubUrlInput.trim()) return;
+    setFetchingPubUrl(true);
+    try {
+      const res = await fetch("/api/profile/publications/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: pubUrlInput.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      toast.success("Publication fetched and added!");
+      setPubUrlInput("");
+      fetchProfile();
+    } catch (err) {
+      toast.error(`Fetch failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setFetchingPubUrl(false);
+    }
+  }
+
+  // Certification CRUD
+  async function handleSaveCert(data: Partial<Certification>) {
+    try {
+      const method = data.id ? "PUT" : "POST";
+      const res = await fetch("/api/profile/certifications", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(data.id ? "Certification updated" : "Certification added");
+      setEditingCert(null);
+      setAddingCert(false);
+      fetchProfile();
+    } catch { toast.error("Failed to save certification"); }
+  }
+
+  async function handleDeleteCert(id: string) {
+    try {
+      await fetch("/api/profile/certifications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      toast.success("Certification deleted");
+      fetchProfile();
+    } catch { toast.error("Failed to delete certification"); }
+  }
+
+  // AI Parse certifications
+  async function handleParseCerts() {
+    if (!certPasteText.trim()) return;
+    setParsingCerts(true);
+    try {
+      const res = await fetch("/api/profile/certifications/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: certPasteText }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      const data = await res.json();
+      toast.success(`Added ${data.count} certification${data.count !== 1 ? "s" : ""} from AI`);
+      setCertPasteText("");
+      fetchProfile();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to parse certifications");
+    } finally {
+      setParsingCerts(false);
+    }
+  }
+
+  // AI Parse recommendations
+  async function handleParseRecs() {
+    if (!recPasteText.trim()) return;
+    setParsingRecs(true);
+    try {
+      const res = await fetch("/api/profile/recommendations/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: recPasteText }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      const data = await res.json();
+      toast.success(`Added ${data.count} recommendation${data.count !== 1 ? "s" : ""} from AI`);
+      setRecPasteText("");
+      fetchProfile();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to parse recommendations");
+    } finally {
+      setParsingRecs(false);
+    }
+  }
+
+  // Recommendations CRUD
+  async function saveRecommendations(recs: Recommendation[]) {
+    try {
+      const res = await fetch("/api/profile/recommendations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recommendations: recs }),
+      });
+      if (!res.ok) throw new Error();
+      // Update local profile state
+      if (profile) {
+        setProfile({ ...profile, recommendations: JSON.stringify(recs) });
+      }
+    } catch { toast.error("Failed to save recommendations"); }
+  }
+
+  function handleSaveRec(data: Recommendation, index?: number) {
+    const recs = getRecommendations();
+    if (index !== undefined && index >= 0) {
+      recs[index] = data;
+    } else {
+      recs.push(data);
+    }
+    saveRecommendations(recs);
+    setEditingRec(null);
+    setAddingRec(false);
+    toast.success(index !== undefined ? "Recommendation updated" : "Recommendation added");
+  }
+
+  function handleDeleteRec(index: number) {
+    const recs = getRecommendations();
+    recs.splice(index, 1);
+    saveRecommendations(recs);
+    toast.success("Recommendation deleted");
+  }
+
+  // AI Enhance
+  async function handleEnhance() {
+    setEnhancing(true);
+    setSuggestions([]);
+    setEnhanceInsight("");
+    setAcceptedSuggestions(new Set());
+    try {
+      const res = await fetch("/api/profile/enhance", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      const result = await res.json();
+      setSuggestions(result.suggestions || []);
+      setEnhanceInsight(result.overallInsight || "");
+      setTimeout(() => enhancePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Enhancement failed");
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  function toggleSuggestion(idx: number) {
+    setAcceptedSuggestions((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  }
+
+  async function applyAcceptedSuggestions() {
+    const selected = suggestions.filter((_, i) => acceptedSuggestions.has(i));
+    if (selected.length === 0) { toast.error("Select at least one suggestion"); return; }
+    setApplyingEnhance(true);
+    try {
+      const res = await fetch("/api/profile/enhance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestions: selected }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`Applied ${selected.length} enhancement(s)`);
+      setSuggestions([]);
+      setAcceptedSuggestions(new Set());
+      fetchProfile();
+    } catch { toast.error("Failed to apply enhancements"); }
+    finally { setApplyingEnhance(false); }
+  }
+
   if (loading) return <ProfileSkeleton />;
 
-  const monoStyle: React.CSSProperties = {
-    fontFamily: "var(--font-dm-mono)",
-    fontSize: "0.625rem",
-    letterSpacing: "0.12em",
-    textTransform: "uppercase" as const,
-    fontWeight: 500,
-  };
+  const recommendations = getRecommendations();
 
   return (
-    <div className={`space-y-6 sm:space-y-8 transition-all duration-200 ${chatOpen ? "lg:mr-[420px]" : ""}`}>
+    <div className="max-w-6xl mx-auto">
       {/* ── Header ── */}
-      <div className="border-b border-border pb-10 pt-2 anim-fade-up flex items-end justify-between gap-4">
-        <div>
-          <p className="text-muted-foreground mb-6" style={monoStyle}>
-            Profile · {profile ? "Extracted & Enriched" : "Upload to start"}
-          </p>
-          <h1
-            className="text-foreground leading-none"
-            style={{
-              fontFamily: "var(--font-cormorant)",
-              fontStyle: "italic",
-              fontSize: "clamp(2.5rem, 6vw, 4rem)",
-              fontWeight: 400,
-            }}
-          >
-            {profile ? (
-              <>
-                <span className="text-primary">{profile.name.split(" ")[0]}</span>
-                {'\''}s Profile
-              </>
-            ) : (
-              <>Your <span className="text-primary">story</span></>
-            )}
-          </h1>
-          <div className="section-divider mt-5" />
+      <div className="border-b border-border pb-8 pt-2 mb-8 anim-fade-up">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-muted-foreground mb-4" style={monoStyle}>
+              Profile · {profile ? "Extracted & Enriched" : "Upload to start"}
+            </p>
+            <h1
+              className="text-foreground leading-none"
+              style={{
+                fontFamily: "var(--font-cormorant)",
+                fontStyle: "italic",
+                fontSize: "clamp(2.5rem, 6vw, 3.5rem)",
+                fontWeight: 400,
+              }}
+            >
+              {profile ? (
+                <>
+                  <span className="text-primary">{profile.name.split(" ")[0]}</span>
+                  {"'"}s Profile
+                </>
+              ) : (
+                <>Your <span className="text-primary">story</span></>
+              )}
+            </h1>
+            <div className="section-divider mt-5" />
+          </div>
+          {profile && (
+            <div className="flex gap-2 shrink-0 mb-1">
+              <Button
+                onClick={handleEnhance}
+                variant="outline"
+                size="sm"
+                disabled={enhancing}
+                className="gap-1.5 border-primary/30 hover:bg-primary/10 hover:border-primary/50 text-primary"
+              >
+                {enhancing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                Enhance
+              </Button>
+              <Button
+                onClick={() => setChatOpen(!chatOpen)}
+                size="icon"
+                variant={chatOpen ? "default" : "outline"}
+                className={`rounded-sm h-9 w-9 ${chatOpen ? "" : "border-primary/30 hover:bg-primary/10 hover:border-primary/50"}`}
+                title="Edit with AI"
+              >
+                <MessageSquare className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
-        {profile && (
-          <Button
-            onClick={() => setChatOpen(!chatOpen)}
-            size="icon"
-            variant={chatOpen ? "default" : "outline"}
-            className={`rounded-sm h-10 w-10 transition-all shrink-0 mb-1 ${chatOpen ? "" : "border-primary/30 hover:bg-primary/10 hover:border-primary/50"}`}
-            title="Edit with AI"
-          >
-            <MessageSquare className="w-4 h-4" />
-          </Button>
-        )}
       </div>
 
       {/* Upload */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Upload className="w-4 h-4 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-base">
-                {profile ? "Replace Resume" : "Upload Resume"}
-              </CardTitle>
-              <CardDescription>
-                Upload a PDF or DOCX file.{" "}
-                {profile && "This will replace your current profile."}
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={handleUpload}
-            className="flex flex-col sm:flex-row sm:items-end gap-3"
-          >
-            <div className="flex-1">
-              <Label htmlFor="file" className="mb-1.5 block text-sm">
-                Resume File
-              </Label>
-              <Input
-                id="file"
-                name="file"
-                type="file"
-                accept=".pdf,.docx"
-                required
-              />
-            </div>
-            <Button type="submit" disabled={uploading} className="shrink-0">
-              {uploading ? (
-                <span className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Processing...
-                </span>
-              ) : (
-                "Upload & Parse"
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Enrich */}
-      {profile && (
-        <Card className="shadow-sm">
+      {!profile && (
+        <Card className="shadow-sm anim-fade-up-1">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Enrich Profile</CardTitle>
-            <CardDescription>
-              Import data from GitHub, StackOverflow, or LinkedIn
-            </CardDescription>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Upload className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Upload Resume</CardTitle>
+                <CardDescription>Upload a PDF or DOCX file to get started.</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <Tabs
-              value={enrichSource}
-              onValueChange={(v) => {
-                setEnrichSource(v);
-                setEnrichValue("");
-              }}
-            >
-              <TabsList className="w-full sm:w-auto">
-                <TabsTrigger
-                  value="github"
-                  className="flex-1 sm:flex-initial gap-1.5"
-                >
-                  <Github className="w-3.5 h-3.5" />
-                  GitHub
-                </TabsTrigger>
-                <TabsTrigger
-                  value="stackoverflow"
-                  className="flex-1 sm:flex-initial"
-                >
-                  StackOverflow
-                </TabsTrigger>
-                <TabsTrigger
-                  value="linkedin"
-                  className="flex-1 sm:flex-initial gap-1.5"
-                >
-                  <Linkedin className="w-3.5 h-3.5" />
-                  LinkedIn
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="github" className="space-y-3 mt-4">
-                <Label className="text-sm">GitHub Username or URL</Label>
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                  <Input
-                    placeholder="e.g., octocat"
-                    value={enrichValue}
-                    onChange={(e) => setEnrichValue(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={handleEnrich}
-                    disabled={enriching || !enrichValue}
-                    className="shrink-0"
-                  >
-                    {enriching ? "Importing..." : "Import"}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Fetches your top repos, languages, and bio via the GitHub API
-                </p>
-              </TabsContent>
-              <TabsContent value="stackoverflow" className="space-y-3 mt-4">
-                <Label className="text-sm">
-                  StackOverflow User ID or Profile URL
-                </Label>
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                  <Input
-                    placeholder="e.g., 12345"
-                    value={enrichValue}
-                    onChange={(e) => setEnrichValue(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={handleEnrich}
-                    disabled={enriching || !enrichValue}
-                    className="shrink-0"
-                  >
-                    {enriching ? "Importing..." : "Import"}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Fetches your top tags, reputation, and badges
-                </p>
-              </TabsContent>
-              <TabsContent value="linkedin" className="space-y-3 mt-4">
-                <Label className="text-sm">LinkedIn Profile Text</Label>
-                <p className="text-xs text-muted-foreground">
-                  Copy your LinkedIn profile page content and paste it below.
-                </p>
-                <Textarea
-                  placeholder="Paste your LinkedIn profile text here..."
-                  rows={5}
-                  value={enrichValue}
-                  onChange={(e) => setEnrichValue(e.target.value)}
-                />
-                <Button
-                  onClick={handleEnrich}
-                  disabled={enriching || !enrichValue}
-                >
-                  {enriching ? "Importing..." : "Import from LinkedIn"}
-                </Button>
-              </TabsContent>
-            </Tabs>
+            <form onSubmit={handleUpload} className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1">
+                <Label htmlFor="file" className="mb-1.5 block text-sm">Resume File</Label>
+                <Input id="file" name="file" type="file" accept=".pdf,.docx" required />
+              </div>
+              <Button type="submit" disabled={uploading} className="shrink-0">
+                {uploading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+                  </span>
+                ) : "Upload & Parse"}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       )}
 
-      {/* Profile Display */}
       {profile && (
-        <>
-          {/* Header Card */}
-          <Card className="shadow-sm overflow-hidden">
-            <div className="h-20 sm:h-24 bg-gradient-to-br from-primary/20 via-primary/10 to-violet-500/5 relative">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_oklch(0.6_0.2_290/0.1),transparent)]" />
-            </div>
-            <CardHeader className="-mt-6 relative">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                <div>
-                  <CardTitle className="text-xl sm:text-2xl">
-                    {profile.name}
-                  </CardTitle>
-                  <CardDescription className="mt-1 text-xs sm:text-sm">
-                    {[profile.email, profile.phone, profile.location]
-                      .filter(Boolean)
-                      .join("  ·  ")}
-                  </CardDescription>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  {profile.github && (
-                    <a
-                      href={profile.github}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="GitHub"
-                      className="w-9 h-9 rounded-lg border border-border/50 flex items-center justify-center hover:bg-accent hover:border-primary/30 transition-all"
-                    >
-                      <Github className="w-4 h-4" />
-                    </a>
-                  )}
-                  {profile.linkedin && (
-                    <a
-                      href={profile.linkedin}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="LinkedIn"
-                      className="w-9 h-9 rounded-lg border border-border/50 flex items-center justify-center hover:bg-accent hover:border-primary/30 transition-all"
-                    >
-                      <Linkedin className="w-4 h-4" />
-                    </a>
-                  )}
-                  {profile.website && (
-                    <a
-                      href={profile.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Website"
-                      className="w-9 h-9 rounded-lg border border-border/50 flex items-center justify-center hover:bg-accent hover:border-primary/30 transition-all"
-                    >
-                      <Globe className="w-4 h-4" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-            {profile.summary && (
-              <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {profile.summary}
-                </p>
-              </CardContent>
-            )}
-          </Card>
+        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 transition-all duration-200 ${chatOpen ? "lg:mr-[420px]" : ""}`}>
+          {/* ════════ Left Column ════════ */}
+          <div className="space-y-6 min-w-0">
 
-          {/* Email Addresses */}
-          <Card className="shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950 flex items-center justify-center">
-                  <Mail className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Email Addresses</CardTitle>
-                  <CardDescription>
-                    Choose which email to use when generating resumes
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Primary email */}
-              {profile.email && (
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm flex-1">{profile.email}</span>
-                  <Badge variant="secondary" className="text-[10px]">Primary</Badge>
-                </div>
-              )}
-              {/* Additional emails */}
-              {getAdditionalEmails().map((email) => (
-                <div key={email} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm flex-1">{email}</span>
-                  <button
-                    onClick={() => handleRemoveEmail(email)}
-                    className="p-1.5 rounded-md hover:bg-destructive/10 transition-colors"
-                    disabled={savingEmails}
-                    title="Remove email"
-                  >
-                    <X className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                  </button>
-                </div>
-              ))}
-              {/* Add email */}
-              <div className="flex items-center gap-2 pt-1">
-                <Input
-                  placeholder="Add another email address..."
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleAddEmail()}
-                  className="h-9 text-sm"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-3 text-sm gap-1.5 shrink-0"
-                  onClick={handleAddEmail}
-                  disabled={savingEmails || !newEmail.trim()}
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Experience */}
-          {profile.experiences.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
-                    <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
+            {/* ── Header Card ── */}
+            <Card className="shadow-sm overflow-hidden anim-fade-up-1">
+              <div className="h-16 bg-gradient-to-br from-primary/15 via-primary/8 to-transparent" />
+              <CardHeader className="-mt-4 relative pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                   <div>
-                    <CardTitle className="text-base">Experience</CardTitle>
-                    <CardDescription>
-                      {profile.experiences.length} position
-                      {profile.experiences.length > 1 ? "s" : ""}
+                    <CardTitle className="text-xl">{profile.name}</CardTitle>
+                    <CardDescription className="mt-1 text-xs">
+                      {[profile.email, profile.phone, profile.location].filter(Boolean).join("  ·  ")}
                     </CardDescription>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    {profile.github && (
+                      <a href={profile.github} target="_blank" rel="noopener noreferrer" title="GitHub"
+                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
+                        <Github className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {profile.linkedin && (
+                      <a href={profile.linkedin} target="_blank" rel="noopener noreferrer" title="LinkedIn"
+                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
+                        <Linkedin className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {profile.website && (
+                      <a href={profile.website} target="_blank" rel="noopener noreferrer" title="Website"
+                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
+                        <Globe className="w-3.5 h-3.5" />
+                      </a>
+                    )}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-5">
-                {profile.experiences.map((exp, i) => (
-                  <div key={exp.id}>
-                    {i > 0 && <Separator className="mb-5" />}
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 mb-2">
+              {profile.summary && (
+                <CardContent className="pt-0">
+                  <p className="text-sm text-muted-foreground leading-relaxed">{profile.summary}</p>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* ── Email Addresses ── */}
+            <Card className="shadow-sm anim-fade-up-1">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950 flex items-center justify-center">
+                    <Mail className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Email Addresses</CardTitle>
+                    <CardDescription>Choose which email to use when generating resumes</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {profile.email && (
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+                    <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sm flex-1">{profile.email}</span>
+                    <Badge variant="secondary" className="text-[10px]">Primary</Badge>
+                  </div>
+                )}
+                {getAdditionalEmails().map((email) => (
+                  <div key={email} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+                    <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sm flex-1">{email}</span>
+                    <button onClick={() => handleRemoveEmail(email)} className="p-1 rounded hover:bg-destructive/10" disabled={savingEmails}>
+                      <X className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 pt-1">
+                  <Input placeholder="Add another email..." value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddEmail()} className="h-8 text-sm" />
+                  <Button variant="outline" size="sm" className="h-8 px-3 text-xs gap-1 shrink-0"
+                    onClick={handleAddEmail} disabled={savingEmails || !newEmail.trim()}>
+                    <Plus className="w-3 h-3" /> Add
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Experience ── */}
+            {profile.experiences.length > 0 && (
+              <Card className="shadow-sm anim-fade-up-2">
+                <CardContent className="pt-6">
+                  <SectionHeading icon={Building2} title="Experience" count={profile.experiences.length} />
+                  <div className="space-y-5">
+                    {profile.experiences.map((exp, i) => (
+                      <div key={exp.id}>
+                        {i > 0 && <Separator className="mb-5" />}
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 mb-2">
+                          <div>
+                            <p className="font-semibold text-sm">{exp.title}</p>
+                            <p className="text-xs text-muted-foreground">{exp.company}</p>
+                          </div>
+                          <Badge variant="outline" className="text-xs shrink-0 w-fit">
+                            {exp.startDate} — {exp.endDate || "Present"}
+                          </Badge>
+                        </div>
+                        <ul className="mt-2 space-y-1">
+                          {(safeParse(exp.bullets) as string[]).map((bullet: string, j: number) => (
+                            <li key={j} className="text-xs text-muted-foreground flex gap-2">
+                              <span className="text-primary/40 mt-0.5 shrink-0">-</span>
+                              <span>{bullet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Projects ── */}
+            {profile.projects.length > 0 && (
+              <Card className="shadow-sm anim-fade-up-2">
+                <CardContent className="pt-6">
+                  <SectionHeading icon={FolderGit2} title="Projects" count={profile.projects.length} />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {profile.projects.map((proj) => (
+                      <div key={proj.id} className="p-3 rounded-lg border border-border/50 bg-muted/15 hover:border-primary/20 transition-all card-hover">
+                        <p className="font-semibold text-sm">{proj.name}</p>
+                        {proj.url && (
+                          <a href={proj.url} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline break-all flex items-center gap-1">
+                            <ExternalLink className="w-3 h-3 shrink-0" /> {proj.url}
+                          </a>
+                        )}
+                        {proj.description && <p className="text-xs text-muted-foreground mt-1">{proj.description}</p>}
+                        {proj.skills && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(safeParse(proj.skills) as string[]).map((s: string) => (
+                              <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Education ── */}
+            {profile.educations.length > 0 && (
+              <Card className="shadow-sm anim-fade-up-3">
+                <CardContent className="pt-6">
+                  <SectionHeading icon={GraduationCap} title="Education" count={profile.educations.length} />
+                  <div className="space-y-3">
+                    {profile.educations.map((edu) => (
+                      <div key={edu.id} className="flex flex-col sm:flex-row sm:justify-between gap-1">
+                        <div>
+                          <p className="font-semibold text-sm">{edu.degree}{edu.field ? ` in ${edu.field}` : ""}</p>
+                          <p className="text-xs text-muted-foreground">{edu.school}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {edu.endDate && <Badge variant="outline" className="text-xs">{edu.endDate}</Badge>}
+                          {edu.gpa && <span className="text-xs text-muted-foreground">GPA: {edu.gpa}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Publications (CRUD) ── */}
+            <Card className="shadow-sm anim-fade-up-3">
+              <CardContent className="pt-6">
+                <SectionHeading
+                  icon={BookOpen}
+                  title="Publications"
+                  count={profile.publications.length}
+                  action={
+                    !addingPub && (
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => setAddingPub(true)}>
+                        <Plus className="w-3 h-3" /> Add
+                      </Button>
+                    )
+                  }
+                />
+
+                {/* Fetch from URL */}
+                <div className="mb-4 p-3 rounded-lg border border-border/50 bg-muted/10">
+                  <p className="text-muted-foreground mb-2" style={monoStyle}>
+                    Fetch from URL
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="https://arxiv.org/abs/... or article URL"
+                      value={pubUrlInput}
+                      onChange={(e) => setPubUrlInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleFetchPubUrl()}
+                      className="h-8 text-sm flex-1"
+                      disabled={fetchingPubUrl}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs gap-1 shrink-0"
+                      onClick={handleFetchPubUrl}
+                      disabled={fetchingPubUrl || !pubUrlInput.trim()}
+                    >
+                      {fetchingPubUrl ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Fetching...</>
+                      ) : (
+                        <><Globe className="w-3 h-3" /> Fetch</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {addingPub && (
+                    <PublicationForm onSave={handleSavePub} onCancel={() => setAddingPub(false)} />
+                  )}
+                  {profile.publications.map((pub) => (
+                    editingPub === pub.id ? (
+                      <PublicationForm key={pub.id} initial={pub} onSave={handleSavePub} onCancel={() => setEditingPub(null)} />
+                    ) : (
+                      <div key={pub.id} className="group rounded-lg hover:bg-muted/20 transition-colors">
+                        <div
+                          className="flex items-start justify-between gap-2 p-3 cursor-pointer"
+                          onClick={() => setExpandedPub(expandedPub === pub.id ? null : pub.id)}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              {pub.description ? (
+                                expandedPub === pub.id ? (
+                                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                )
+                              ) : null}
+                              <p className="font-semibold text-sm">{pub.title}</p>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5" style={{ marginLeft: pub.description ? "1.25rem" : 0 }}>
+                              {[pub.publisher, pub.date].filter(Boolean).join(" · ")}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5" style={{ marginLeft: pub.description ? "1.25rem" : 0 }}>
+                              {pub.doi && (
+                                <a href={`https://doi.org/${pub.doi}`} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                                  DOI: {pub.doi}
+                                </a>
+                              )}
+                              {pub.url && (
+                                <a href={pub.url} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <ExternalLink className="w-3 h-3" /> View
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setEditingPub(pub.id)} className="p-1.5 rounded hover:bg-accent">
+                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                            </button>
+                            <button onClick={() => handleDeletePub(pub.id)} className="p-1.5 rounded hover:bg-destructive/10">
+                              <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          </div>
+                        </div>
+                        {expandedPub === pub.id && pub.description && (
+                          <div className="px-3 pb-3" style={{ marginLeft: "1.25rem" }}>
+                            <p className="text-xs text-muted-foreground leading-relaxed bg-muted/20 rounded p-2.5 border border-border/30">
+                              {pub.description}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  ))}
+                  {profile.publications.length === 0 && !addingPub && (
+                    <p className="text-xs text-muted-foreground py-2">No publications yet. Add your research papers, articles, or blog posts.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Certifications (CRUD) ── */}
+            <Card className="shadow-sm anim-fade-up-3">
+              <CardContent className="pt-6">
+                <SectionHeading
+                  icon={Award}
+                  title="Certifications"
+                  count={profile.certifications.length}
+                  action={
+                    !addingCert && (
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => setAddingCert(true)}>
+                        <Plus className="w-3 h-3" /> Add
+                      </Button>
+                    )
+                  }
+                />
+
+                {/* AI Paste to Parse */}
+                <div className="mb-5 relative group/paste">
+                  <div className="absolute -inset-px rounded-lg bg-gradient-to-br from-primary/20 via-transparent to-primary/5 opacity-0 group-focus-within/paste:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  <div className="relative p-4 rounded-lg border border-border/40 bg-gradient-to-b from-muted/20 to-transparent">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center">
+                        <Sparkles className="w-2.5 h-2.5 text-primary" />
+                      </div>
+                      <p className="text-muted-foreground" style={monoStyle}>
+                        Paste &amp; Parse with AI
+                      </p>
+                    </div>
+                    <Textarea
+                      placeholder={"Paste certification details from LinkedIn, your resume, or any source…\n\ne.g. \"AWS Solutions Architect Professional, issued Dec 2024, ID: AWS-SAP-12345\""}
+                      rows={3}
+                      value={certPasteText}
+                      onChange={(e) => setCertPasteText(e.target.value)}
+                      className="text-sm mb-3 bg-background/60 border-border/30 placeholder:text-muted-foreground/40 focus-visible:ring-primary/30 resize-none"
+                      disabled={parsingCerts}
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-muted-foreground/50 text-[10px]" style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em" }}>
+                        AI extracts names, issuers, dates &amp; IDs
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-4 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:border-primary/40 hover:text-primary transition-all"
+                        onClick={handleParseCerts}
+                        disabled={parsingCerts || !certPasteText.trim()}
+                      >
+                        {parsingCerts ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Parsing...</>
+                        ) : (
+                          <><Sparkles className="w-3 h-3" /> Parse with AI</>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {addingCert && (
+                    <CertificationForm onSave={handleSaveCert} onCancel={() => setAddingCert(false)} />
+                  )}
+                  {profile.certifications.map((cert) => (
+                    editingCert === cert.id ? (
+                      <CertificationForm key={cert.id} initial={cert} onSave={handleSaveCert} onCancel={() => setEditingCert(null)} />
+                    ) : (
+                      <div key={cert.id} className="group flex items-start justify-between gap-2 p-3 rounded-lg hover:bg-muted/20 transition-colors">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm">{cert.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[cert.issuer, cert.date].filter(Boolean).join(" · ")}
+                            {cert.expiryDate ? ` (exp. ${cert.expiryDate})` : ""}
+                          </p>
+                          {cert.credentialId && <p className="text-xs text-muted-foreground">ID: {cert.credentialId}</p>}
+                          {cert.url && (
+                            <a href={cert.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                              <ExternalLink className="w-3 h-3" /> Verify
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button onClick={() => setEditingCert(cert.id)} className="p-1.5 rounded hover:bg-accent">
+                            <Pencil className="w-3 h-3 text-muted-foreground" />
+                          </button>
+                          <button onClick={() => handleDeleteCert(cert.id)} className="p-1.5 rounded hover:bg-destructive/10">
+                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                  {profile.certifications.length === 0 && !addingCert && (
+                    <p className="text-xs text-muted-foreground py-2">No certifications yet. Add your AWS, GCP, Azure, or other professional certifications.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Recommendations (CRUD) ── */}
+            <Card className="shadow-sm anim-fade-up-4">
+              <CardContent className="pt-6">
+                <SectionHeading
+                  icon={Quote}
+                  title="Recommendations"
+                  count={recommendations.length}
+                  action={
+                    !addingRec && (
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => setAddingRec(true)}>
+                        <Plus className="w-3 h-3" /> Add
+                      </Button>
+                    )
+                  }
+                />
+
+                {/* AI Paste to Parse */}
+                <div className="mb-5 relative group/paste">
+                  <div className="absolute -inset-px rounded-lg bg-gradient-to-br from-primary/20 via-transparent to-primary/5 opacity-0 group-focus-within/paste:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  <div className="relative p-4 rounded-lg border border-border/40 bg-gradient-to-b from-muted/20 to-transparent">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center">
+                        <Sparkles className="w-2.5 h-2.5 text-primary" />
+                      </div>
+                      <p className="text-muted-foreground" style={monoStyle}>
+                        Paste &amp; Parse with AI
+                      </p>
+                    </div>
+                    <Textarea
+                      placeholder={"Paste LinkedIn recommendations or testimonials…\n\nAI will extract recommender names, titles, relationships, and the full text."}
+                      rows={3}
+                      value={recPasteText}
+                      onChange={(e) => setRecPasteText(e.target.value)}
+                      className="text-sm mb-3 bg-background/60 border-border/30 placeholder:text-muted-foreground/40 focus-visible:ring-primary/30 resize-none"
+                      disabled={parsingRecs}
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-muted-foreground/50 text-[10px]" style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em" }}>
+                        AI extracts names, titles &amp; recommendation text
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-4 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:border-primary/40 hover:text-primary transition-all"
+                        onClick={handleParseRecs}
+                        disabled={parsingRecs || !recPasteText.trim()}
+                      >
+                        {parsingRecs ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Parsing...</>
+                        ) : (
+                          <><Sparkles className="w-3 h-3" /> Parse with AI</>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {addingRec && (
+                    <RecommendationForm onSave={(data) => handleSaveRec(data)} onCancel={() => setAddingRec(false)} />
+                  )}
+                  {recommendations.map((rec, i) => (
+                    editingRec === i ? (
+                      <RecommendationForm key={i} initial={rec} onSave={(data) => handleSaveRec(data, i)} onCancel={() => setEditingRec(null)} />
+                    ) : (
+                      <div key={i} className="group p-3 rounded-lg hover:bg-muted/20 transition-colors">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm text-muted-foreground italic leading-relaxed">
+                              &ldquo;{rec.text}&rdquo;
+                            </p>
+                            <p className="text-xs text-foreground/70 mt-1.5 font-medium">
+                              — {rec.recommenderName}
+                              {rec.recommenderTitle ? `, ${rec.recommenderTitle}` : ""}
+                              {rec.relationship ? ` (${rec.relationship})` : ""}
+                            </p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <button onClick={() => setEditingRec(i)} className="p-1.5 rounded hover:bg-accent">
+                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                            </button>
+                            <button onClick={() => handleDeleteRec(i)} className="p-1.5 rounded hover:bg-destructive/10">
+                              <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                  {recommendations.length === 0 && !addingRec && (
+                    <p className="text-xs text-muted-foreground py-2">No recommendations yet. Add LinkedIn recommendations to strengthen your profile.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Upload (Replace) ── */}
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Upload className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Replace Resume</CardTitle>
+                    <CardDescription>Upload a new PDF or DOCX. This will replace your current profile.</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleUpload} className="flex flex-col sm:flex-row sm:items-end gap-3">
+                  <div className="flex-1">
+                    <Input id="file" name="file" type="file" accept=".pdf,.docx" required />
+                  </div>
+                  <Button type="submit" disabled={uploading} className="shrink-0">
+                    {uploading ? <><Loader2 className="w-4 h-4 animate-spin mr-1" /> Processing...</> : "Upload & Parse"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ════════ Right Column (Sidebar) ════════ */}
+          <div className="space-y-6">
+
+            {/* ── Skills ── */}
+            {profile.skills.length > 0 && (
+              <Card className="shadow-sm anim-fade-up-1">
+                <CardContent className="pt-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-md bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center">
+                        <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
                       <div>
-                        <p className="font-semibold text-sm sm:text-base">
-                          {exp.title}
-                        </p>
-                        <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1.5">
-                          {exp.company}
+                        <h3 className="text-sm font-semibold">Skills</h3>
+                        <p className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                          {profile.skills.length} extracted
                         </p>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className="text-xs shrink-0 w-fit"
-                      >
-                        {exp.startDate} — {exp.endDate || "Present"}
-                      </Badge>
                     </div>
-                    <ul className="mt-2 space-y-1.5">
-                      {JSON.parse(exp.bullets).map(
-                        (bullet: string, j: number) => (
-                          <li
-                            key={j}
-                            className="text-xs sm:text-sm text-muted-foreground flex gap-2"
-                          >
-                            <span className="text-primary/50 mt-0.5 shrink-0">
-                              -
-                            </span>
-                            <span>{bullet}</span>
-                          </li>
-                        )
-                      )}
-                    </ul>
+                    <a href="/skills" className="text-xs text-primary hover:underline">Manage</a>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Projects */}
-          {profile.projects.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-950 flex items-center justify-center">
-                    <FolderGit2 className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                  </div>
-                  <CardTitle className="text-base">Projects</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {profile.projects.map((proj) => (
-                    <div
-                      key={proj.id}
-                      className="p-3 sm:p-4 rounded-xl border border-border/50 bg-muted/20 hover:border-primary/20 hover:shadow-sm transition-all"
-                    >
-                      <p className="font-semibold text-sm">{proj.name}</p>
-                      {proj.url && (
-                        <a
-                          href={proj.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline break-all flex items-center gap-1"
-                        >
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                          {proj.url}
-                        </a>
-                      )}
-                      {proj.description && (
-                        <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                          {proj.description}
-                        </p>
-                      )}
-                      {proj.skills && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {JSON.parse(proj.skills).map((s: string) => (
-                            <Badge
-                              key={s}
-                              variant="secondary"
-                              className="text-xs"
-                            >
-                              {s}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Education */}
-          {profile.educations.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 flex items-center justify-center">
-                    <GraduationCap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <CardTitle className="text-base">Education</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {profile.educations.map((edu) => (
-                  <div
-                    key={edu.id}
-                    className="flex flex-col sm:flex-row sm:justify-between gap-1"
-                  >
-                    <div>
-                      <p className="font-semibold text-sm">
-                        {edu.degree}
-                        {edu.field ? ` in ${edu.field}` : ""}
-                      </p>
-                      <p className="text-xs sm:text-sm text-muted-foreground">
-                        {edu.school}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 sm:text-right">
-                      {edu.endDate && (
-                        <Badge variant="outline" className="text-xs">
-                          {edu.endDate}
-                        </Badge>
-                      )}
-                      {edu.gpa && (
-                        <span className="text-xs text-muted-foreground">
-                          GPA: {edu.gpa}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Publications */}
-          {profile.publications.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
-                    <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Publications</CardTitle>
-                    <CardDescription>
-                      {profile.publications.length} publication{profile.publications.length > 1 ? "s" : ""}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {profile.publications.map((pub) => (
-                  <div key={pub.id}>
-                    <p className="font-semibold text-sm">{pub.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {[pub.publisher, pub.date].filter(Boolean).join(" · ")}
-                    </p>
-                    {pub.doi && (
-                      <a
-                        href={`https://doi.org/${pub.doi}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline"
-                      >
-                        DOI: {pub.doi}
-                      </a>
-                    )}
-                    {!pub.doi && pub.url && (
-                      <a
-                        href={pub.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        View
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Certifications */}
-          {profile.certifications.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-950 flex items-center justify-center">
-                    <Award className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">Certifications</CardTitle>
-                    <CardDescription>
-                      {profile.certifications.length} certification{profile.certifications.length > 1 ? "s" : ""}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {profile.certifications.map((cert) => (
-                  <div key={cert.id} className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                    <div>
-                      <p className="font-semibold text-sm">{cert.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[cert.issuer, cert.date].filter(Boolean).join(" · ")}
-                        {cert.expiryDate ? ` (exp. ${cert.expiryDate})` : ""}
-                      </p>
-                      {cert.credentialId && (
-                        <p className="text-xs text-muted-foreground">ID: {cert.credentialId}</p>
-                      )}
-                    </div>
-                    {cert.url && (
-                      <a
-                        href={cert.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        Verify
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Skills */}
-          {profile.skills.length > 0 && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center">
-                      <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">Skills</CardTitle>
-                      <CardDescription>
-                        {profile.skills.length} skills extracted
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <a
-                    href="/skills"
-                    className="text-sm text-primary hover:underline"
-                  >
-                    View Details
-                  </a>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {Object.entries(
-                  profile.skills.reduce(
-                    (acc, s) => {
+                  {Object.entries(
+                    profile.skills.reduce((acc, s) => {
                       if (!acc[s.category]) acc[s.category] = [];
                       acc[s.category].push(s);
                       return acc;
-                    },
-                    {} as Record<string, Skill[]>
-                  )
-                ).map(([category, skills]) => (
-                  <div key={category} className="mb-3.5 last:mb-0">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                      {category}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {skills.map((s) => (
-                        <Badge
-                          key={s.id}
-                          variant="outline"
-                          className={`text-xs ${CATEGORY_COLORS[category] || ""}`}
-                        >
-                          {s.name}
-                        </Badge>
-                      ))}
+                    }, {} as Record<string, Skill[]>)
+                  ).map(([category, skills]) => (
+                    <div key={category} className="mb-3 last:mb-0">
+                      <p className="text-muted-foreground mb-1.5" style={{ ...monoStyle, fontSize: "0.55rem" }}>{category}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {skills.map((s) => (
+                          <Badge key={s.id} variant="outline" className={`text-[10px] ${CATEGORY_COLORS[category] || ""}`}>
+                            {s.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── AI Enhance Panel ── */}
+            {(suggestions.length > 0 || enhancing) && (
+              <Card className="shadow-sm border-primary/20 anim-slide-in" ref={enhancePanelRef}>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
+                      <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold">AI Enhancements</h3>
+                      <p className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                        Based on optimization history
+                      </p>
                     </div>
                   </div>
-                ))}
+
+                  {enhancing && (
+                    <div className="flex flex-col items-center py-8 gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center anim-pulse-ring">
+                        <Sparkles className="w-5 h-5 text-primary" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">Analyzing optimization history...</p>
+                      <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full w-1/3 bg-primary rounded-full anim-progress-bar" />
+                      </div>
+                    </div>
+                  )}
+
+                  {!enhancing && enhanceInsight && (
+                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{enhanceInsight}</p>
+                  )}
+
+                  {!enhancing && suggestions.map((s, i) => (
+                    <div key={i} className="mb-3 last:mb-0">
+                      <button
+                        onClick={() => toggleSuggestion(i)}
+                        className={`w-full text-left p-3 rounded-lg border transition-all ${
+                          acceptedSuggestions.has(i)
+                            ? "border-primary/40 bg-primary/5"
+                            : "border-border/50 hover:border-primary/20"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                            acceptedSuggestions.has(i) ? "bg-primary border-primary" : "border-border"
+                          }`}>
+                            {acceptedSuggestions.has(i) && <Check className="w-3 h-3 text-primary-foreground" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className="text-[9px] capitalize">{s.category}</Badge>
+                              <Badge variant="outline" className={`text-[9px] ${IMPACT_COLORS[s.impactEstimate]}`}>
+                                {s.impactEstimate} impact
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mb-1.5 leading-relaxed">{s.reasoning}</p>
+                            {s.current && s.suggested && (
+                              <div className="flex items-start gap-1.5 text-[11px]">
+                                <span className="text-destructive/70 line-through truncate max-w-[40%]">{s.current}</span>
+                                <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                                <span className="text-emerald-600 dark:text-emerald-400 truncate max-w-[40%]">{s.suggested}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  ))}
+
+                  {!enhancing && suggestions.length > 0 && (
+                    <Button
+                      onClick={applyAcceptedSuggestions}
+                      disabled={acceptedSuggestions.size === 0 || applyingEnhance}
+                      className="w-full mt-4 gap-1.5"
+                      size="sm"
+                    >
+                      {applyingEnhance ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Applying...</>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Apply {acceptedSuggestions.size} Enhancement{acceptedSuggestions.size !== 1 ? "s" : ""}
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── Enrich from External Sources (Collapsible) ── */}
+            <Card className="shadow-sm anim-fade-up-2">
+              <CardContent className="pt-5">
+                <button
+                  onClick={() => setEnrichOpen(!enrichOpen)}
+                  className="w-full flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-md bg-violet-50 dark:bg-violet-950 flex items-center justify-center">
+                      <Globe className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="text-sm font-semibold">Enrich Profile</h3>
+                      <p className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                        GitHub · StackOverflow · LinkedIn
+                      </p>
+                    </div>
+                  </div>
+                  {enrichOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                </button>
+
+                {enrichOpen && (
+                  <div className="mt-4">
+                    <Tabs value={enrichSource} onValueChange={(v) => { setEnrichSource(v); setEnrichValue(""); }}>
+                      <TabsList className="w-full">
+                        <TabsTrigger value="github" className="flex-1 gap-1 text-xs">
+                          <Github className="w-3 h-3" /> GitHub
+                        </TabsTrigger>
+                        <TabsTrigger value="stackoverflow" className="flex-1 text-xs">SO</TabsTrigger>
+                        <TabsTrigger value="linkedin" className="flex-1 gap-1 text-xs">
+                          <Linkedin className="w-3 h-3" /> LinkedIn
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="github" className="space-y-2 mt-3">
+                        <Input placeholder="GitHub username" value={enrichValue} onChange={(e) => setEnrichValue(e.target.value)} className="h-8 text-sm" />
+                        <Button onClick={handleEnrich} disabled={enriching || !enrichValue} size="sm" className="w-full">
+                          {enriching ? "Importing..." : "Import from GitHub"}
+                        </Button>
+                      </TabsContent>
+                      <TabsContent value="stackoverflow" className="space-y-2 mt-3">
+                        <Input placeholder="User ID" value={enrichValue} onChange={(e) => setEnrichValue(e.target.value)} className="h-8 text-sm" />
+                        <Button onClick={handleEnrich} disabled={enriching || !enrichValue} size="sm" className="w-full">
+                          {enriching ? "Importing..." : "Import from SO"}
+                        </Button>
+                      </TabsContent>
+                      <TabsContent value="linkedin" className="space-y-2 mt-3">
+                        <Textarea placeholder="Paste LinkedIn profile text..." rows={3} value={enrichValue} onChange={(e) => setEnrichValue(e.target.value)} className="text-sm" />
+                        <Button onClick={handleEnrich} disabled={enriching || !enrichValue} size="sm" className="w-full">
+                          {enriching ? "Importing..." : "Import from LinkedIn"}
+                        </Button>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                )}
               </CardContent>
             </Card>
-          )}
-        </>
+          </div>
+        </div>
       )}
 
       {/* Chat Panel */}
@@ -927,7 +1463,7 @@ export default function ProfilePage() {
       {profile && !chatOpen && (
         <button
           onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 sm:hidden w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shadow-violet-500/25 flex items-center justify-center hover:shadow-xl hover:scale-105 transition-all z-40"
+          className="fixed bottom-6 right-6 sm:hidden w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg flex items-center justify-center hover:shadow-xl hover:scale-105 transition-all z-40"
         >
           <MessageSquare className="w-6 h-6" />
         </button>

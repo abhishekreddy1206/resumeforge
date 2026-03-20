@@ -202,6 +202,19 @@ export async function generateLatex(data: ResumeData): Promise<Buffer> {
     L.push("");
   }
 
+  // ── Recommendations ──
+  if (data.recommendations && data.recommendations.length > 0) {
+    L.push(String.raw`\section{Recommendations}`);
+    for (const rec of data.recommendations) {
+      L.push(`\\textit{\\color{secondary} \\textquotedbleft{}${esc(rec.text)}\\textquotedblright{}}\\\\[1pt]`);
+      const attr = [`\\textbf{${esc(rec.recommenderName)}}`];
+      if (rec.recommenderTitle) attr.push(esc(rec.recommenderTitle));
+      if (rec.relationship) attr.push(`(${esc(rec.relationship)})`);
+      L.push(`{\\small\\color{muted} --- ${attr.join(", ")}}\\\\[4pt]`);
+    }
+    L.push("");
+  }
+
   // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
     L.push(String.raw`\section{Technical Skills}`);

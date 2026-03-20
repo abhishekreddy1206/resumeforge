@@ -33,14 +33,21 @@ export async function GET(
     // Support ?inline=1 for embedding PDFs in iframes
     const url = new URL(_request.url);
     const inline = url.searchParams.get("inline") === "1";
-    const disposition = inline && resume.format === "pdf"
-      ? `inline; filename="${fileName}"`
-      : `attachment; filename="${fileName}"`;
+    const safeName = fileName.replace(/["\r\n]/g, "_");
+    const safeDisposition = inline && (resume.format === "pdf" || resume.format === "latex")
+      ? `inline; filename="${safeName}"`
+      : `attachment; filename="${safeName}"`;
+
+    // For inline LaTeX, serve as plain text so browsers render it
+    const effectiveContentType = inline && resume.format === "latex"
+      ? "text/plain; charset=utf-8"
+      : contentType;
 
     return new NextResponse(buffer, {
       headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": disposition,
+        "Content-Type": effectiveContentType,
+        "Content-Disposition": safeDisposition,
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {

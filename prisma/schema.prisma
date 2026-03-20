@@ -19,8 +19,9 @@ model Profile {
   linkedin       String?
   github         String?
   website        String?
-  stackoverflowId String?
-  lastEnrichedAt  DateTime?
+  stackoverflowId  String?
+  recommendations  String?  // JSON array of {recommenderName, recommenderTitle, relationship, text, linkedinUrl?}
+  lastEnrichedAt   DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -84,13 +85,14 @@ model Skill {
 }
 
 model Publication {
-  id        String  @id @default(cuid())
-  profileId String
-  title     String
-  publisher String?
-  date      String?
-  url       String?
-  doi       String?
+  id          String  @id @default(cuid())
+  profileId   String
+  title       String
+  publisher   String?
+  date        String?
+  url         String?
+  doi         String?
+  description String?
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }

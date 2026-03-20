@@ -78,6 +78,7 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     color: COLORS.muted,
     gap: 0,
+    maxWidth: "100%",
   },
   contactItem: {
     paddingHorizontal: 4,
@@ -129,16 +130,19 @@ const styles = StyleSheet.create({
   expHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "flex-start",
     marginBottom: 2,
-    gap: 8,
+    gap: 6,
   },
   expTitleCompany: {
+    flexDirection: "column",
+    flexShrink: 1,
+    maxWidth: "78%",
+  },
+  expTitleLine: {
     flexDirection: "row",
     alignItems: "baseline",
-    flexShrink: 1,
-    flexWrap: "wrap",
-    maxWidth: "75%",
+    flexWrap: "nowrap",
   },
   expTitle: {
     fontWeight: "bold",
@@ -161,6 +165,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
     flexShrink: 0,
     minWidth: 80,
+    paddingTop: 1,
   },
   // ── Bullets ──
   bullet: {
@@ -270,6 +275,23 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.muted,
   },
+  // ── Recommendations ──
+  recItem: {
+    marginBottom: 3,
+  },
+  recText: {
+    fontSize: 8.5,
+    color: COLORS.secondary,
+    fontStyle: "italic",
+    lineHeight: 1.4,
+    paddingLeft: 4,
+  },
+  recAttribution: {
+    fontSize: 8,
+    color: COLORS.muted,
+    paddingLeft: 4,
+    marginTop: 1,
+  },
   // ── Skills ──
   skillsRow: {
     flexDirection: "row",
@@ -359,9 +381,11 @@ function ResumeDocument({ data }: { data: ResumeData }) {
               <View key={i} style={styles.experienceItem}>
                 <View style={styles.expHeaderRow}>
                   <View style={styles.expTitleCompany}>
-                    <Text style={styles.expTitle}>{exp.title}</Text>
-                    <Text style={styles.expCompanySep}>|</Text>
-                    <Text style={styles.expCompany}>{exp.company}</Text>
+                    <Text style={styles.expTitle}>
+                      {exp.title}
+                      <Text style={styles.expCompanySep}> | </Text>
+                      <Text style={styles.expCompany}>{exp.company}</Text>
+                    </Text>
                   </View>
                   <Text style={styles.expDate}>
                     {exp.startDate} — {exp.endDate || "Present"}
@@ -480,6 +504,23 @@ function ResumeDocument({ data }: { data: ResumeData }) {
                     {cleanUrl(cert.url)}
                   </Link>
                 )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Recommendations */}
+        {data.recommendations && data.recommendations.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeading title="Recommendations" />
+            {data.recommendations.map((rec, i) => (
+              <View key={i} style={styles.recItem}>
+                <Text style={styles.recText}>&ldquo;{rec.text}&rdquo;</Text>
+                <Text style={styles.recAttribution}>
+                  — {rec.recommenderName}
+                  {rec.recommenderTitle ? `, ${rec.recommenderTitle}` : ""}
+                  {rec.relationship ? ` (${rec.relationship})` : ""}
+                </Text>
               </View>
             ))}
           </View>

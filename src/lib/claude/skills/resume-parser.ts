@@ -42,6 +42,7 @@ interface ParsedResume {
     date?: string;
     url?: string;
     doi?: string;
+    description?: string;
   }>;
   certifications: Array<{
     name: string;
@@ -50,6 +51,13 @@ interface ParsedResume {
     expiryDate?: string;
     credentialId?: string;
     url?: string;
+  }>;
+  recommendations: Array<{
+    recommenderName: string;
+    recommenderTitle?: string;
+    relationship?: string;
+    text: string;
+    linkedinUrl?: string;
   }>;
 }
 
@@ -112,7 +120,8 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
       "publisher": "Journal or Conference Name",
       "date": "YYYY or YYYY-MM",
       "url": "url if found",
-      "doi": "DOI if found"
+      "doi": "DOI if found",
+      "description": "Brief summary of the publication if available (max 100 words)"
     }
   ],
   "certifications": [
@@ -123,6 +132,15 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
       "expiryDate": "YYYY or YYYY-MM if mentioned",
       "credentialId": "credential ID if mentioned",
       "url": "verification url if found"
+    }
+  ],
+  "recommendations": [
+    {
+      "recommenderName": "Person's Name",
+      "recommenderTitle": "Their job title",
+      "relationship": "e.g. Manager, Colleague, Client",
+      "text": "The recommendation text",
+      "linkedinUrl": "LinkedIn URL if found"
     }
   ]
 }

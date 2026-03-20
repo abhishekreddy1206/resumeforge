@@ -135,12 +135,14 @@ export async function POST(request: NextRequest) {
               date?: string;
               url?: string;
               doi?: string;
+              description?: string;
             }) => ({
               title: pub.title,
               publisher: pub.publisher,
               date: pub.date,
               url: pub.url,
               doi: pub.doi,
+              description: pub.description || null,
             })
           ),
         },
@@ -163,6 +165,9 @@ export async function POST(request: NextRequest) {
             })
           ),
         },
+        recommendations: parsed.recommendations?.length
+          ? JSON.stringify(parsed.recommendations)
+          : undefined,
       },
       include: {
         experiences: true,

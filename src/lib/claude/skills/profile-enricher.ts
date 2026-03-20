@@ -25,12 +25,15 @@ const SOURCE_INSTRUCTIONS: Record<string, string> = {
 - Skills and endorsements
 - Education details
 - Certifications
+- Publications (articles, papers)
+- Recommendations (recommender name, title, relationship, text)
 - Summary/headline to enrich the professional summary`,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function enrichFromExternalSource(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   existingProfile: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   externalData: Record<string, any>,
   source: string
 ) {
@@ -48,7 +51,10 @@ Return the merged profile as JSON with this structure:
   "summary": "enhanced summary incorporating new info",
   "projects": [{ "name": "...", "description": "...", "url": "...", "skills": ["..."] }],
   "skills": [{ "name": "...", "category": "language|framework|tool|database|cloud|soft" }],
-  "experiences": [{ "company": "...", "title": "...", "startDate": "...", "endDate": "...", "bullets": ["..."], "skills": ["..."] }]
+  "experiences": [{ "company": "...", "title": "...", "startDate": "...", "endDate": "...", "bullets": ["..."], "skills": ["..."] }],
+  "publications": [{ "title": "...", "publisher": "...", "date": "YYYY", "url": "...", "doi": "..." }],
+  "certifications": [{ "name": "...", "issuer": "...", "date": "YYYY", "expiryDate": "...", "credentialId": "...", "url": "..." }],
+  "recommendations": [{ "recommenderName": "...", "recommenderTitle": "...", "relationship": "...", "text": "..." }]
 }
 
 Only include sections that have new data to add. Omit empty arrays.

@@ -40,6 +40,9 @@ RULES:
 - For projects: "skills" is an array of strings
 - For skills: each skill has "name" and "category" (language|framework|tool|database|cloud|soft)
 - When adding skills, always assign an appropriate category
+- For publications: each has "title", "publisher", "date", "url", "doi", "description"
+- For certifications: each has "name", "issuer", "date", "expiryDate", "credentialId", "url"
+- For recommendations: each has "recommenderName", "recommenderTitle", "relationship", "text", and optionally "linkedinUrl"
 - Be concise in your reply — explain what you changed in 1-2 sentences
 
 Return JSON:

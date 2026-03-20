@@ -35,6 +35,27 @@ function isValidProfileOverride(p: unknown): p is Record<string, unknown> {
   return typeof p === "object" && p !== null && "name" in p && "experiences" in p;
 }
 
+function serializeDbProfile(profile: {
+  experiences: Array<Record<string, unknown>>;
+  projects: Array<Record<string, unknown>>;
+  recommendations?: string | null;
+  [key: string]: unknown;
+}) {
+  return {
+    ...profile,
+    experiences: profile.experiences.map((e) => ({
+      ...e,
+      bullets: safeJsonParse(e.bullets, []),
+      skills: safeJsonParse(e.skills, []),
+    })),
+    projects: profile.projects.map((p) => ({
+      ...p,
+      skills: safeJsonParse(p.skills, []),
+    })),
+    recommendations: safeJsonParse(profile.recommendations, []),
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { jobId, format = "pdf", profileOverride, profileVersionId, emailOverride } = await request.json();
@@ -79,22 +100,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    // Use profileOverride (from chat-based generation) or serialize from DB
-    const profileData =
-      profileOverride && isValidProfileOverride(profileOverride)
-        ? profileOverride
-        : {
-            ...profile,
-            experiences: profile.experiences.map((e) => ({
-              ...e,
-              bullets: safeJsonParse(e.bullets, []),
-              skills: safeJsonParse(e.skills, []),
-            })),
-            projects: profile.projects.map((p) => ({
-              ...p,
-              skills: safeJsonParse(p.skills, []),
-            })),
-          };
+    // Cascade: profileOverride → explicit version → latest job version → DB profile
+    let profileData: Record<string, unknown>;
+    let resolvedVersionId: string | undefined = profileVersionId;
+
+    if (profileOverride && isValidProfileOverride(profileOverride)) {
+      profileData = profileOverride;
+    } else if (profileVersionId) {
+      const version = await prisma.profileVersion.findUnique({
+        where: { id: profileVersionId },
+      });
+      if (version?.snapshot) {
+        const parsed = safeJsonParse(version.snapshot, null);
+        profileData = isValidProfileOverride(parsed) ? (parsed as Record<string, unknown>) : serializeDbProfile(profile);
+      } else {
+        profileData = serializeDbProfile(profile);
+      }
+    } else {
+      // Auto-select the latest optimized version for this job
+      const latestVersion = await prisma.profileVersion.findFirst({
+        where: { jobId, profileId: profile.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (latestVersion?.snapshot) {
+        const parsed = safeJsonParse(latestVersion.snapshot, null);
+        if (isValidProfileOverride(parsed)) {
+          profileData = parsed;
+          resolvedVersionId = latestVersion.id;
+        } else {
+          profileData = serializeDbProfile(profile);
+        }
+      } else {
+        profileData = serializeDbProfile(profile);
+      }
+    }
 
     const jobAnalysis = {
       title: job.title,
@@ -154,7 +193,7 @@ export async function POST(request: NextRequest) {
         jobId: job.id,
         format,
         filePath: path.relative(process.cwd(), filePath),
-        ...(profileVersionId ? { profileVersionId } : {}),
+        ...(resolvedVersionId ? { profileVersionId: resolvedVersionId } : {}),
       },
     });
 

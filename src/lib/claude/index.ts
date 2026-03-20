@@ -21,3 +21,7 @@ export { matchProfileToJob } from "./skills/profile-matcher";
 export type { MatchResult } from "./skills/profile-matcher";
 export { adviseOnResume } from "./skills/resume-advisor";
 export { applyResumeTips } from "./skills/resume-tip-applier";
+export { enhanceProfileFromHistory } from "./skills/profile-enhancer";
+export type { EnhanceSuggestion, EnhanceResult } from "./skills/profile-enhancer";
+export { parseCertifications } from "./skills/certification-parser";
+export { parseRecommendations } from "./skills/recommendation-parser";

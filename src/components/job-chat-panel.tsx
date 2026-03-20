@@ -70,6 +70,8 @@ interface JobChatPanelProps {
   job: Job | null;
   matchResult?: MatchResult | null;
   onVersionSaved?: (jobId: string) => void;
+  autoApplyTips?: boolean;
+  onAutoApplyConsumed?: () => void;
 }
 
 export function JobChatPanel({
@@ -78,6 +80,8 @@ export function JobChatPanel({
   job,
   matchResult,
   onVersionSaved,
+  autoApplyTips,
+  onAutoApplyConsumed,
 }: JobChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -176,6 +180,33 @@ export function JobChatPanel({
   useEffect(() => {
     if (!open && messages.length > 0) saveSession(messages);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-apply tips when triggered from the jobs page
+  const autoApplyTriggered = useRef(false);
+  useEffect(() => {
+    if (
+      autoApplyTips &&
+      open &&
+      job &&
+      activeJobId === job.id &&
+      messages.length === 0 &&
+      !isApplyingTips &&
+      !autoApplyTriggered.current
+    ) {
+      // Small delay to ensure reset effect has finished
+      const timer = setTimeout(() => {
+        if (!autoApplyTriggered.current) {
+          autoApplyTriggered.current = true;
+          handleApplyTips();
+          onAutoApplyConsumed?.();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+    if (!autoApplyTips) {
+      autoApplyTriggered.current = false;
+    }
+  }, [autoApplyTips, open, job, activeJobId, messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadSession(id: string) {
     try {
@@ -886,21 +917,27 @@ export function JobChatPanel({
 
           {/* Loading indicators */}
           {(isLoading || isApplyingTips) && (
-            <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0">
+            <div className="flex gap-3 anim-slide-in">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0 shadow-sm">
                 <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
               </div>
-              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3">
+              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3 space-y-2 min-w-[200px]">
                 {isApplyingTips ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Applying tips to your profile...
-                  </div>
+                  <>
+                    <p className="text-xs font-medium text-foreground/80">Optimizing your profile</p>
+                    <p className="text-[11px] text-muted-foreground">Rewriting bullets, reordering skills, and tailoring content to match this role...</p>
+                    <div className="h-0.5 bg-border/30 rounded-full overflow-hidden">
+                      <div className="h-full w-2/5 bg-blue-500/50 rounded-full anim-progress-bar" />
+                    </div>
+                  </>
                 ) : (
-                  <div className="flex gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+                  <div className="flex items-center gap-2">
+                    <span className="flex gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 anim-dot-1" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 anim-dot-2" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500/60 anim-dot-3" />
+                    </span>
+                    <span className="text-xs text-muted-foreground">Thinking</span>
                   </div>
                 )}
               </div>
@@ -908,28 +945,30 @@ export function JobChatPanel({
           )}
 
           {isRescoring && (
-            <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0">
+            <div className="flex gap-3 anim-slide-in">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
                 <BarChart3 className="w-3.5 h-3.5 text-white animate-pulse" />
               </div>
-              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Re-scoring your profile...
+              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3 space-y-2 min-w-[200px]">
+                <p className="text-xs font-medium text-foreground/80">Recalculating ATS score</p>
+                <p className="text-[11px] text-muted-foreground">Comparing updated profile against job requirements...</p>
+                <div className="h-0.5 bg-border/30 rounded-full overflow-hidden">
+                  <div className="h-full w-2/5 bg-violet-500/50 rounded-full anim-progress-bar" />
                 </div>
               </div>
             </div>
           )}
 
           {isGenerating && (
-            <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0">
+            <div className="flex gap-3 anim-slide-in">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-sm">
                 <FileText className="w-3.5 h-3.5 text-white animate-pulse" />
               </div>
-              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Generating your resume...
+              <div className="bg-muted/70 rounded-2xl rounded-bl-md px-4 py-3 space-y-2 min-w-[200px]">
+                <p className="text-xs font-medium text-foreground/80">Generating resume</p>
+                <p className="text-[11px] text-muted-foreground">Tailoring content and formatting your document...</p>
+                <div className="h-0.5 bg-border/30 rounded-full overflow-hidden">
+                  <div className="h-full w-2/5 bg-emerald-500/50 rounded-full anim-progress-bar" />
                 </div>
               </div>
             </div>
@@ -944,21 +983,21 @@ export function JobChatPanel({
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 rounded-lg text-xs h-8 flex-1"
+              className="gap-1.5 rounded-lg text-xs h-8 flex-1 transition-all"
               onClick={handleRescore}
               disabled={isRescoring || isGenerating}
             >
               {isRescoring ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart3 className="w-3 h-3" />}
-              Preview Score
+              {isRescoring ? "Scoring..." : "Preview Score"}
             </Button>
             <Button
               size="sm"
-              className="gap-1.5 rounded-lg text-xs h-8 flex-1 bg-emerald-600 hover:bg-emerald-700"
+              className="gap-1.5 rounded-lg text-xs h-8 flex-1 bg-emerald-600 hover:bg-emerald-700 transition-all"
               onClick={() => handleGenerate("pdf")}
               disabled={isGenerating || isRescoring}
             >
               {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              Generate PDF
+              {isGenerating ? "Generating..." : "Generate PDF"}
             </Button>
           </div>
           <div className="flex gap-2">
