@@ -9,6 +9,8 @@ export async function GET() {
         educations: true,
         projects: true,
         skills: true,
+        publications: true,
+        certifications: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -41,6 +43,7 @@ export async function PUT(request: NextRequest) {
       data: {
         name: data.name,
         email: data.email,
+        additionalEmails: data.additionalEmails,
         phone: data.phone,
         location: data.location,
         summary: data.summary,
@@ -53,6 +56,8 @@ export async function PUT(request: NextRequest) {
         educations: true,
         projects: true,
         skills: true,
+        publications: true,
+        certifications: true,
       },
     });
 

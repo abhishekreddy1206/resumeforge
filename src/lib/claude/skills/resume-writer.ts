@@ -69,6 +69,12 @@ SKILLS SECTION:
 - List JD-required skills FIRST within each category
 - Remove skills clearly irrelevant to this role
 
+PUBLICATIONS & CERTIFICATIONS:
+- Include publications only if relevant to the target role or domain
+- Include certifications that match or strengthen required qualifications
+- Certifications matching JD requirements should be listed prominently
+- Omit irrelevant publications/certifications to save space
+
 GAP ANALYSIS:
 - Strengthen bullets that already match JD requirements
 - Reframe relevant experience using JD vocabulary (reframe DURING writing, not after)
@@ -119,7 +125,26 @@ Return ONLY valid JSON with this structure:
     "tools": ["skill1", "skill2"],
     "databases": ["skill1", "skill2"],
     "cloud": ["skill1", "skill2"]
-  }
+  },
+  "publications": [
+    {
+      "title": "Publication Title",
+      "publisher": "Journal/Conference",
+      "date": "YYYY",
+      "url": "url",
+      "doi": "DOI"
+    }
+  ],
+  "certifications": [
+    {
+      "name": "Certification Name",
+      "issuer": "Issuing Organization",
+      "date": "YYYY",
+      "expiryDate": "YYYY if applicable",
+      "credentialId": "ID if available",
+      "url": "verification url"
+    }
+  ]
 }
 
 Candidate Profile:

@@ -27,4 +27,19 @@ export interface ResumeData {
     url?: string;
   }>;
   skills?: Record<string, string[]>;
+  publications?: Array<{
+    title: string;
+    publisher?: string;
+    date?: string;
+    url?: string;
+    doi?: string;
+  }>;
+  certifications?: Array<{
+    name: string;
+    issuer?: string;
+    date?: string;
+    expiryDate?: string;
+    credentialId?: string;
+    url?: string;
+  }>;
 }

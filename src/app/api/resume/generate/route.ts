@@ -37,7 +37,7 @@ function isValidProfileOverride(p: unknown): p is Record<string, unknown> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { jobId, format = "pdf", profileOverride, profileVersionId } = await request.json();
+    const { jobId, format = "pdf", profileOverride, profileVersionId, emailOverride } = await request.json();
 
     if (!jobId) {
       return NextResponse.json(
@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
           educations: true,
           projects: true,
           skills: true,
+          publications: true,
+          certifications: true,
         },
       }),
       prisma.job.findUnique({ where: { id: jobId } }),
@@ -109,6 +111,11 @@ export async function POST(request: NextRequest) {
       profileData,
       jobAnalysis
     );
+
+    // Apply email override if provided
+    if (emailOverride && typeof emailOverride === "string") {
+      tailoredContent.email = emailOverride;
+    }
 
     // Create output directory and generate file
     const sanitize = (s: string) =>

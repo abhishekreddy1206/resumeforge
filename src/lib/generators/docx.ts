@@ -307,6 +307,132 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     }
   }
 
+  // ── Publications ──
+  if (data.publications && data.publications.length > 0) {
+    children.push(sectionHeading("Publications"));
+    for (const pub of data.publications) {
+      const pubRuns: TextRun[] = [
+        new TextRun({
+          text: pub.title,
+          bold: true,
+          size: 19,
+          color: COLORS.primary,
+          font: "Calibri",
+        }),
+      ];
+      if (pub.publisher) {
+        pubRuns.push(
+          new TextRun({
+            text: ` — ${pub.publisher}`,
+            italics: true,
+            size: 19,
+            color: COLORS.secondary,
+            font: "Calibri",
+          })
+        );
+      }
+      if (pub.date) {
+        pubRuns.push(
+          new TextRun({
+            text: `, ${pub.date}`,
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          })
+        );
+      }
+      children.push(
+        new Paragraph({
+          children: pubRuns,
+          spacing: { before: 40, after: 15 },
+        })
+      );
+      if (pub.doi) {
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `DOI: ${pub.doi}`,
+                size: 17,
+                color: COLORS.accent,
+                font: "Calibri",
+              }),
+            ],
+            spacing: { after: 15 },
+          })
+        );
+      }
+    }
+  }
+
+  // ── Certifications ──
+  if (data.certifications && data.certifications.length > 0) {
+    children.push(sectionHeading("Certifications"));
+    for (const cert of data.certifications) {
+      const certRuns: TextRun[] = [
+        new TextRun({
+          text: cert.name,
+          bold: true,
+          size: 19,
+          color: COLORS.primary,
+          font: "Calibri",
+        }),
+      ];
+      if (cert.issuer) {
+        certRuns.push(
+          new TextRun({
+            text: ` — ${cert.issuer}`,
+            italics: true,
+            size: 19,
+            color: COLORS.secondary,
+            font: "Calibri",
+          })
+        );
+      }
+      if (cert.date) {
+        certRuns.push(
+          new TextRun({
+            text: `, ${cert.date}`,
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          })
+        );
+      }
+      if (cert.expiryDate) {
+        certRuns.push(
+          new TextRun({
+            text: ` (exp. ${cert.expiryDate})`,
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          })
+        );
+      }
+      children.push(
+        new Paragraph({
+          children: certRuns,
+          spacing: { before: 40, after: 10 },
+        })
+      );
+      if (cert.credentialId) {
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `ID: ${cert.credentialId}`,
+                size: 17,
+                color: COLORS.muted,
+                font: "Calibri",
+              }),
+            ],
+            spacing: { after: 10 },
+          })
+        );
+      }
+    }
+  }
+
   // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
     children.push(sectionHeading("Technical Skills"));

@@ -12,6 +12,7 @@ model Profile {
   id        String   @id @default(cuid())
   name      String
   email     String?
+  additionalEmails String? // JSON array of extra email addresses
   phone     String?
   location  String?
   summary   String?
@@ -27,6 +28,8 @@ model Profile {
   educations  Education[]
   projects    Project[]
   skills      Skill[]
+  publications    Publication[]
+  certifications  Certification[]
   resumes          Resume[]
   profileVersions  ProfileVersion[]
 }
@@ -78,6 +81,31 @@ model Skill {
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@unique([profileId, name])
+}
+
+model Publication {
+  id        String  @id @default(cuid())
+  profileId String
+  title     String
+  publisher String?
+  date      String?
+  url       String?
+  doi       String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Certification {
+  id           String  @id @default(cuid())
+  profileId    String
+  name         String
+  issuer       String?
+  date         String?
+  expiryDate   String?
+  credentialId String?
+  url          String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
 model Job {

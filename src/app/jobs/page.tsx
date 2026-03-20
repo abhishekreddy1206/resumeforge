@@ -49,6 +49,7 @@ import {
   ArrowUp,
   ArrowDown,
   Download,
+  Zap,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 
@@ -60,9 +61,10 @@ interface Job {
   description: string;
   skills?: string;
   sponsorship?: string;
+  matchResult?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string }>;
-  profileVersions?: Array<{ id: string; score: number; delta: number | null; resumes: Array<{ id: string; format: string }> }>;
+  profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string }> }>;
 }
 
 interface MatchResult {
@@ -141,34 +143,142 @@ function MatchScoreBadge({ score }: { score: number }) {
   );
 }
 
+function ScoreRing({ score }: { score: number }) {
+  const circumference = 2 * Math.PI * 38;
+  const offset = circumference - (score / 100) * circumference;
+  const color =
+    score >= 80 ? "stroke-emerald-500 dark:stroke-emerald-400"
+    : score >= 60 ? "stroke-blue-500 dark:stroke-blue-400"
+    : score >= 40 ? "stroke-amber-500 dark:stroke-amber-400"
+    : "stroke-red-500 dark:stroke-red-400";
+  const bgColor =
+    score >= 80 ? "text-emerald-700 dark:text-emerald-300"
+    : score >= 60 ? "text-blue-700 dark:text-blue-300"
+    : score >= 40 ? "text-amber-700 dark:text-amber-300"
+    : "text-red-700 dark:text-red-300";
+
+  return (
+    <div className="relative w-20 h-20 shrink-0">
+      <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="38" fill="none" strokeWidth="3" className="stroke-border/40" />
+        <circle
+          cx="40" cy="40" r="38" fill="none" strokeWidth="3.5"
+          strokeLinecap="round"
+          className={`${color} transition-all duration-700 ease-out`}
+          style={{ strokeDasharray: circumference, strokeDashoffset: offset }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span
+          className={`text-xl font-medium leading-none ${bgColor}`}
+          style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic" }}
+        >
+          {score}
+        </span>
+        <span className="text-[8px] text-muted-foreground uppercase tracking-widest mt-0.5"
+          style={{ fontFamily: "var(--font-dm-mono)" }}>
+          ATS
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ImpactBadge({ impact }: { impact: string }) {
   const colors: Record<string, string> = {
-    high: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-    medium: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-    low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+    high: "bg-primary/10 text-primary border-primary/20",
+    medium: "bg-blue-100 text-blue-700 border-blue-200/50 dark:bg-blue-900 dark:text-blue-300 dark:border-blue-700/30",
+    low: "bg-muted text-muted-foreground border-border/50",
   };
   return (
     <span
-      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${colors[impact] || colors.low}`}
+      className={`px-1.5 py-0.5 rounded-sm text-[10px] font-semibold uppercase tracking-wider border ${colors[impact] || colors.low}`}
+      style={{ fontFamily: "var(--font-dm-mono)" }}
     >
       {impact}
     </span>
   );
 }
 
+function AnalysisCTA({ onAnalyze }: { onAnalyze: () => void }) {
+  return (
+    <div className="mt-6 relative">
+      <div className="section-divider mb-6" />
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <p
+            className="text-muted-foreground mb-1"
+            style={{
+              fontFamily: "var(--font-dm-mono)",
+              fontSize: "0.6rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+            }}
+          >
+            Profile Match
+          </p>
+          <p
+            className="text-foreground leading-tight"
+            style={{
+              fontFamily: "var(--font-cormorant)",
+              fontStyle: "italic",
+              fontSize: "1.35rem",
+              fontWeight: 400,
+            }}
+          >
+            How well does your profile <span className="text-primary">align</span>?
+          </p>
+          <p className="text-xs text-muted-foreground mt-1.5 max-w-md leading-relaxed">
+            Run an AI analysis to score your profile against this role — identifies matching skills, bridgeable gaps, and actionable resume tips.
+          </p>
+        </div>
+        <Button
+          onClick={onAnalyze}
+          className="gap-2 rounded-sm px-5 h-10 shadow-sm"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          Analyze Match
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MatchPanel({
   match,
   loading,
+  onReanalyze,
+  hasProfile,
 }: {
   match: MatchResult | null;
   loading: boolean;
+  onReanalyze?: () => void;
+  hasProfile: boolean;
 }) {
   if (loading) {
     return (
-      <div className="mt-4 pt-4 border-t border-border/50">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Analyzing profile match...
+      <div className="mt-6">
+        <div className="section-divider mb-5" />
+        <div className="flex items-center gap-3">
+          <div className="w-20 h-20 rounded-full border-2 border-border/30 flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+          <div>
+            <p
+              className="text-muted-foreground mb-0.5"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.6rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Analyzing
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Scoring your profile against this role...
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -177,89 +287,199 @@ function MatchPanel({
   if (!match) return null;
 
   const { breakdown, resumeTips, skillsToHighlight, verdictSummary } = match;
+  const totalSkills = breakdown.directMatches.length + breakdown.bridgeableSkills.length + breakdown.gaps.length;
 
   return (
-    <div className="mt-4 pt-4 border-t border-border/50 space-y-4">
-      {/* Verdict */}
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        {verdictSummary}
-      </p>
+    <div className="mt-6">
+      <div className="section-divider mb-5" />
 
-      {/* Breakdown */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* Direct Matches */}
-        <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/30 dark:border-emerald-800/40 dark:bg-emerald-950/20 p-3">
-          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 mb-2">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Direct Matches ({breakdown.directMatches.length})
+      {/* Score + Verdict row */}
+      <div className="flex items-start gap-5 mb-6">
+        <ScoreRing score={match.overallScore} />
+        <div className="flex-1 min-w-0 pt-1">
+          <div className="flex items-center gap-3 mb-1.5">
+            <p
+              className="text-muted-foreground"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.6rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Profile Match
+            </p>
+            {onReanalyze && hasProfile && (
+              <button
+                onClick={onReanalyze}
+                className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+                style={{
+                  fontFamily: "var(--font-dm-mono)",
+                  fontSize: "0.55rem",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <Zap className="w-2.5 h-2.5" /> Re-analyze
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-foreground/80 leading-relaxed">
+            {verdictSummary}
           </p>
-          <div className="flex flex-wrap gap-1">
+        </div>
+      </div>
+
+      {/* Breakdown grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border/60 rounded-sm overflow-hidden border border-border/60">
+        {/* Direct Matches */}
+        <div className="bg-card p-4 min-w-0">
+          <div className="flex items-center justify-between mb-3">
+            <p
+              className="text-emerald-600 dark:text-emerald-400"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Direct Matches
+            </p>
+            <span
+              className="text-emerald-600 dark:text-emerald-400"
+              style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.1rem" }}
+            >
+              {breakdown.directMatches.length}
+              {totalSkills > 0 && (
+                <span className="text-muted-foreground text-xs font-sans">/{totalSkills}</span>
+              )}
+            </span>
+          </div>
+          {/* Progress slice */}
+          <div className="h-0.5 bg-border/40 rounded-full mb-3 overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 dark:bg-emerald-400 rounded-full transition-all duration-500"
+              style={{ width: totalSkills > 0 ? `${(breakdown.directMatches.length / totalSkills) * 100}%` : "0%" }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-1 overflow-hidden">
             {breakdown.directMatches.map((s) => (
-              <Badge
+              <span
                 key={s}
-                variant="outline"
-                className="text-xs border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+                className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/40 px-1.5 py-0.5 rounded-sm truncate max-w-full"
               >
                 {s}
-              </Badge>
+              </span>
             ))}
           </div>
         </div>
 
         {/* Bridgeable */}
-        <div className="rounded-xl border border-blue-200/60 bg-blue-50/30 dark:border-blue-800/40 dark:bg-blue-950/20 p-3">
-          <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-1.5 mb-2">
-            <ArrowRight className="w-3.5 h-3.5" />
-            Bridgeable ({breakdown.bridgeableSkills.length})
-          </p>
+        <div className="bg-card p-4 min-w-0">
+          <div className="flex items-center justify-between mb-3">
+            <p
+              className="text-blue-600 dark:text-blue-400"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Bridgeable
+            </p>
+            <span
+              className="text-blue-600 dark:text-blue-400"
+              style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.1rem" }}
+            >
+              {breakdown.bridgeableSkills.length}
+            </span>
+          </div>
+          <div className="h-0.5 bg-border/40 rounded-full mb-3 overflow-hidden">
+            <div
+              className="h-full bg-blue-500 dark:bg-blue-400 rounded-full transition-all duration-500"
+              style={{ width: totalSkills > 0 ? `${(breakdown.bridgeableSkills.length / totalSkills) * 100}%` : "0%" }}
+            />
+          </div>
           {breakdown.bridgeableSkills.length > 0 ? (
-            <div className="space-y-1.5">
+            <div className="space-y-2 overflow-hidden">
               {breakdown.bridgeableSkills.map((b) => (
-                <div key={b.jobRequirement} className="text-xs">
-                  <span className="font-medium">{b.yourSkill}</span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    → {b.jobRequirement}
-                  </span>
+                <div key={b.jobRequirement} className="text-[11px] leading-snug" title={b.explanation}>
+                  <span className="text-foreground font-medium">{b.yourSkill}</span>
+                  <span className="text-muted-foreground mx-1">&rarr;</span>
+                  <span className="text-blue-600 dark:text-blue-400">{b.jobRequirement}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">None identified</p>
+            <p className="text-[11px] text-muted-foreground">None identified</p>
           )}
         </div>
 
         {/* Gaps */}
-        <div className="rounded-xl border border-red-200/60 bg-red-50/30 dark:border-red-800/40 dark:bg-red-950/20 p-3">
-          <p className="text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1.5 mb-2">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Gaps ({breakdown.gaps.length})
-          </p>
+        <div className="bg-card p-4 min-w-0">
+          <div className="flex items-center justify-between mb-3">
+            <p
+              className="text-muted-foreground"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Gaps
+            </p>
+            <span
+              className="text-muted-foreground"
+              style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.1rem" }}
+            >
+              {breakdown.gaps.length}
+            </span>
+          </div>
+          <div className="h-0.5 bg-border/40 rounded-full mb-3 overflow-hidden">
+            <div
+              className="h-full bg-red-400 dark:bg-red-500 rounded-full transition-all duration-500"
+              style={{ width: totalSkills > 0 ? `${(breakdown.gaps.length / totalSkills) * 100}%` : "0%" }}
+            />
+          </div>
           {breakdown.gaps.length > 0 ? (
-            <ul className="space-y-1">
+            <ul className="space-y-1.5 overflow-hidden">
               {breakdown.gaps.map((g) => (
-                <li key={g} className="text-xs text-muted-foreground">
-                  {g}
+                <li key={g} className="text-[11px] text-muted-foreground leading-snug truncate" title={g}>
+                  <span className="text-red-400 dark:text-red-500 mr-1">&mdash;</span>{g}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-muted-foreground">No major gaps!</p>
+            <p className="text-[11px] text-muted-foreground">No major gaps</p>
           )}
         </div>
       </div>
 
       {/* Skills to Highlight */}
       {skillsToHighlight.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-            Skills to Emphasize
+        <div className="mt-5">
+          <p
+            className="text-muted-foreground mb-2"
+            style={{
+              fontFamily: "var(--font-dm-mono)",
+              fontSize: "0.55rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+            }}
+          >
+            Emphasize in Resume
           </p>
           <div className="flex flex-wrap gap-1.5">
             {skillsToHighlight.map((s) => (
-              <Badge key={s} variant="secondary" className="text-xs">
+              <span
+                key={s}
+                className="text-[11px] text-primary bg-primary/6 border border-primary/15 px-2 py-0.5 rounded-sm"
+              >
                 {s}
-              </Badge>
+              </span>
             ))}
           </div>
         </div>
@@ -267,27 +487,38 @@ function MatchPanel({
 
       {/* Resume Tips */}
       {resumeTips.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Lightbulb className="w-3.5 h-3.5" />
+        <div className="mt-5">
+          <p
+            className="text-muted-foreground mb-3 flex items-center gap-1.5"
+            style={{
+              fontFamily: "var(--font-dm-mono)",
+              fontSize: "0.55rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+            }}
+          >
+            <Lightbulb className="w-3 h-3" />
             Resume Tips
           </p>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {resumeTips.map((tip) => (
               <div
                 key={tip.priority}
-                className={`flex items-start gap-2.5 text-sm p-2.5 rounded-lg border ${
+                className={`flex items-start gap-3 py-2.5 px-3 rounded-sm border ${
                   tip.grounded
-                    ? "border-border/50 bg-muted/20"
-                    : "border-amber-200/50 bg-amber-50/20 dark:border-amber-800/30 dark:bg-amber-950/10"
+                    ? "border-border/40 bg-card"
+                    : "border-amber-200/40 bg-amber-50/10 dark:border-amber-800/20 dark:bg-amber-950/10"
                 }`}
               >
                 <ImpactBadge impact={tip.impact} />
-                <span className="flex-1 text-xs text-muted-foreground leading-relaxed">
+                <span className="flex-1 text-[11px] text-foreground/70 leading-relaxed">
                   {tip.action}
                   {!tip.grounded && (
-                    <span className="text-amber-600 dark:text-amber-400 text-[10px] ml-1">
-                      (stretch)
+                    <span
+                      className="text-amber-600 dark:text-amber-400 ml-1.5"
+                      style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
+                    >
+                      stretch
                     </span>
                   )}
                 </span>
@@ -326,6 +557,8 @@ export default function JobsPage() {
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [profileEmails, setProfileEmails] = useState<string[]>([]);
+  const [selectedEmail, setSelectedEmail] = useState<string>("");
 
   async function fetchJobs(p: number) {
     const res = await fetch(`/api/jobs?page=${p}&pageSize=${PAGE_SIZE}`);
@@ -340,14 +573,25 @@ export default function JobsPage() {
   useEffect(() => {
     Promise.all([
       fetch(`/api/jobs?page=1&pageSize=${PAGE_SIZE}`).then((r) => r.json()),
-      fetch("/api/profile").then((r) => ({ ok: r.ok })),
+      fetch("/api/profile").then((r) => r.ok ? r.json() : null),
     ])
       .then(([j, p]) => {
         setJobs(j.jobs || []);
         setTotalJobs(j.total || 0);
         setTotalPages(j.totalPages || 1);
         setPage(j.page || 1);
-        setHasProfile(p.ok);
+        setHasProfile(!!p);
+        if (p) {
+          const emails: string[] = [];
+          if (p.email) emails.push(p.email);
+          if (p.additionalEmails) {
+            try {
+              const extra = JSON.parse(p.additionalEmails);
+              if (Array.isArray(extra)) emails.push(...extra);
+            } catch { /* ignore */ }
+          }
+          setProfileEmails(emails);
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -378,15 +622,16 @@ export default function JobsPage() {
     return () => clearInterval(interval);
   }, [jobs, page]);
 
-  async function fetchMatch(jobId: string) {
-    if (matchResults[jobId] || matchLoading[jobId]) return;
+  async function fetchMatch(jobId: string, force = false) {
+    if (matchLoading[jobId]) return;
+    if (!force && matchResults[jobId]) return;
 
     setMatchLoading((prev) => ({ ...prev, [jobId]: true }));
     try {
       const res = await fetch("/api/jobs/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, force }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -416,6 +661,9 @@ export default function JobsPage() {
       const body: Record<string, string> = { jobId: job.id, format };
       if (bestVersion) {
         body.profileVersionId = bestVersion.id;
+      }
+      if (selectedEmail) {
+        body.emailOverride = selectedEmail;
       }
 
       const res = await fetch("/api/resume/generate", {
@@ -454,8 +702,17 @@ export default function JobsPage() {
       setExpandedJob(null);
     } else {
       setExpandedJob(jobId);
-      if (hasProfile) {
-        fetchMatch(jobId);
+      // Load cached match from server data if available (no API call)
+      if (!matchResults[jobId]) {
+        const job = jobs.find((j) => j.id === jobId);
+        if (job?.matchResult) {
+          try {
+            const cached = JSON.parse(job.matchResult);
+            if (cached?.overallScore != null) {
+              setMatchResults((prev) => ({ ...prev, [jobId]: cached }));
+            }
+          } catch { /* ignore parse errors */ }
+        }
       }
     }
   }
@@ -508,6 +765,13 @@ export default function JobsPage() {
     if (versions && versions.length > 0) return versions[0].score;
     const match = matchResults[job.id];
     if (match) return match.overallScore;
+    // Check cached matchResult from API
+    if (job.matchResult) {
+      try {
+        const cached = JSON.parse(job.matchResult);
+        if (cached?.overallScore) return cached.overallScore;
+      } catch { /* ignore */ }
+    }
     return null;
   }
 
@@ -729,12 +993,16 @@ export default function JobsPage() {
                               {job.title === "Analyzing..." ? "Analyzing..." : job.title}
                             </p>
                             <p className="text-xs text-muted-foreground sm:hidden">{job.company}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               {job.sponsorship === "available" && (
-                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                                  <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
+                                </Badge>
                               )}
                               {job.sponsorship === "unavailable" && (
-                                <ShieldAlert className="w-3 h-3 text-red-500" />
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
+                                  <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+                                </Badge>
                               )}
                               {job.url && (
                                 <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
@@ -762,13 +1030,8 @@ export default function JobsPage() {
                           <span className="text-xs text-muted-foreground">—</span>
                         ) : bestScore !== null ? (
                           <MatchScoreBadge score={bestScore} />
-                        ) : hasProfile ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); fetchMatch(job.id); }}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            Score
-                          </button>
+                        ) : matchLoading[job.id] ? (
+                          <Loader2 className="w-3 h-3 animate-spin mx-auto text-muted-foreground" />
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -852,7 +1115,7 @@ export default function JobsPage() {
             </Table>
           </div>
 
-          {/* Expanded match panel (rendered below table) */}
+          {/* Expanded detail panel */}
           {expandedJob && (() => {
             const job = jobs.find((j) => j.id === expandedJob);
             if (!job) return null;
@@ -861,53 +1124,247 @@ export default function JobsPage() {
             const hasVersions = (job.profileVersions?.length ?? 0) > 0;
             const isGenerating = generatingFor === job.id;
             return (
-              <div className="border border-t-0 border-border rounded-b-sm p-5 bg-card -mt-px">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Target className="w-4 h-4 text-primary" />
-                    <p className="text-sm font-medium">{job.title} at {job.company}</p>
-                    {match && <MatchScoreBadge score={match.overallScore} />}
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setExpandedJob(null)}>
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-                {job.skills && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {JSON.parse(job.skills).slice(0, 12).map((skill: string) => (
-                      <Badge
-                        key={skill}
-                        variant="secondary"
-                        className={`text-xs ${
-                          match?.skillsToHighlight?.includes(skill)
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                            : ""
-                        }`}
+              <div className="border border-t-0 border-border rounded-b-sm bg-card -mt-px overflow-hidden">
+                {/* Panel header */}
+                <div className="px-6 pt-5 pb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p
+                        className="text-muted-foreground mb-1"
+                        style={{
+                          fontFamily: "var(--font-dm-mono)",
+                          fontSize: "0.6rem",
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                        }}
                       >
-                        {skill}
-                      </Badge>
-                    ))}
+                        Job Details
+                      </p>
+                      <h3
+                        className="text-foreground leading-tight truncate"
+                        style={{
+                          fontFamily: "var(--font-cormorant)",
+                          fontStyle: "italic",
+                          fontSize: "1.5rem",
+                          fontWeight: 400,
+                        }}
+                      >
+                        {job.title}
+                        <span className="text-muted-foreground text-lg"> at </span>
+                        <span className="text-primary">{job.company}</span>
+                      </h3>
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        {job.sponsorship === "unavailable" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-red-700 bg-red-50 border border-red-200/50 dark:text-red-300 dark:bg-red-950/40 dark:border-red-800/30"
+                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                          >
+                            <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+                          </span>
+                        )}
+                        {job.sponsorship === "available" && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-emerald-700 bg-emerald-50 border border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800/30"
+                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                          >
+                            <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
+                          </span>
+                        )}
+                        {job.url && (
+                          <a
+                            href={job.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em" }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" /> View Posting
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mt-1 -mr-2" onClick={() => setExpandedJob(null)}>
+                      <ChevronUp className="w-4 h-4" />
+                    </Button>
                   </div>
-                )}
-                <MatchPanel match={match || null} loading={isMatchLoading || false} />
 
-                {/* Generate / Download section */}
-                <div className="mt-4 pt-4 border-t border-border/50">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Export Resume
-                    </p>
-                    {hasVersions && (
-                      <a
-                        href="/versions"
-                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                  {/* Required skills strip */}
+                  {job.skills && (
+                    <div className="mt-4">
+                      <p
+                        className="text-muted-foreground mb-2"
+                        style={{
+                          fontFamily: "var(--font-dm-mono)",
+                          fontSize: "0.55rem",
+                          letterSpacing: "0.12em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Required Skills
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {JSON.parse(job.skills).slice(0, 14).map((skill: string) => (
+                          <span
+                            key={skill}
+                            className={`text-[11px] px-2 py-0.5 rounded-sm border ${
+                              match?.skillsToHighlight?.includes(skill)
+                                ? "text-emerald-700 bg-emerald-50/60 border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800/30"
+                                : "text-foreground/70 bg-muted/30 border-border/40"
+                            }`}
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Analysis section */}
+                <div className="px-6">
+                  {!match && !isMatchLoading && hasProfile && (
+                    <AnalysisCTA onAnalyze={() => fetchMatch(job.id)} />
+                  )}
+                  <MatchPanel
+                    match={match || null}
+                    loading={isMatchLoading || false}
+                    onReanalyze={() => fetchMatch(job.id, true)}
+                    hasProfile={hasProfile}
+                  />
+                </div>
+
+                {/* Version History */}
+                {hasVersions && (
+                  <div className="px-6 mt-5">
+                    <div className="section-divider mb-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <p
+                        className="text-muted-foreground flex items-center gap-1.5"
+                        style={{
+                          fontFamily: "var(--font-dm-mono)",
+                          fontSize: "0.6rem",
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                        }}
                       >
                         <History className="w-3 h-3" />
-                        View saved versions
+                        Version History
+                      </p>
+                      <a
+                        href="/versions"
+                        className="text-primary hover:underline"
+                        style={{
+                          fontFamily: "var(--font-dm-mono)",
+                          fontSize: "0.55rem",
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        View all
                       </a>
-                    )}
+                    </div>
+                    {/* Score progression */}
+                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                      {match && (
+                        <>
+                          <span
+                            className="text-muted-foreground"
+                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                          >
+                            Original
+                          </span>
+                          <MatchScoreBadge score={match.overallScore} />
+                          <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
+                        </>
+                      )}
+                      {job.profileVersions!.slice().reverse().map((v, vi) => (
+                        <span key={v.id} className="inline-flex items-center gap-1">
+                          {vi > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
+                          <MatchScoreBadge score={v.score} />
+                          {v.delta != null && v.delta > 0 && (
+                            <span
+                              className="text-emerald-600 dark:text-emerald-400 font-semibold"
+                              style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem" }}
+                            >
+                              +{v.delta}
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    {/* Version rows */}
+                    <div className="space-y-1">
+                      {job.profileVersions!.map((v, vi) => (
+                        <div key={v.id} className="flex items-center justify-between py-2 px-3 rounded-sm border border-border/30 bg-muted/10 hover:bg-muted/20 transition-colors text-xs">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="text-foreground font-medium"
+                              style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em" }}
+                            >
+                              v{job.profileVersions!.length - vi}
+                            </span>
+                            <MatchScoreBadge score={v.score} />
+                            {v.delta != null && v.delta > 0 && (
+                              <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">+{v.delta}</span>
+                            )}
+                            <span className="text-muted-foreground">
+                              {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                          {v.resumes.length > 0 && (
+                            <div className="flex gap-1">
+                              {v.resumes.map((r) => (
+                                <a key={r.id} href={`/api/resume/download/${r.id}`} download onClick={(e) => e.stopPropagation()}>
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-sm border border-border/40 bg-card hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer text-muted-foreground hover:text-primary"
+                                    style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                                    {r.format === "latex" ? "tex" : r.format}
+                                  </span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                )}
+
+                {/* Export section */}
+                <div className="px-6 mt-5 pb-6">
+                  <div className="section-divider mb-4" />
+                  <p
+                    className="text-muted-foreground mb-3 flex items-center gap-1.5"
+                    style={{
+                      fontFamily: "var(--font-dm-mono)",
+                      fontSize: "0.6rem",
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Export Resume
+                  </p>
+                  {/* Email selector */}
+                  {profileEmails.length > 1 && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <label
+                        className="text-muted-foreground shrink-0"
+                        style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
+                      >
+                        Email:
+                      </label>
+                      <select
+                        value={selectedEmail || profileEmails[0]}
+                        onChange={(e) => setSelectedEmail(e.target.value)}
+                        className="text-xs border border-border rounded-sm px-2.5 py-1.5 bg-background text-foreground"
+                      >
+                        {profileEmails.map((email) => (
+                          <option key={email} value={email}>{email}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {(["pdf", "docx", "latex"] as const).map((fmt) => {
                       const alreadyHas = jobHasResumeFormat(job, fmt);
@@ -921,7 +1378,6 @@ export default function JobsPage() {
                           disabled={isGenerating}
                           onClick={() => {
                             if (alreadyHas) {
-                              // Find the existing resume to download
                               const existingResume = job.resumes.find((r) => r.format === fmt)
                                 || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
                               if (existingResume) {
@@ -939,7 +1395,7 @@ export default function JobsPage() {
                           ) : (
                             <Sparkles className="w-3 h-3" />
                           )}
-                          {alreadyHas ? `Download ${label}` : `Generate ${label}`}
+                          {alreadyHas ? `${label}` : `Generate ${label}`}
                         </Button>
                       );
                     })}

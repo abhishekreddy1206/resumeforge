@@ -159,6 +159,49 @@ export async function generateLatex(data: ResumeData): Promise<Buffer> {
     L.push("");
   }
 
+  // ── Publications ──
+  if (data.publications && data.publications.length > 0) {
+    L.push(String.raw`\section{Publications}`);
+    for (const pub of data.publications) {
+      const parts = [`\\textbf{${esc(pub.title)}}`];
+      if (pub.publisher) parts.push(`\\textit{${esc(pub.publisher)}}`);
+      if (pub.date) parts.push(`{\\small\\color{muted} ${esc(pub.date)}}`);
+      L.push(`${parts.join(", ")}\\\\[-2pt]`);
+      if (pub.doi) {
+        L.push(`{\\small\\color{accent} DOI: ${href(`https://doi.org/${pub.doi}`, pub.doi)}}\\\\[2pt]`);
+      } else if (pub.url) {
+        L.push(`{\\small ${href(pub.url, cleanUrl(pub.url))}}\\\\[2pt]`);
+      } else {
+        L.push(String.raw`\vspace{2pt}`);
+      }
+    }
+    L.push("");
+  }
+
+  // ── Certifications ──
+  if (data.certifications && data.certifications.length > 0) {
+    L.push(String.raw`\section{Certifications}`);
+    for (const cert of data.certifications) {
+      const parts = [`\\textbf{${esc(cert.name)}}`];
+      if (cert.issuer) parts.push(`\\textit{${esc(cert.issuer)}}`);
+      const datePart = cert.date ? esc(cert.date) : "";
+      const expiryPart = cert.expiryDate ? ` (exp. ${esc(cert.expiryDate)})` : "";
+      if (datePart || expiryPart) {
+        parts.push(`{\\small\\color{muted} ${datePart}${expiryPart}}`);
+      }
+      L.push(`${parts.join(", ")}\\\\[-2pt]`);
+      const meta: string[] = [];
+      if (cert.credentialId) meta.push(`ID: ${esc(cert.credentialId)}`);
+      if (cert.url) meta.push(href(cert.url, cleanUrl(cert.url)));
+      if (meta.length > 0) {
+        L.push(`{\\small\\color{muted} ${meta.join(" \\enspace{\\color{rule}\\textbar}\\enspace ")}}\\\\[2pt]`);
+      } else {
+        L.push(String.raw`\vspace{2pt}`);
+      }
+    }
+    L.push("");
+  }
+
   // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
     L.push(String.raw`\section{Technical Skills}`);

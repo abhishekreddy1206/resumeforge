@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
           educations: true,
           projects: true,
           skills: true,
+          publications: true,
+          certifications: true,
         },
       }),
       prisma.job.findUnique({ where: { id: jobId } }),

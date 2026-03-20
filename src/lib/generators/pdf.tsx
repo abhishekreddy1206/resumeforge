@@ -8,37 +8,66 @@ import {
   StyleSheet,
   renderToBuffer,
   Link,
+  Font,
 } from "@react-pdf/renderer";
 
+// ── Register custom fonts ──
+Font.register({
+  family: "Source Sans 3",
+  fonts: [
+    {
+      src: "https://cdn.jsdelivr.net/fontsource/fonts/source-sans-3@latest/latin-400-normal.ttf",
+      fontWeight: "normal",
+    },
+    {
+      src: "https://cdn.jsdelivr.net/fontsource/fonts/source-sans-3@latest/latin-600-normal.ttf",
+      fontWeight: "semibold",
+    },
+    {
+      src: "https://cdn.jsdelivr.net/fontsource/fonts/source-sans-3@latest/latin-700-normal.ttf",
+      fontWeight: "bold",
+    },
+    {
+      src: "https://cdn.jsdelivr.net/fontsource/fonts/source-sans-3@latest/latin-400-italic.ttf",
+      fontStyle: "italic",
+    },
+  ],
+});
+
+// Disable hyphenation for cleaner text
+Font.registerHyphenationCallback((word) => [word]);
+
 const COLORS = {
-  primary: "#1a1a1a",
-  secondary: "#4a4a4a",
-  muted: "#6b7280",
-  accent: "#2563eb",
-  divider: "#d1d5db",
-  light: "#f3f4f6",
+  primary: "#1A1A1A",
+  secondary: "#4A4A4A",
+  muted: "#6B7280",
+  accent: "#2563EB",
+  divider: "#D1D5DB",
+  rule: "#1A1A1A",
 };
+
+const FONT = "Source Sans 3";
 
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 32,
-    paddingBottom: 32,
+    paddingTop: 28,
+    paddingBottom: 28,
     paddingHorizontal: 40,
-    fontFamily: "Helvetica",
+    fontFamily: FONT,
     fontSize: 9.5,
     color: COLORS.primary,
     lineHeight: 1.3,
   },
   // ── Header ──
   header: {
-    marginBottom: 2,
+    marginBottom: 1,
     textAlign: "center",
   },
   name: {
-    fontSize: 20,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 22,
+    fontWeight: "bold",
     color: COLORS.primary,
-    letterSpacing: 0.5,
+    letterSpacing: 1.0,
     marginBottom: 4,
   },
   contactRow: {
@@ -48,72 +77,82 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     fontSize: 8.5,
     color: COLORS.muted,
+    gap: 0,
   },
   contactItem: {
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
+    color: COLORS.muted,
+  },
+  contactLink: {
+    paddingHorizontal: 4,
+    color: COLORS.accent,
+    textDecoration: "none",
   },
   contactSep: {
     color: COLORS.divider,
+    fontSize: 8,
   },
   headerRule: {
     borderBottomWidth: 1.5,
-    borderBottomColor: COLORS.primary,
-    marginTop: 7,
+    borderBottomColor: COLORS.rule,
+    marginTop: 6,
     marginBottom: 2,
   },
   // ── Sections ──
   section: {
-    marginTop: 7,
-    marginBottom: 2,
+    marginTop: 6,
+    marginBottom: 1,
   },
   sectionTitle: {
     fontSize: 10,
-    fontFamily: "Helvetica-Bold",
+    fontWeight: "bold",
     color: COLORS.primary,
     textTransform: "uppercase",
-    letterSpacing: 1.5,
+    letterSpacing: 2.0,
     marginBottom: 1,
   },
   sectionRule: {
-    borderBottomWidth: 0.75,
+    borderBottomWidth: 0.5,
     borderBottomColor: COLORS.divider,
-    marginBottom: 5,
+    marginBottom: 4,
   },
   // ── Summary ──
   summary: {
     fontSize: 9,
-    lineHeight: 1.5,
+    lineHeight: 1.4,
     color: COLORS.secondary,
   },
   // ── Experience ──
   experienceItem: {
-    marginBottom: 6,
+    marginBottom: 4,
   },
   expHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "baseline",
-    marginBottom: 1,
+    marginBottom: 2,
+    gap: 8,
   },
   expTitleCompany: {
     flexDirection: "row",
     alignItems: "baseline",
     flexShrink: 1,
-    maxWidth: "78%",
+    flexWrap: "wrap",
+    maxWidth: "75%",
   },
   expTitle: {
-    fontFamily: "Helvetica-Bold",
+    fontWeight: "bold",
     fontSize: 10,
     color: COLORS.primary,
   },
   expCompanySep: {
     fontSize: 9,
     color: COLORS.muted,
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
   },
   expCompany: {
     fontSize: 9.5,
-    fontFamily: "Helvetica-Oblique",
+    fontStyle: "italic",
     color: COLORS.secondary,
   },
   expDate: {
@@ -121,11 +160,12 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: "right",
     flexShrink: 0,
+    minWidth: 80,
   },
   // ── Bullets ──
   bullet: {
     flexDirection: "row",
-    marginBottom: 1.5,
+    marginBottom: 1,
     paddingLeft: 4,
   },
   bulletDot: {
@@ -136,32 +176,35 @@ const styles = StyleSheet.create({
   bulletText: {
     flex: 1,
     fontSize: 9,
-    lineHeight: 1.45,
+    lineHeight: 1.4,
     color: COLORS.secondary,
   },
   // ── Education ──
   eduItem: {
-    marginBottom: 4,
+    marginBottom: 3,
   },
   eduHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "baseline",
+    gap: 8,
   },
   eduDegree: {
-    fontFamily: "Helvetica-Bold",
+    fontWeight: "bold",
     fontSize: 9.5,
     color: COLORS.primary,
-    maxWidth: "78%",
+    maxWidth: "75%",
+    flexShrink: 1,
   },
   eduDate: {
     fontSize: 8.5,
     color: COLORS.muted,
     flexShrink: 0,
+    minWidth: 50,
   },
   eduSchool: {
     fontSize: 9,
-    fontFamily: "Helvetica-Oblique",
+    fontStyle: "italic",
     color: COLORS.secondary,
   },
   eduGpa: {
@@ -171,10 +214,10 @@ const styles = StyleSheet.create({
   },
   // ── Projects ──
   projectItem: {
-    marginBottom: 5,
+    marginBottom: 4,
   },
   projectName: {
-    fontFamily: "Helvetica-Bold",
+    fontWeight: "bold",
     fontSize: 9.5,
     color: COLORS.primary,
   },
@@ -182,24 +225,62 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.accent,
     marginLeft: 4,
+    textDecoration: "none",
   },
   projectDesc: {
     fontSize: 9,
     color: COLORS.secondary,
-    lineHeight: 1.45,
+    lineHeight: 1.4,
     paddingLeft: 4,
+  },
+  // ── Publications ──
+  pubItem: {
+    marginBottom: 3,
+  },
+  pubTitle: {
+    fontWeight: "bold",
+    fontSize: 9,
+    color: COLORS.primary,
+  },
+  pubDetails: {
+    fontSize: 8.5,
+    color: COLORS.secondary,
+    fontStyle: "italic",
+  },
+  pubLink: {
+    fontSize: 8,
+    color: COLORS.accent,
+    textDecoration: "none",
+  },
+  // ── Certifications ──
+  certItem: {
+    marginBottom: 3,
+  },
+  certName: {
+    fontWeight: "bold",
+    fontSize: 9,
+    color: COLORS.primary,
+  },
+  certIssuer: {
+    fontSize: 8.5,
+    color: COLORS.secondary,
+    fontStyle: "italic",
+  },
+  certMeta: {
+    fontSize: 8,
+    color: COLORS.muted,
   },
   // ── Skills ──
   skillsRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginBottom: 2.5,
+    marginBottom: 2,
   },
   skillCategory: {
-    fontFamily: "Helvetica-Bold",
+    fontWeight: "bold",
     fontSize: 9,
     color: COLORS.primary,
-    width: 100,
+    width: 95,
     flexShrink: 0,
   },
   skillList: {
@@ -218,35 +299,42 @@ function SectionHeading({ title }: { title: string }) {
   );
 }
 
+function cleanUrl(url: string): string {
+  return url
+    .replace(/https?:\/\/(www\.)?/, "")
+    .replace(/\/$/, "");
+}
+
 function ResumeDocument({ data }: { data: ResumeData }) {
-  const contactParts = [
-    data.email,
-    data.phone,
-    data.location,
-    data.linkedin,
-    data.github,
-    data.website,
-  ].filter(Boolean) as string[];
+  const contactItems: Array<{ text: string; href?: string }> = [];
+  if (data.email)
+    contactItems.push({ text: data.email, href: `mailto:${data.email}` });
+  if (data.phone) contactItems.push({ text: data.phone });
+  if (data.location) contactItems.push({ text: data.location });
+  if (data.linkedin)
+    contactItems.push({ text: cleanUrl(data.linkedin), href: data.linkedin });
+  if (data.github)
+    contactItems.push({ text: cleanUrl(data.github), href: data.github });
+  if (data.website)
+    contactItems.push({ text: cleanUrl(data.website), href: data.website });
 
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
+      <Page size="LETTER" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.name}>{data.name}</Text>
-          {contactParts.length > 0 && (
+          {contactItems.length > 0 && (
             <View style={styles.contactRow}>
-              {contactParts.map((item, i) => (
+              {contactItems.map((item, i) => (
                 <React.Fragment key={i}>
-                  {i > 0 && <Text style={styles.contactSep}>|</Text>}
-                  {item.startsWith("http") ? (
-                    <Link src={item} style={styles.contactItem}>
-                      {item
-                        .replace(/https?:\/\/(www\.)?/, "")
-                        .replace(/\/$/, "")}
+                  {i > 0 && <Text style={styles.contactSep}> | </Text>}
+                  {item.href ? (
+                    <Link src={item.href} style={styles.contactLink}>
+                      {item.text}
                     </Link>
                   ) : (
-                    <Text style={styles.contactItem}>{item}</Text>
+                    <Text style={styles.contactItem}>{item.text}</Text>
                   )}
                 </React.Fragment>
               ))}
@@ -300,9 +388,7 @@ function ResumeDocument({ data }: { data: ResumeData }) {
                   <Text style={styles.projectName}>{proj.name}</Text>
                   {proj.url && (
                     <Link src={proj.url} style={styles.projectUrl}>
-                      {proj.url
-                        .replace(/https?:\/\/(www\.)?/, "")
-                        .replace(/\/$/, "")}
+                      {cleanUrl(proj.url)}
                     </Link>
                   )}
                 </View>
@@ -338,6 +424,62 @@ function ResumeDocument({ data }: { data: ResumeData }) {
                     <Text style={styles.eduGpa}>GPA: {edu.gpa}</Text>
                   )}
                 </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Publications */}
+        {data.publications && data.publications.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeading title="Publications" />
+            {data.publications.map((pub, i) => (
+              <View key={i} style={styles.pubItem}>
+                <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap" }}>
+                  <Text style={styles.pubTitle}>{pub.title}</Text>
+                  {pub.publisher && (
+                    <Text style={styles.pubDetails}>{" — "}{pub.publisher}</Text>
+                  )}
+                  {pub.date && (
+                    <Text style={{ ...styles.certMeta, marginLeft: 4 }}>{pub.date}</Text>
+                  )}
+                </View>
+                {(pub.url || pub.doi) && (
+                  <Link src={pub.url || `https://doi.org/${pub.doi}`} style={styles.pubLink}>
+                    {pub.doi ? `DOI: ${pub.doi}` : cleanUrl(pub.url!)}
+                  </Link>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Certifications */}
+        {data.certifications && data.certifications.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeading title="Certifications" />
+            {data.certifications.map((cert, i) => (
+              <View key={i} style={styles.certItem}>
+                <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap" }}>
+                  <Text style={styles.certName}>{cert.name}</Text>
+                  {cert.issuer && (
+                    <Text style={styles.certIssuer}>{" — "}{cert.issuer}</Text>
+                  )}
+                  {cert.date && (
+                    <Text style={{ ...styles.certMeta, marginLeft: 4 }}>{cert.date}</Text>
+                  )}
+                  {cert.expiryDate && (
+                    <Text style={styles.certMeta}>{" (exp. "}{cert.expiryDate}{")"}</Text>
+                  )}
+                </View>
+                {cert.credentialId && (
+                  <Text style={styles.certMeta}>ID: {cert.credentialId}</Text>
+                )}
+                {cert.url && (
+                  <Link src={cert.url} style={styles.pubLink}>
+                    {cleanUrl(cert.url)}
+                  </Link>
+                )}
               </View>
             ))}
           </View>

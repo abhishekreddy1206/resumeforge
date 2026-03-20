@@ -36,6 +36,21 @@ interface ParsedResume {
     name: string;
     category: string;
   }>;
+  publications: Array<{
+    title: string;
+    publisher?: string;
+    date?: string;
+    url?: string;
+    doi?: string;
+  }>;
+  certifications: Array<{
+    name: string;
+    issuer?: string;
+    date?: string;
+    expiryDate?: string;
+    credentialId?: string;
+    url?: string;
+  }>;
 }
 
 /**
@@ -89,6 +104,25 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
     {
       "name": "Skill Name",
       "category": "language|framework|tool|database|cloud|soft"
+    }
+  ],
+  "publications": [
+    {
+      "title": "Publication Title",
+      "publisher": "Journal or Conference Name",
+      "date": "YYYY or YYYY-MM",
+      "url": "url if found",
+      "doi": "DOI if found"
+    }
+  ],
+  "certifications": [
+    {
+      "name": "Certification Name",
+      "issuer": "Issuing Organization",
+      "date": "YYYY or YYYY-MM",
+      "expiryDate": "YYYY or YYYY-MM if mentioned",
+      "credentialId": "credential ID if mentioned",
+      "url": "verification url if found"
     }
   ]
 }

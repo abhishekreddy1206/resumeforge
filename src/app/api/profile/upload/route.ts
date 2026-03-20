@@ -127,12 +127,50 @@ export async function POST(request: NextRequest) {
             })
           ),
         },
+        publications: {
+          create: (parsed.publications || []).map(
+            (pub: {
+              title: string;
+              publisher?: string;
+              date?: string;
+              url?: string;
+              doi?: string;
+            }) => ({
+              title: pub.title,
+              publisher: pub.publisher,
+              date: pub.date,
+              url: pub.url,
+              doi: pub.doi,
+            })
+          ),
+        },
+        certifications: {
+          create: (parsed.certifications || []).map(
+            (cert: {
+              name: string;
+              issuer?: string;
+              date?: string;
+              expiryDate?: string;
+              credentialId?: string;
+              url?: string;
+            }) => ({
+              name: cert.name,
+              issuer: cert.issuer,
+              date: cert.date,
+              expiryDate: cert.expiryDate,
+              credentialId: cert.credentialId,
+              url: cert.url,
+            })
+          ),
+        },
       },
       include: {
         experiences: true,
         educations: true,
         projects: true,
         skills: true,
+        publications: true,
+        certifications: true,
       },
     });
 

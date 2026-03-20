@@ -19,9 +19,8 @@ export async function GET(request: NextRequest) {
         include: {
           resumes: true,
           profileVersions: {
-            orderBy: { score: "desc" },
-            take: 1,
-            select: { id: true, score: true, delta: true, resumes: { select: { id: true, format: true } } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, score: true, delta: true, createdAt: true, resumes: { select: { id: true, format: true } } },
           },
         },
         skip,

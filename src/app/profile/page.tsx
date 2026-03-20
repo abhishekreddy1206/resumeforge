@@ -29,6 +29,11 @@ import {
   Zap,
   Upload,
   ExternalLink,
+  BookOpen,
+  Award,
+  Mail,
+  Plus,
+  X,
 } from "lucide-react";
 
 interface Experience {
@@ -65,10 +70,30 @@ interface Skill {
   category: string;
 }
 
+interface Publication {
+  id: string;
+  title: string;
+  publisher?: string;
+  date?: string;
+  url?: string;
+  doi?: string;
+}
+
+interface Certification {
+  id: string;
+  name: string;
+  issuer?: string;
+  date?: string;
+  expiryDate?: string;
+  credentialId?: string;
+  url?: string;
+}
+
 interface Profile {
   id: string;
   name: string;
   email?: string;
+  additionalEmails?: string;
   phone?: string;
   location?: string;
   summary?: string;
@@ -79,6 +104,8 @@ interface Profile {
   educations: Education[];
   projects: Project[];
   skills: Skill[];
+  publications: Publication[];
+  certifications: Certification[];
 }
 
 function ProfileSkeleton() {
@@ -122,6 +149,8 @@ export default function ProfilePage() {
   const [enrichSource, setEnrichSource] = useState("github");
   const [enrichValue, setEnrichValue] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [savingEmails, setSavingEmails] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     const res = await fetch("/api/profile");
@@ -191,6 +220,53 @@ export default function ProfilePage() {
     } finally {
       setEnriching(false);
     }
+  }
+
+  function getAdditionalEmails(): string[] {
+    if (!profile?.additionalEmails) return [];
+    try {
+      const parsed = JSON.parse(profile.additionalEmails);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function saveAdditionalEmails(emails: string[]) {
+    if (!profile) return;
+    setSavingEmails(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, additionalEmails: JSON.stringify(emails) }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setProfile(updated);
+        toast.success("Emails updated");
+      }
+    } catch {
+      toast.error("Failed to update emails");
+    } finally {
+      setSavingEmails(false);
+    }
+  }
+
+  function handleAddEmail() {
+    const email = newEmail.trim();
+    if (!email || !email.includes("@")) return;
+    const current = getAdditionalEmails();
+    if (current.includes(email) || email === profile?.email) {
+      toast.error("Email already exists");
+      return;
+    }
+    saveAdditionalEmails([...current, email]);
+    setNewEmail("");
+  }
+
+  function handleRemoveEmail(email: string) {
+    saveAdditionalEmails(getAdditionalEmails().filter((e) => e !== email));
   }
 
   if (loading) return <ProfileSkeleton />;
@@ -465,6 +541,67 @@ export default function ProfilePage() {
             )}
           </Card>
 
+          {/* Email Addresses */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950 flex items-center justify-center">
+                  <Mail className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Email Addresses</CardTitle>
+                  <CardDescription>
+                    Choose which email to use when generating resumes
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Primary email */}
+              {profile.email && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm flex-1">{profile.email}</span>
+                  <Badge variant="secondary" className="text-[10px]">Primary</Badge>
+                </div>
+              )}
+              {/* Additional emails */}
+              {getAdditionalEmails().map((email) => (
+                <div key={email} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm flex-1">{email}</span>
+                  <button
+                    onClick={() => handleRemoveEmail(email)}
+                    className="p-1.5 rounded-md hover:bg-destructive/10 transition-colors"
+                    disabled={savingEmails}
+                    title="Remove email"
+                  >
+                    <X className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
+                  </button>
+                </div>
+              ))}
+              {/* Add email */}
+              <div className="flex items-center gap-2 pt-1">
+                <Input
+                  placeholder="Add another email address..."
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddEmail()}
+                  className="h-9 text-sm"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-3 text-sm gap-1.5 shrink-0"
+                  onClick={handleAddEmail}
+                  disabled={savingEmails || !newEmail.trim()}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Experience */}
           {profile.experiences.length > 0 && (
             <Card className="shadow-sm">
@@ -616,6 +753,102 @@ export default function ProfilePage() {
                         </span>
                       )}
                     </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Publications */}
+          {profile.publications.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                    <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Publications</CardTitle>
+                    <CardDescription>
+                      {profile.publications.length} publication{profile.publications.length > 1 ? "s" : ""}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {profile.publications.map((pub) => (
+                  <div key={pub.id}>
+                    <p className="font-semibold text-sm">{pub.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {[pub.publisher, pub.date].filter(Boolean).join(" · ")}
+                    </p>
+                    {pub.doi && (
+                      <a
+                        href={`https://doi.org/${pub.doi}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline"
+                      >
+                        DOI: {pub.doi}
+                      </a>
+                    )}
+                    {!pub.doi && pub.url && (
+                      <a
+                        href={pub.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        View
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Certifications */}
+          {profile.certifications.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-950 flex items-center justify-center">
+                    <Award className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Certifications</CardTitle>
+                    <CardDescription>
+                      {profile.certifications.length} certification{profile.certifications.length > 1 ? "s" : ""}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {profile.certifications.map((cert) => (
+                  <div key={cert.id} className="flex flex-col sm:flex-row sm:justify-between gap-1">
+                    <div>
+                      <p className="font-semibold text-sm">{cert.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[cert.issuer, cert.date].filter(Boolean).join(" · ")}
+                        {cert.expiryDate ? ` (exp. ${cert.expiryDate})` : ""}
+                      </p>
+                      {cert.credentialId && (
+                        <p className="text-xs text-muted-foreground">ID: {cert.credentialId}</p>
+                      )}
+                    </div>
+                    {cert.url && (
+                      <a
+                        href={cert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Verify
+                      </a>
+                    )}
                   </div>
                 ))}
               </CardContent>
