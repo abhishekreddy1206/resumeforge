@@ -393,7 +393,7 @@ export default function VersionsPage() {
                                 setExpandedJob(isJobExpanded ? null : job.id);
                                 setExpandedVersion(null);
                               }}
-                              className={`w-full text-left py-3 pl-8 pr-2 flex items-center gap-3 transition-colors ${
+                              className={`w-full text-left py-3 pl-4 sm:pl-8 pr-2 flex items-center gap-3 transition-colors ${
                                 isJobExpanded ? "bg-muted/30" : "hover:bg-muted/20"
                               }`}
                             >
@@ -438,7 +438,7 @@ export default function VersionsPage() {
 
                             {/* Expanded: Job detail with versions */}
                             {isJobExpanded && (
-                              <div className="pl-8 pr-2 pb-4 space-y-4">
+                              <div className="pl-4 sm:pl-8 pr-2 pb-4 space-y-4">
                                 {/* Job metadata */}
                                 <div className="flex items-center gap-4 pt-1">
                                   <p className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
@@ -596,7 +596,7 @@ export default function VersionsPage() {
                                                       <iframe
                                                         src={`/api/resume/download/${previewResumeId}?inline=1`}
                                                         className="w-full border-0"
-                                                        style={{ height: "80vh", minHeight: "600px" }}
+                                                        style={{ height: "80vh", minHeight: "300px" }}
                                                         title="Resume PDF Preview"
                                                       />
                                                     </div>
@@ -698,7 +698,7 @@ export default function VersionsPage() {
                                       <iframe
                                         src={`/api/resume/download/${previewResumeId}?inline=1`}
                                         className="w-full border-0"
-                                        style={{ height: "80vh", minHeight: "600px" }}
+                                        style={{ height: "80vh", minHeight: "300px" }}
                                         title="Resume PDF Preview"
                                       />
                                     </div>

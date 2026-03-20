@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, compactProfile } from "../client";
 
 export interface EnhanceSuggestion {
   category: "summary" | "experience" | "skills" | "education" | "projects" | "publications" | "certifications" | "recommendations";
@@ -23,6 +23,39 @@ interface VersionHistory {
 }
 
 /**
+ * Extract only the fields that matter for cross-version analysis from a snapshot.
+ * This dramatically reduces prompt size (full snapshots can be 10K+ each).
+ */
+function extractSnapshotEssentials(snapshotJson: string): Record<string, unknown> {
+  try {
+    const snap = JSON.parse(snapshotJson);
+    return {
+      summary: snap.summary,
+      experiences: (snap.experiences || []).map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (e: any) => ({
+          title: e.title,
+          company: e.company,
+          bullets: typeof e.bullets === "string" ? JSON.parse(e.bullets) : e.bullets,
+          skills: typeof e.skills === "string" ? JSON.parse(e.skills) : e.skills,
+        })
+      ),
+      skills: (snap.skills || []).map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (s: any) => ({ name: s.name, category: s.category })
+      ),
+      projects: (snap.projects || []).map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (p: any) => ({ name: p.name, description: p.description })
+      ),
+    };
+  } catch {
+    // If snapshot is not valid JSON, return truncated raw text
+    return { raw: snapshotJson.slice(0, 2000) };
+  }
+}
+
+/**
  * Skill: Profile Enhancer
  *
  * Analyzes a candidate's optimization history across multiple job applications
@@ -33,54 +66,37 @@ export async function enhanceProfileFromHistory(
   currentProfile: Record<string, any>,
   versionHistory: VersionHistory[]
 ): Promise<EnhanceResult> {
+  // Compact profile and limit versions to most recent 6
+  const compact = compactProfile(currentProfile);
+  const recentVersions = versionHistory.slice(0, 6);
+
   return askJson(`You are a senior career strategist analyzing a professional's resume optimization history across multiple job applications.
 
 CURRENT BASE PROFILE:
-${JSON.stringify(currentProfile, null, 2)}
+${JSON.stringify(compact)}
 
-OPTIMIZATION HISTORY (each entry is a version of the profile that was tailored for a specific job, with its ATS score):
+OPTIMIZATION HISTORY (key fields from each version tailored for a specific job):
 ${JSON.stringify(
-  versionHistory.map((v) => ({
+  recentVersions.map((v) => ({
     job: v.jobTitle + " at " + v.jobCompany,
     score: v.score,
     improvement: v.delta,
-    optimizedProfile: v.snapshot,
-  })),
-  null,
-  2
+    optimized: extractSnapshotEssentials(v.snapshot),
+  }))
 )}
 
-YOUR TASK:
-Analyze patterns across ALL optimized versions to find UNIVERSAL improvements — changes that would strengthen the base profile regardless of which job the candidate applies to.
+Analyze patterns across ALL optimized versions to find UNIVERSAL improvements — changes that strengthen the base profile regardless of which job the candidate applies to.
 
-Look for:
-1. **Summary patterns**: What summary elements appear in the highest-scoring versions? What language/framing works best?
-2. **Experience bullet phrasing**: Which rewrites of experience bullets consistently scored higher? What quantifications, action verbs, or framings work?
-3. **Skills emphasis**: Which skills are consistently highlighted across high-scoring versions?
-4. **Missing elements**: What do optimized versions add that the base profile lacks?
-5. **Structural improvements**: Section ordering, emphasis, keyword density patterns
-6. **Publications & certifications**: Are relevant publications or certifications being included in high-scoring versions? Should descriptions be refined?
-7. **Recommendations**: Are certain recommendations consistently selected? Should recommendation text be refined for broader appeal?
+Look for: summary elements from highest-scoring versions, experience bullet phrasings that consistently score higher, skills consistently highlighted, elements optimized versions add that base lacks, structural improvements, publications/certifications included in high-scoring versions, recommendations consistently selected.
 
 RULES:
-- Every suggestion must be grounded in the candidate's REAL experience — never fabricate
-- Focus on changes that improve the profile universally, not for one specific job
-- Prioritize changes with the highest cross-job impact
-- Be specific: show exact before/after text, not vague advice
-- Max 8 suggestions, ordered by impact
+- Every suggestion must be grounded in real experience — never fabricate
+- Focus on universal improvements (not job-specific); show exact before/after text
+- Max 8 suggestions ordered by cross-job impact
 
 Return ONLY valid JSON:
 {
-  "suggestions": [
-    {
-      "category": "summary",
-      "field": "summary",
-      "current": "Current text that should change...",
-      "suggested": "Improved text...",
-      "reasoning": "This phrasing scored 10+ points higher across 3/4 job applications because...",
-      "impactEstimate": "high"
-    }
-  ],
-  "overallInsight": "Brief 2-3 sentence analysis of the key patterns found across all optimizations."
-}`);
+  "suggestions": [{"category":"string","field":"string","current":"string","suggested":"string","reasoning":"string","impactEstimate":"high|medium|low"}],
+  "overallInsight": "string"
+}`, { timeoutMs: 300_000 });
 }

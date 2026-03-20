@@ -1,7 +1,7 @@
 import { spawn, execSync } from "child_process";
 
-const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
-const MAX_TIMEOUT_MS = 300_000; // 5 minutes
+const DEFAULT_TIMEOUT_MS = 180_000; // 3 minutes
+const MAX_TIMEOUT_MS = 600_000; // 10 minutes
 
 // Resolve the full path to claude CLI at startup so spawned subprocesses can find it
 const CLAUDE_PATH = (() => {
@@ -176,6 +176,41 @@ export async function ask(prompt: string, options?: { timeoutMs?: number }): Pro
     proc.stdin.end();
   });
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/**
+ * Strip Prisma metadata (ids, timestamps, foreign keys) from profile objects
+ * to reduce prompt size sent to Claude. Keeps only semantically relevant fields.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function compactProfile(profile: Record<string, any>): Record<string, any> {
+  const STRIP_KEYS = new Set([
+    "id", "profileId", "jobId", "resumeId", "profileVersionId",
+    "createdAt", "updatedAt", "lastEnrichedAt", "matchedAt",
+    "resumeText", "originalFileName",
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function strip(obj: any): any {
+    if (Array.isArray(obj)) return obj.map(strip);
+    if (obj && typeof obj === "object" && !(obj instanceof Date)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (STRIP_KEYS.has(k)) continue;
+        out[k] = strip(v);
+      }
+      return out;
+    }
+    return obj;
+  }
+
+  return strip(profile);
+}
+
+export const AI_FINGERPRINT_BANNED = `Avoid: delve,tapestry,multifaceted,pivotal,synergy,paradigm,holistic,leverage(v),utilize,facilitate,foster,robust,comprehensive,cutting-edge,innovative,dynamic,proactive,results-driven,seasoned,"proven track record","passionate about","at the intersection of". No gerund-analysis endings. Vary sentence length. Max 2 em-dashes per section.`;
+
+export const PROFILE_SCHEMA_RULES = `Preserve data shape exactly. bullets/skills are string[]. category∈{language,framework,tool,database,cloud,soft}. publications:{title,publisher,date,url,doi,description}. certifications:{name,issuer,date,expiryDate,credentialId,url}. recommendations:{recommenderName,recommenderTitle,relationship,text,linkedinUrl}.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function askJson<T = Record<string, any>>(

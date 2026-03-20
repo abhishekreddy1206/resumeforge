@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, compactProfile, PROFILE_SCHEMA_RULES } from "../client";
 
 /**
  * Skill: Profile Editor
@@ -29,20 +29,13 @@ ${historyText}
 User's latest instruction: "${instruction}"
 
 Current Profile Data:
-${JSON.stringify(currentProfile, null, 2)}
+${JSON.stringify(compactProfile(currentProfile))}
 
 RULES:
 - If the user wants to MODIFY the profile, return both "reply" and "updatedProfile"
 - If the user is asking a QUESTION (not requesting changes), return only "reply" with no "updatedProfile"
 - Preserve all existing data unless the user explicitly asks to change or remove something
-- Keep the exact same data structure — do not add or remove fields
-- For experiences: "bullets" is an array of strings, "skills" is an array of strings
-- For projects: "skills" is an array of strings
-- For skills: each skill has "name" and "category" (language|framework|tool|database|cloud|soft)
-- When adding skills, always assign an appropriate category
-- For publications: each has "title", "publisher", "date", "url", "doi", "description"
-- For certifications: each has "name", "issuer", "date", "expiryDate", "credentialId", "url"
-- For recommendations: each has "recommenderName", "recommenderTitle", "relationship", "text", and optionally "linkedinUrl"
+- ${PROFILE_SCHEMA_RULES}
 - Be concise in your reply — explain what you changed in 1-2 sentences
 
 Return JSON:
@@ -54,5 +47,5 @@ Return JSON:
 If the user asked a question without requesting changes, return:
 {
   "reply": "Your answer here"
-}`);
+}`, { timeoutMs: 240_000 });
 }

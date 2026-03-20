@@ -211,7 +211,7 @@ export default function Dashboard() {
           return (
             <div
               key={stat.label}
-              className={`${i > 0 ? "border-l border-border" : ""} px-4 sm:px-8 first:pl-0`}
+              className={`${i > 0 ? "border-l border-border" : ""} px-4 sm:px-8 first:pl-0 overflow-hidden`}
             >
               <div className="flex items-start gap-2 mb-1">
                 <p
@@ -219,7 +219,7 @@ export default function Dashboard() {
                   style={{
                     fontFamily: "var(--font-cormorant)",
                     fontStyle: "italic",
-                    fontSize: "clamp(2.5rem, 6vw, 4rem)",
+                    fontSize: "clamp(1.75rem, 6vw, 4rem)",
                     fontWeight: 400,
                   }}
                 >

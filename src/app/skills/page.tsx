@@ -114,7 +114,7 @@ export default function SkillsPage() {
     filter === "all" ? grouped : { [filter]: grouped[filter] || [] };
 
   return (
-    <div className={`space-y-0 ${chatOpen ? "lg:mr-[420px]" : ""} transition-[margin] duration-200`}>
+    <div className={`space-y-0 pb-20 sm:pb-0 ${chatOpen ? "lg:mr-[420px]" : ""} transition-[margin] duration-200`}>
       <SkillsChatPanel
         open={chatOpen}
         onOpenChange={setChatOpen}
@@ -159,7 +159,7 @@ export default function SkillsPage() {
       <section className="py-5 border-b border-border flex flex-wrap gap-1.5 anim-fade-up-1">
         <button
           onClick={() => setFilter("all")}
-          className={`px-3 py-1.5 text-xs transition-all rounded-sm border ${
+          className={`px-3 py-2 text-xs transition-all rounded-sm border ${
             filter === "all"
               ? "bg-primary text-primary-foreground border-primary"
               : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
@@ -174,7 +174,7 @@ export default function SkillsPage() {
             <button
               key={cat}
               onClick={() => setFilter(cat)}
-              className={`px-3 py-1.5 transition-all rounded-sm border ${
+              className={`px-3 py-2 transition-all rounded-sm border ${
                 filter === cat
                   ? "bg-primary text-primary-foreground border-primary"
                   : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
@@ -222,6 +222,19 @@ export default function SkillsPage() {
           })}
         </div>
       </section>
+
+      {/* Mobile sticky action bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border p-3 sm:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full gap-2 rounded-sm"
+          onClick={() => setChatOpen(!chatOpen)}
+        >
+          <MessageSquare className="w-4 h-4" />
+          {chatOpen ? "Close Chat" : "Edit with AI"}
+        </Button>
+      </div>
     </div>
   );
 }

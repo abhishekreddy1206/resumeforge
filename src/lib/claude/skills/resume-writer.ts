@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, compactProfile, AI_FINGERPRINT_BANNED } from "../client";
 import type { ResumeData } from "@/lib/types";
 
 /**
@@ -21,150 +21,67 @@ export async function generateTailoredResume(
 ) {
   return askJson<ResumeData>(`You are an expert ATS-optimized resume writer. Given the candidate's profile and target job, create a tailored resume.
 
-PRIORITY HIERARCHY (follow this order when making trade-offs):
-Accuracy > Relevance > Impact > ATS > Brevity
+Priority: exact experience match > transferable skills > education > keywords
 
 BULLET POINT PRINCIPLES:
-- Lead with a strong ACTION VERB (Engineered, Reduced, Launched, Spearheaded, Architected, Automated, Deployed, Migrated, Optimized, Scaled)
+- Lead with a strong ACTION VERB (Engineered, Reduced, Launched, Architected, Automated, Deployed, Migrated, Optimized, Scaled)
 - Include QUANTIFIED IMPACT wherever possible: %, $, time saved, team size, requests/sec
 - Mirror EXACT KEYWORDS from the job description (ATS systems match literally)
-- Keep to 1-2 lines per bullet; max 5-6 bullets per role
-- Most recent role gets the most bullets; older roles get 2-3
+- Keep to 1-2 lines per bullet; max 5-6 bullets per role; most recent role gets the most, older roles 2-3
 
 VERB DISCIPLINE:
-- Use full-ownership verbs (Developed, Built, Designed, Led, Architected) ONLY for work the candidate independently owned
-- Use collaborative verbs (Contributed to, Supported, Collaborated on, Assisted in) for shared or team efforts
-- Never upgrade contribution level — if the candidate "contributed to" a project, do not write "Led" or "Spearheaded"
-- Match verb strength to the actual scope described in the source bullets
+Use strong past-tense action verbs. Never upgrade contribution level (don't say 'led' if assisted).
 
 FLIPPED POSITION FORMAT:
-- For each experience, write the title as a JD-customized domain theme that highlights the most relevant aspect of the role
-- Example: Instead of just "Software Engineer", write "Full-Stack Engineer — Payments & Checkout Systems" if applying to a fintech role
-- The title should be the strongest JD customization lever while remaining truthful to the actual role
+Write each experience title as a JD-customized domain theme (e.g., "Full-Stack Engineer — Payments & Checkout Systems") — strongest JD customization lever while remaining truthful.
 
 ATS KEYWORD STRATEGY:
-- If the job analysis includes atsKeywords, target >=70% verbatim match rate across the resume
-- Use exact terms from the JD, not synonyms (e.g., if JD says "Kubernetes", don't write "K8s")
-- If the job analysis includes bridge requirements, use them: reframe transferable experience using the JD's vocabulary while being honest about what was actually used
-- Skills section is the primary ATS surface — group names and ordering should reflect the JD
+- Target >=70% verbatim match rate using exact JD terms, not synonyms
+- Reframe transferable experience using JD vocabulary; skills section ordering should reflect the JD
 
-AI FINGERPRINT AVOIDANCE — the resume must read as human-written:
-- BANNED WORDS: delve, tapestry, multifaceted, pivotal, synergy, paradigm, holistic, leverage (as verb), utilize, facilitate, foster, robust, comprehensive, cutting-edge, spearheading (gerund form), innovative, dynamic, proactive, results-driven, seasoned
-- BANNED PHRASES: "proven track record", "passionate about", "at the intersection of", "plays a crucial role", "in today's fast-paced", "leveraging expertise"
-- STRUCTURAL RULES:
-  - No bullets ending with "-ing analysis" pattern (e.g., "improving efficiency" — instead write "improved efficiency by 30%")
-  - Vary sentence length — mix short punchy bullets with longer detailed ones
-  - Max 2 em-dashes per entire document
-  - Use specific details, numbers, and named technologies rather than generic claims
+AI FINGERPRINT AVOIDANCE:
+${AI_FINGERPRINT_BANNED}
 
 SUMMARY SECTION:
-- 3-4 sentences max
-- Name the target role explicitly
-- Lead with years of experience + domain
-- Include 3-4 of the most important JD keywords naturally
-- Avoid generic filler — every word should serve a purpose
+3-4 sentences max. Name the target role, lead with years + domain, include 3-4 key JD keywords naturally.
 
 SKILLS SECTION:
-- Group by category (Languages, Frameworks, Tools, Databases, Cloud)
-- List JD-required skills FIRST within each category
-- Remove skills clearly irrelevant to this role
+Group by category (Languages, Frameworks, Tools, Databases, Cloud). List JD-required skills first. Remove irrelevant skills.
 
 PUBLICATIONS & CERTIFICATIONS:
-- Include publications only if relevant to the target role or domain
-- Include certifications that match or strengthen required qualifications
-- Certifications matching JD requirements should be listed prominently
-- Omit irrelevant publications/certifications to save space
+Include only if relevant to the role. Omit irrelevant ones to save space.
 
 RECOMMENDATIONS:
-- If the candidate has LinkedIn recommendations, select the most relevant ones for this role
-- Include recommendations that speak to skills or qualities mentioned in the JD
-- Max 2-3 recommendations to keep the resume concise
-- Omit recommendations that aren't relevant to the target role
+Select max 2-3 most relevant to the JD. Omit irrelevant ones.
 
 GAP ANALYSIS:
-- Strengthen bullets that already match JD requirements
-- Reframe relevant experience using JD vocabulary (reframe DURING writing, not after)
-- NEVER fabricate experience or skills — only work with what exists
-- De-emphasize or remove irrelevant experience
+Strengthen bullets matching JD; reframe experience using JD vocabulary; NEVER fabricate; de-emphasize irrelevant experience.
 
 Keep it concise: 1 page preferred, 2 pages only for 10+ years experience.
 
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON:
 
 {
-  "name": "Full Name",
-  "email": "email",
-  "phone": "phone",
-  "location": "location",
-  "linkedin": "linkedin url",
-  "github": "github url",
-  "website": "website url",
-  "summary": "Tailored professional summary (2-3 sentences focused on the target role)",
-  "experiences": [
-    {
-      "company": "Company",
-      "title": "Domain-Themed Title (FLIPPED format)",
-      "startDate": "YYYY-MM",
-      "endDate": "YYYY-MM or Present",
-      "bullets": ["tailored bullet 1", "tailored bullet 2"]
-    }
-  ],
-  "educations": [
-    {
-      "school": "School",
-      "degree": "Degree",
-      "field": "Field",
-      "endDate": "YYYY",
-      "gpa": "GPA if impressive"
-    }
-  ],
-  "projects": [
-    {
-      "name": "Project Name",
-      "description": "Tailored description",
-      "url": "url"
-    }
-  ],
-  "skills": {
-    "languages": ["skill1", "skill2"],
-    "frameworks": ["skill1", "skill2"],
-    "tools": ["skill1", "skill2"],
-    "databases": ["skill1", "skill2"],
-    "cloud": ["skill1", "skill2"]
-  },
-  "publications": [
-    {
-      "title": "Publication Title",
-      "publisher": "Journal/Conference",
-      "date": "YYYY",
-      "url": "url",
-      "doi": "DOI",
-      "description": "Brief summary if relevant (max 100 words)"
-    }
-  ],
-  "certifications": [
-    {
-      "name": "Certification Name",
-      "issuer": "Issuing Organization",
-      "date": "YYYY",
-      "expiryDate": "YYYY if applicable",
-      "credentialId": "ID if available",
-      "url": "verification url"
-    }
-  ],
-  "recommendations": [
-    {
-      "recommenderName": "Person's Name",
-      "recommenderTitle": "Their Title",
-      "relationship": "Manager",
-      "text": "Selected recommendation text relevant to this role"
-    }
-  ]
+  "name": "string",
+  "email": "string",
+  "phone": "string",
+  "location": "string",
+  "linkedin": "string",
+  "github": "string",
+  "website": "string",
+  "summary": "string",
+  "experiences": [{"company":"string","title":"string (FLIPPED format)","startDate":"YYYY-MM","endDate":"YYYY-MM|Present","bullets":"string[]"}],
+  "educations": [{"school":"string","degree":"string","field":"string","endDate":"YYYY","gpa":"string"}],
+  "projects": [{"name":"string","description":"string","url":"string"}],
+  "skills": {"languages":"string[]","frameworks":"string[]","tools":"string[]","databases":"string[]","cloud":"string[]"},
+  "publications": [{"title":"string","publisher":"string","date":"YYYY","url":"string","doi":"string","description":"string"}],
+  "certifications": [{"name":"string","issuer":"string","date":"YYYY","expiryDate":"string","credentialId":"string","url":"string"}],
+  "recommendations": [{"recommenderName":"string","recommenderTitle":"string","relationship":"string","text":"string"}]
 }
 
 Candidate Profile:
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(compactProfile(profile))}
 
 Target Job:
-${JSON.stringify(jobAnalysis, null, 2)}`, { timeoutMs: 240_000 });
+${JSON.stringify(jobAnalysis)}`, { timeoutMs: 300_000 });
 }

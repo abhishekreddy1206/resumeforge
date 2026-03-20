@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -594,6 +595,403 @@ function MatchPanel({
 type SortField = "title" | "company" | "atsScore" | "resumes" | "createdAt";
 type SortDir = "asc" | "desc";
 
+function ExpandedJobDetail({
+  job,
+  match,
+  isMatchLoading,
+  hasProfile,
+  hasVersions,
+  generatingFor,
+  profileEmails,
+  selectedEmail,
+  onSetExpandedJob,
+  onFetchMatch,
+  onOpenChatAndApplyTips,
+  onHandleGenerateResume,
+  onSetSelectedEmail,
+  onSetPreviewResume,
+}: {
+  job: Job;
+  match: MatchResult | undefined;
+  isMatchLoading: boolean;
+  hasProfile: boolean;
+  hasVersions: boolean;
+  generatingFor: string | null;
+  profileEmails: string[];
+  selectedEmail: string;
+  onSetExpandedJob: (id: string | null) => void;
+  onFetchMatch: (jobId: string, force?: boolean) => void;
+  onOpenChatAndApplyTips: (job: Job) => void;
+  onHandleGenerateResume: (job: Job, format: "pdf" | "docx" | "latex") => void;
+  onSetSelectedEmail: (email: string) => void;
+  onSetPreviewResume: (r: { id: string; format: string } | null) => void;
+}) {
+  const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
+  const seenIds = new Set<string>();
+  const allResumes: Array<{ id: string; format: string }> = [];
+  for (const r of [...(job.profileVersions?.flatMap((v) => v.resumes) ?? []), ...job.resumes]) {
+    if (!seenIds.has(r.id)) { seenIds.add(r.id); allResumes.push(r); }
+  }
+  const latestPdf = allResumes.find((r) => r.format === "pdf");
+
+  function jobHasResumeFormat(fmt: string): boolean {
+    if (job.resumes.some((r) => r.format === fmt)) return true;
+    if (job.profileVersions?.some((v) => v.resumes.some((r) => r.format === fmt))) return true;
+    return false;
+  }
+
+  return (
+    <div className="border-t border-border bg-card overflow-hidden">
+      {/* Panel header */}
+      <div className="px-6 pt-5 pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p
+              className="text-muted-foreground mb-1"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.6rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Job Details
+            </p>
+            <h3
+              className="text-foreground leading-tight"
+              style={{
+                fontFamily: "var(--font-cormorant)",
+                fontStyle: "italic",
+                fontSize: "1.5rem",
+                fontWeight: 400,
+              }}
+            >
+              {job.title}
+              <span className="text-muted-foreground text-lg"> at </span>
+              <span className="text-primary">{job.company}</span>
+            </h3>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {job.sponsorship === "unavailable" && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-red-700 bg-red-50 border border-red-200/50 dark:text-red-300 dark:bg-red-950/40 dark:border-red-800/30"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+                </span>
+              )}
+              {job.sponsorship === "available" && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-emerald-700 bg-emerald-50 border border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800/30"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
+                </span>
+              )}
+              {job.url && (
+                <a
+                  href={job.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink className="w-2.5 h-2.5" /> View Posting
+                </a>
+              )}
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mt-1 -mr-2" onClick={() => onSetExpandedJob(null)}>
+            <ChevronUp className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Required skills strip */}
+        {job.skills && (
+          <div className="mt-4">
+            <p
+              className="text-muted-foreground mb-2"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+              }}
+            >
+              Required Skills
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {JSON.parse(job.skills).slice(0, 14).map((skill: string) => (
+                <span
+                  key={skill}
+                  className={`text-[11px] px-2 py-0.5 rounded-sm border ${
+                    match?.skillsToHighlight?.includes(skill)
+                      ? "text-emerald-700 bg-emerald-50/60 border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800/30"
+                      : "text-foreground/70 bg-muted/30 border-border/40"
+                  }`}
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Analysis section */}
+      <div className="px-6">
+        {!match && !isMatchLoading && hasProfile && (
+          <AnalysisCTA onAnalyze={() => onFetchMatch(job.id)} />
+        )}
+        <MatchPanel
+          match={match || null}
+          loading={isMatchLoading || false}
+          onReanalyze={() => onFetchMatch(job.id, true)}
+          hasProfile={hasProfile}
+          onApplyTips={() => onOpenChatAndApplyTips(job)}
+        />
+      </div>
+
+      {/* Version History */}
+      {hasVersions && (
+        <div className="px-6 mt-5">
+          <div className="section-divider mb-4" />
+          <div className="flex items-center justify-between mb-3">
+            <p
+              className="text-muted-foreground flex items-center gap-1.5"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.6rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              <History className="w-3 h-3" />
+              Version History
+            </p>
+            <a
+              href="/versions"
+              className="text-primary hover:underline"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              View all
+            </a>
+          </div>
+          {/* Score progression */}
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            {match && (
+              <>
+                <span
+                  className="text-muted-foreground"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  Original
+                </span>
+                <MatchScoreBadge score={match.overallScore} />
+                <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
+              </>
+            )}
+            {job.profileVersions!.slice().reverse().map((v, vi) => (
+              <span key={v.id} className="inline-flex items-center gap-1">
+                {vi > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
+                <MatchScoreBadge score={v.score} />
+                {v.delta != null && v.delta > 0 && (
+                  <span
+                    className="text-emerald-600 dark:text-emerald-400 font-semibold"
+                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem" }}
+                  >
+                    +{v.delta}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+          {/* Version rows */}
+          <div className="space-y-1">
+            {job.profileVersions!.map((v, vi) => (
+              <div key={v.id} className="flex items-center justify-between py-2 px-3 rounded-sm border border-border/30 bg-muted/10 hover:bg-muted/20 transition-colors text-xs">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="text-foreground font-medium"
+                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em" }}
+                  >
+                    v{job.profileVersions!.length - vi}
+                  </span>
+                  <MatchScoreBadge score={v.score} />
+                  {v.delta != null && v.delta > 0 && (
+                    <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">+{v.delta}</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                {v.resumes.length > 0 && (
+                  <div className="flex gap-1">
+                    {v.resumes.map((r) => (
+                      <button key={r.id} onClick={(e) => { e.stopPropagation(); onSetPreviewResume(r); }}>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-sm border border-border/40 bg-card hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer text-muted-foreground hover:text-primary"
+                          style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                          {r.format === "latex" ? "tex" : r.format}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Export section */}
+      <div className="px-6 mt-5 pb-6">
+        <div className="section-divider mb-4" />
+        <p
+          className="text-muted-foreground mb-3 flex items-center gap-1.5"
+          style={{
+            fontFamily: "var(--font-dm-mono)",
+            fontSize: "0.6rem",
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+          }}
+        >
+          <Sparkles className="w-3 h-3" />
+          Export Resume
+        </p>
+        {/* Email selector */}
+        {profileEmails.length > 1 && (
+          <div className="flex items-center gap-2 mb-3">
+            <label
+              className="text-muted-foreground shrink-0"
+              style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
+            >
+              Email:
+            </label>
+            <select
+              value={selectedEmail || profileEmails[0]}
+              onChange={(e) => onSetSelectedEmail(e.target.value)}
+              className="text-xs border border-border rounded-sm px-2.5 py-1.5 bg-background text-foreground"
+            >
+              {profileEmails.map((email) => (
+                <option key={email} value={email}>{email}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {(["pdf", "docx", "latex"] as const).map((fmt) => {
+            const alreadyHas = jobHasResumeFormat(fmt);
+            const label = fmt === "latex" ? "LaTeX" : fmt.toUpperCase();
+            const isThisGenerating = generatingFormat === fmt;
+            return (
+              <Button
+                key={fmt}
+                variant={alreadyHas ? "outline" : "default"}
+                size="sm"
+                className={`gap-1.5 rounded-sm text-xs transition-all ${isThisGenerating ? "min-w-[140px]" : ""}`}
+                disabled={generatingFormat !== null}
+                onClick={() => {
+                  if (alreadyHas) {
+                    const existingResume = job.resumes.find((r) => r.format === fmt)
+                      || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
+                    if (existingResume) {
+                      onSetPreviewResume({ id: existingResume.id, format: fmt });
+                    }
+                  } else {
+                    onHandleGenerateResume(job, fmt);
+                  }
+                }}
+              >
+                {isThisGenerating ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : alreadyHas ? (
+                  <Eye className="w-3 h-3" />
+                ) : (
+                  <Sparkles className="w-3 h-3" />
+                )}
+                {isThisGenerating ? `Generating ${label}...` : alreadyHas ? `${label}` : `Generate ${label}`}
+              </Button>
+            );
+          })}
+        </div>
+        {/* Generation progress */}
+        {generatingFormat && (
+          <div className="mt-3 anim-fade-up">
+            <div className="flex items-center gap-2 mb-1.5">
+              <p
+                className="text-primary"
+                style={{
+                  fontFamily: "var(--font-dm-mono)",
+                  fontSize: "0.55rem",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Tailoring resume with AI
+                <span className="inline-flex ml-1 gap-px">
+                  <span className="anim-dot-1">.</span>
+                  <span className="anim-dot-2">.</span>
+                  <span className="anim-dot-3">.</span>
+                </span>
+              </p>
+            </div>
+            <div className="h-0.5 bg-border/30 rounded-full overflow-hidden max-w-xs">
+              <div className="h-full w-2/5 bg-primary/50 rounded-full anim-progress-bar" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* PDF Preview — latest version only, compact thumbnail */}
+      {latestPdf && (
+        <div className="px-6 mt-2 pb-6">
+          <div className="section-divider mb-4" />
+          <p
+            className="text-muted-foreground mb-3 flex items-center gap-1.5"
+            style={{
+              fontFamily: "var(--font-dm-mono)",
+              fontSize: "0.6rem",
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+            }}
+          >
+            <FileText className="w-3 h-3" />
+            Latest PDF
+          </p>
+          <div className="max-w-[220px]">
+            <button
+              className="block w-full border border-border/50 rounded-sm overflow-hidden bg-muted/10 hover:border-primary/30 transition-colors group/pdf text-left"
+              onClick={(e) => { e.stopPropagation(); onSetPreviewResume({ id: latestPdf.id, format: "pdf" }); }}
+            >
+              <iframe
+                src={`/api/resume/download/${latestPdf.id}?inline=1`}
+                sandbox="allow-same-origin"
+                className="w-full h-[280px] border-0 pointer-events-none scale-100"
+                title="Resume preview"
+                tabIndex={-1}
+              />
+              <div className="flex items-center justify-center gap-1.5 px-2 py-1.5 border-t border-border/30 bg-card group-hover/pdf:bg-primary/5 transition-colors">
+                <Eye className="w-2.5 h-2.5 text-muted-foreground group-hover/pdf:text-primary" />
+                <span
+                  className="text-muted-foreground group-hover/pdf:text-primary transition-colors"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
+                >
+                  View PDF
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PAGE_SIZE = 10;
 
 export default function JobsPage() {
@@ -1012,7 +1410,7 @@ export default function JobsPage() {
                 <Button
                   onClick={() => handleSubmit({ urls: jobUrls })}
                   disabled={submitting || !jobUrls.trim()}
-                  className="shrink-0 gap-2"
+                  className="shrink-0 gap-2 w-full sm:w-auto"
                 >
                   {submitting ? (
                     <>
@@ -1056,7 +1454,138 @@ export default function JobsPage() {
             {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
           </p>
 
-          <div className="border border-border rounded-sm overflow-hidden">
+          {/* ── Mobile card stack (sm:hidden) ── */}
+          <div className="sm:hidden space-y-2">
+            {sortedJobs.map((job) => {
+              const isExpanded = expandedJob === job.id;
+              const isAnalyzing = job.title === "Analyzing..." || job.title === "Analysis Failed — Click to Retry";
+              const bestScore = getBestScore(job);
+              const hasVersions = (job.profileVersions?.length ?? 0) > 0;
+
+              return (
+                <div
+                  key={job.id}
+                  className={cn(
+                    "border border-border rounded-sm cursor-pointer transition-colors",
+                    isExpanded ? "bg-accent/30" : "hover:bg-accent/10"
+                  )}
+                >
+                  {/* Card header — always visible */}
+                  <div
+                    className="p-4 flex items-start gap-3"
+                    onClick={() => { if (!isAnalyzing) toggleExpand(job.id); }}
+                  >
+                    {/* Company avatar */}
+                    <div
+                      className={cn(
+                        "w-9 h-9 rounded-sm flex items-center justify-center shrink-0 font-bold text-sm",
+                        isAnalyzing
+                          ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
+                          : "bg-primary/8 text-primary"
+                      )}
+                      style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1rem" }}
+                    >
+                      {isAnalyzing
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : (job.company || job.title)[0]?.toUpperCase()}
+                    </div>
+
+                    {/* Job info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{job.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">{job.company}</div>
+
+                      {/* Badges row */}
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {bestScore !== null && (
+                          <MatchScoreBadge score={bestScore} />
+                        )}
+                        {job.sponsorship === "available" && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                            <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
+                          </Badge>
+                        )}
+                        {job.sponsorship === "unavailable" && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
+                            <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+                          </Badge>
+                        )}
+                        {job.url && (
+                          <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                        {hasVersions && (
+                          <a href="/versions" className="text-primary hover:underline flex items-center gap-0.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
+                            <History className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right side: chat button + chevron */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {hasProfile && !isAnalyzing && (
+                        <Button
+                          variant={chatOpen && chatJob?.id === job.id ? "default" : "ghost"}
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (chatOpen && chatJob?.id === job.id) setChatOpen(false);
+                            else openChatForJob(job);
+                          }}
+                          title="Resume advisor"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      <ChevronDown
+                        className={cn(
+                          "w-4 h-4 text-muted-foreground transition-transform mt-0.5",
+                          isExpanded && "rotate-180"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Expanded detail */}
+                  {isExpanded && (
+                    <ExpandedJobDetail
+                      job={job}
+                      match={matchResults[job.id]}
+                      isMatchLoading={matchLoading[job.id] || false}
+                      hasProfile={hasProfile}
+                      hasVersions={hasVersions}
+                      generatingFor={generatingFor}
+                      profileEmails={profileEmails}
+                      selectedEmail={selectedEmail}
+                      onSetExpandedJob={setExpandedJob}
+                      onFetchMatch={fetchMatch}
+                      onOpenChatAndApplyTips={openChatAndApplyTips}
+                      onHandleGenerateResume={handleGenerateResume}
+                      onSetSelectedEmail={setSelectedEmail}
+                      onSetPreviewResume={setPreviewResume}
+                    />
+                  )}
+
+                  {/* Version saved indicator */}
+                  {versionSavedForJob === job.id && (
+                    <a
+                      href="/versions"
+                      className="flex items-center gap-1 px-4 pb-3 text-[10px] text-emerald-600 hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <History className="w-3 h-3" /> Version saved
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Desktop table (hidden on mobile) ── */}
+          <div className="hidden sm:block border border-border rounded-sm overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -1200,7 +1729,7 @@ export default function JobsPage() {
                               <Button
                                 variant={chatOpen && chatJob?.id === job.id ? "default" : "ghost"}
                                 size="icon"
-                                className="h-7 w-7"
+                                className="h-8 w-8 sm:h-7 sm:w-7"
                                 onClick={() => {
                                   if (chatOpen && chatJob?.id === job.id) setChatOpen(false);
                                   else openChatForJob(job);
@@ -1214,7 +1743,7 @@ export default function JobsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7"
+                                className="h-8 w-8 sm:h-7 sm:w-7"
                                 onClick={() => setExpandedJob(null)}
                               >
                                 <ChevronUp className="w-3.5 h-3.5" />
@@ -1223,7 +1752,7 @@ export default function JobsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7"
+                                className="h-8 w-8 sm:h-7 sm:w-7"
                                 onClick={() => toggleExpand(job.id)}
                                 title="Expand details"
                               >
@@ -1243,373 +1772,28 @@ export default function JobsPage() {
                       </TableCell>
                     </TableRow>
                     {/* Inline expanded detail panel — immediately after this row */}
-                    {isExpanded && (() => {
-                      const match = matchResults[job.id];
-                      const isMatchLoading = matchLoading[job.id];
-                      const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
-                      // Deduplicate resumes by ID (same resume can appear in both job.resumes and version.resumes)
-                      const seenIds = new Set<string>();
-                      const allResumes: Array<{ id: string; format: string }> = [];
-                      for (const r of [...(job.profileVersions?.flatMap((v) => v.resumes) ?? []), ...job.resumes]) {
-                        if (!seenIds.has(r.id)) { seenIds.add(r.id); allResumes.push(r); }
-                      }
-                      // Show only the latest (first) PDF for preview
-                      const latestPdf = allResumes.find((r) => r.format === "pdf");
-                      return (
+                    {isExpanded && (
                         <TableRow className="hover:bg-transparent">
                           <TableCell colSpan={6} className="p-0 whitespace-normal">
-                            <div className="border-t border-border bg-card overflow-hidden">
-                {/* Panel header */}
-                <div className="px-6 pt-5 pb-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p
-                        className="text-muted-foreground mb-1"
-                        style={{
-                          fontFamily: "var(--font-dm-mono)",
-                          fontSize: "0.6rem",
-                          letterSpacing: "0.14em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Job Details
-                      </p>
-                      <h3
-                        className="text-foreground leading-tight"
-                        style={{
-                          fontFamily: "var(--font-cormorant)",
-                          fontStyle: "italic",
-                          fontSize: "1.5rem",
-                          fontWeight: 400,
-                        }}
-                      >
-                        {job.title}
-                        <span className="text-muted-foreground text-lg"> at </span>
-                        <span className="text-primary">{job.company}</span>
-                      </h3>
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        {job.sponsorship === "unavailable" && (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-red-700 bg-red-50 border border-red-200/50 dark:text-red-300 dark:bg-red-950/40 dark:border-red-800/30"
-                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                          >
-                            <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
-                          </span>
-                        )}
-                        {job.sponsorship === "available" && (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-emerald-700 bg-emerald-50 border border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800/30"
-                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                          >
-                            <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
-                          </span>
-                        )}
-                        {job.url && (
-                          <a
-                            href={job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
-                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em" }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ExternalLink className="w-2.5 h-2.5" /> View Posting
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mt-1 -mr-2" onClick={() => setExpandedJob(null)}>
-                      <ChevronUp className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  {/* Required skills strip */}
-                  {job.skills && (
-                    <div className="mt-4">
-                      <p
-                        className="text-muted-foreground mb-2"
-                        style={{
-                          fontFamily: "var(--font-dm-mono)",
-                          fontSize: "0.55rem",
-                          letterSpacing: "0.12em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Required Skills
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {JSON.parse(job.skills).slice(0, 14).map((skill: string) => (
-                          <span
-                            key={skill}
-                            className={`text-[11px] px-2 py-0.5 rounded-sm border ${
-                              match?.skillsToHighlight?.includes(skill)
-                                ? "text-emerald-700 bg-emerald-50/60 border-emerald-200/50 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800/30"
-                                : "text-foreground/70 bg-muted/30 border-border/40"
-                            }`}
-                          >
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Analysis section */}
-                <div className="px-6">
-                  {!match && !isMatchLoading && hasProfile && (
-                    <AnalysisCTA onAnalyze={() => fetchMatch(job.id)} />
-                  )}
-                  <MatchPanel
-                    match={match || null}
-                    loading={isMatchLoading || false}
-                    onReanalyze={() => fetchMatch(job.id, true)}
-                    hasProfile={hasProfile}
-                    onApplyTips={() => openChatAndApplyTips(job)}
-                  />
-                </div>
-
-                {/* Version History */}
-                {hasVersions && (
-                  <div className="px-6 mt-5">
-                    <div className="section-divider mb-4" />
-                    <div className="flex items-center justify-between mb-3">
-                      <p
-                        className="text-muted-foreground flex items-center gap-1.5"
-                        style={{
-                          fontFamily: "var(--font-dm-mono)",
-                          fontSize: "0.6rem",
-                          letterSpacing: "0.14em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        <History className="w-3 h-3" />
-                        Version History
-                      </p>
-                      <a
-                        href="/versions"
-                        className="text-primary hover:underline"
-                        style={{
-                          fontFamily: "var(--font-dm-mono)",
-                          fontSize: "0.55rem",
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        View all
-                      </a>
-                    </div>
-                    {/* Score progression */}
-                    <div className="flex items-center gap-2 flex-wrap mb-3">
-                      {match && (
-                        <>
-                          <span
-                            className="text-muted-foreground"
-                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                          >
-                            Original
-                          </span>
-                          <MatchScoreBadge score={match.overallScore} />
-                          <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
-                        </>
-                      )}
-                      {job.profileVersions!.slice().reverse().map((v, vi) => (
-                        <span key={v.id} className="inline-flex items-center gap-1">
-                          {vi > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
-                          <MatchScoreBadge score={v.score} />
-                          {v.delta != null && v.delta > 0 && (
-                            <span
-                              className="text-emerald-600 dark:text-emerald-400 font-semibold"
-                              style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem" }}
-                            >
-                              +{v.delta}
-                            </span>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                    {/* Version rows */}
-                    <div className="space-y-1">
-                      {job.profileVersions!.map((v, vi) => (
-                        <div key={v.id} className="flex items-center justify-between py-2 px-3 rounded-sm border border-border/30 bg-muted/10 hover:bg-muted/20 transition-colors text-xs">
-                          <div className="flex items-center gap-2.5">
-                            <span
-                              className="text-foreground font-medium"
-                              style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em" }}
-                            >
-                              v{job.profileVersions!.length - vi}
-                            </span>
-                            <MatchScoreBadge score={v.score} />
-                            {v.delta != null && v.delta > 0 && (
-                              <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">+{v.delta}</span>
-                            )}
-                            <span className="text-muted-foreground">
-                              {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                            </span>
-                          </div>
-                          {v.resumes.length > 0 && (
-                            <div className="flex gap-1">
-                              {v.resumes.map((r) => (
-                                <button key={r.id} onClick={(e) => { e.stopPropagation(); setPreviewResume(r); }}>
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded-sm border border-border/40 bg-card hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer text-muted-foreground hover:text-primary"
-                                    style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                                    {r.format === "latex" ? "tex" : r.format}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Export section */}
-                <div className="px-6 mt-5 pb-6">
-                  <div className="section-divider mb-4" />
-                  <p
-                    className="text-muted-foreground mb-3 flex items-center gap-1.5"
-                    style={{
-                      fontFamily: "var(--font-dm-mono)",
-                      fontSize: "0.6rem",
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    Export Resume
-                  </p>
-                  {/* Email selector */}
-                  {profileEmails.length > 1 && (
-                    <div className="flex items-center gap-2 mb-3">
-                      <label
-                        className="text-muted-foreground shrink-0"
-                        style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
-                      >
-                        Email:
-                      </label>
-                      <select
-                        value={selectedEmail || profileEmails[0]}
-                        onChange={(e) => setSelectedEmail(e.target.value)}
-                        className="text-xs border border-border rounded-sm px-2.5 py-1.5 bg-background text-foreground"
-                      >
-                        {profileEmails.map((email) => (
-                          <option key={email} value={email}>{email}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    {(["pdf", "docx", "latex"] as const).map((fmt) => {
-                      const alreadyHas = jobHasResumeFormat(job, fmt);
-                      const label = fmt === "latex" ? "LaTeX" : fmt.toUpperCase();
-                      const isThisGenerating = generatingFormat === fmt;
-                      return (
-                        <Button
-                          key={fmt}
-                          variant={alreadyHas ? "outline" : "default"}
-                          size="sm"
-                          className={`gap-1.5 rounded-sm text-xs transition-all ${isThisGenerating ? "min-w-[140px]" : ""}`}
-                          disabled={generatingFormat !== null}
-                          onClick={() => {
-                            if (alreadyHas) {
-                              const existingResume = job.resumes.find((r) => r.format === fmt)
-                                || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
-                              if (existingResume) {
-                                setPreviewResume({ id: existingResume.id, format: fmt });
-                              }
-                            } else {
-                              handleGenerateResume(job, fmt);
-                            }
-                          }}
-                        >
-                          {isThisGenerating ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : alreadyHas ? (
-                            <Eye className="w-3 h-3" />
-                          ) : (
-                            <Sparkles className="w-3 h-3" />
-                          )}
-                          {isThisGenerating ? `Generating ${label}...` : alreadyHas ? `${label}` : `Generate ${label}`}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                  {/* Generation progress */}
-                  {generatingFormat && (
-                    <div className="mt-3 anim-fade-up">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <p
-                          className="text-primary"
-                          style={{
-                            fontFamily: "var(--font-dm-mono)",
-                            fontSize: "0.55rem",
-                            letterSpacing: "0.1em",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Tailoring resume with AI
-                          <span className="inline-flex ml-1 gap-px">
-                            <span className="anim-dot-1">.</span>
-                            <span className="anim-dot-2">.</span>
-                            <span className="anim-dot-3">.</span>
-                          </span>
-                        </p>
-                      </div>
-                      <div className="h-0.5 bg-border/30 rounded-full overflow-hidden max-w-xs">
-                        <div className="h-full w-2/5 bg-primary/50 rounded-full anim-progress-bar" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* PDF Preview — latest version only, compact thumbnail */}
-                {latestPdf && (
-                  <div className="px-6 mt-2 pb-6">
-                    <div className="section-divider mb-4" />
-                    <p
-                      className="text-muted-foreground mb-3 flex items-center gap-1.5"
-                      style={{
-                        fontFamily: "var(--font-dm-mono)",
-                        fontSize: "0.6rem",
-                        letterSpacing: "0.14em",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      <FileText className="w-3 h-3" />
-                      Latest PDF
-                    </p>
-                    <div className="max-w-[220px]">
-                      <button
-                        className="block w-full border border-border/50 rounded-sm overflow-hidden bg-muted/10 hover:border-primary/30 transition-colors group/pdf text-left"
-                        onClick={(e) => { e.stopPropagation(); setPreviewResume({ id: latestPdf.id, format: "pdf" }); }}
-                      >
-                        <iframe
-                          src={`/api/resume/download/${latestPdf.id}?inline=1`}
-                          sandbox="allow-same-origin"
-                          className="w-full h-[280px] border-0 pointer-events-none scale-100"
-                          title="Resume preview"
-                          tabIndex={-1}
-                        />
-                        <div className="flex items-center justify-center gap-1.5 px-2 py-1.5 border-t border-border/30 bg-card group-hover/pdf:bg-primary/5 transition-colors">
-                          <Eye className="w-2.5 h-2.5 text-muted-foreground group-hover/pdf:text-primary" />
-                          <span
-                            className="text-muted-foreground group-hover/pdf:text-primary transition-colors"
-                            style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
-                          >
-                            View PDF
-                          </span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                            <ExpandedJobDetail
+                              job={job}
+                              match={matchResults[job.id]}
+                              isMatchLoading={matchLoading[job.id] || false}
+                              hasProfile={hasProfile}
+                              hasVersions={hasVersions}
+                              generatingFor={generatingFor}
+                              profileEmails={profileEmails}
+                              selectedEmail={selectedEmail}
+                              onSetExpandedJob={setExpandedJob}
+                              onFetchMatch={fetchMatch}
+                              onOpenChatAndApplyTips={openChatAndApplyTips}
+                              onHandleGenerateResume={handleGenerateResume}
+                              onSetSelectedEmail={setSelectedEmail}
+                              onSetPreviewResume={setPreviewResume}
+                            />
                           </TableCell>
                         </TableRow>
-                      );
-                    })()}
+                    )}
                     </React.Fragment>
                   );
                 })}

@@ -68,83 +68,22 @@ interface ParsedResume {
  * Extracts contact info, experience, education, projects, and skills.
  */
 export async function parseResumeText(text: string): Promise<ParsedResume> {
-  return askJson(`Parse the following resume text and extract structured data. Return ONLY valid JSON with this exact structure:
+  return askJson(`Parse the resume text into JSON. Return ONLY valid JSON with no extra text. All fields optional unless marked *.
 
+Schema:
 {
-  "name": "Full Name",
-  "email": "email@example.com",
-  "phone": "phone number",
-  "location": "City, State",
-  "summary": "Professional summary",
-  "linkedin": "linkedin url if found",
-  "github": "github url if found",
-  "website": "personal website if found",
-  "experiences": [
-    {
-      "company": "Company Name",
-      "title": "Job Title",
-      "startDate": "YYYY-MM",
-      "endDate": "YYYY-MM or null if current",
-      "current": false,
-      "bullets": ["achievement 1", "achievement 2"],
-      "skills": ["skill1", "skill2"]
-    }
-  ],
-  "educations": [
-    {
-      "school": "University Name",
-      "degree": "Degree Type",
-      "field": "Field of Study",
-      "startDate": "YYYY",
-      "endDate": "YYYY",
-      "gpa": "GPA if mentioned"
-    }
-  ],
-  "projects": [
-    {
-      "name": "Project Name",
-      "description": "Brief description",
-      "url": "url if found",
-      "skills": ["skill1", "skill2"]
-    }
-  ],
-  "skills": [
-    {
-      "name": "Skill Name",
-      "category": "language|framework|tool|database|cloud|soft"
-    }
-  ],
-  "publications": [
-    {
-      "title": "Publication Title",
-      "publisher": "Journal or Conference Name",
-      "date": "YYYY or YYYY-MM",
-      "url": "url if found",
-      "doi": "DOI if found",
-      "description": "Brief summary of the publication if available (max 100 words)"
-    }
-  ],
-  "certifications": [
-    {
-      "name": "Certification Name",
-      "issuer": "Issuing Organization",
-      "date": "YYYY or YYYY-MM",
-      "expiryDate": "YYYY or YYYY-MM if mentioned",
-      "credentialId": "credential ID if mentioned",
-      "url": "verification url if found"
-    }
-  ],
-  "recommendations": [
-    {
-      "recommenderName": "Person's Name",
-      "recommenderTitle": "Their job title",
-      "relationship": "e.g. Manager, Colleague, Client",
-      "text": "The recommendation text",
-      "linkedinUrl": "LinkedIn URL if found"
-    }
-  ]
+  name*, email, phone, location, summary, linkedin, github, website,
+  experiences: [{company*, title*, startDate* (YYYY-MM), endDate (YYYY-MM|null), current:bool, bullets:string[], skills:string[]}],
+  educations: [{school*, degree*, field, startDate, endDate, gpa}],
+  projects: [{name*, description, url, skills:string[]}],
+  skills: [{name*, category* (language|framework|tool|database|cloud|soft)}],
+  publications: [{title*, publisher, date (YYYY-MM), url, doi, description (≤100 words)}],
+  certifications: [{name*, issuer, date (YYYY-MM), expiryDate, credentialId, url}],
+  recommendations: [{recommenderName*, recommenderTitle, relationship, text*, linkedinUrl}]
 }
 
-Resume text:
+Extract all skills mentioned (explicit + implicit from context). For experiences, extract skills used even if not listed.
+
+Resume:
 ${text}`);
 }

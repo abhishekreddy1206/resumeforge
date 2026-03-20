@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, compactProfile, PROFILE_SCHEMA_RULES } from "../client";
 
 /**
  * Skill: Resume Tip Applier
@@ -35,7 +35,7 @@ ${historyText}
 User's instruction: "${instruction}"
 
 CURRENT PROFILE:
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(compactProfile(profile))}
 
 TARGET JOB:
 Title: ${job.title}
@@ -48,25 +48,13 @@ Gaps: ${JSON.stringify(matchResult.breakdown?.gaps || [])}
 Skills to highlight: ${JSON.stringify(matchResult.skillsToHighlight || [])}
 
 RESUME TIPS TO APPLY:
-${JSON.stringify(matchResult.resumeTips || [], null, 2)}
+${JSON.stringify(matchResult.resumeTips || [])}
 
 RULES:
-- Apply ONLY grounded tips (grounded: true) unless the user explicitly asks for stretch tips
-- Modify the profile data to implement each applicable tip:
-  - Reword experience bullets to use the job's terminology where the candidate genuinely has the skill
-  - Reorder experiences or bullets to lead with the most relevant content
-  - Add skills the candidate demonstrably has but aren't listed (based on their experience bullets)
-  - Adjust the summary to target this specific role
-- Do NOT fabricate experience or skills the candidate doesn't have
-- Do NOT change the fundamental structure — keep the same data shape
-- For experiences: "bullets" is an array of strings, "skills" is an array of strings
-- For skills: each has "name" and "category" (language|framework|tool|database|cloud|soft)
-- For publications: each has "title", "publisher", "date", "url", "doi", "description"
-- For certifications: each has "name", "issuer", "date", "expiryDate", "credentialId", "url"
-- For recommendations: each has "recommenderName", "recommenderTitle", "relationship", "text"
-- Consider which publications, certifications, and recommendations to emphasize for this specific job
-- Be specific in your reply about what you changed and why
-- Keep the reply concise (3-5 sentences)
+- Apply ONLY grounded tips (grounded:true) unless user explicitly asks for stretch tips
+- Reword bullets using JD terminology, reorder for relevance, add demonstrable skills not yet listed, adjust summary for this role
+- Do NOT fabricate; do NOT change the data shape: ${PROFILE_SCHEMA_RULES}
+- Be specific and concise in reply (3-5 sentences)
 
 Return JSON with SHORT field values (keep reply under 500 chars to avoid truncation):
 {

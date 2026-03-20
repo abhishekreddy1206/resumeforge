@@ -74,14 +74,17 @@ export default function RootLayout({
 
                 {/* Desktop nav */}
                 <NavLinks />
-
-                {/* Mobile nav */}
-                <NavLinks mobile />
               </div>
             </div>
             {/* Vermillion accent rule */}
             <div className="h-0.5 bg-primary" />
           </nav>
+          {/* Mobile nav row — sticks below the 56px header */}
+          <div className="sticky top-14 z-40 bg-background border-b border-border sm:hidden">
+            <div className="max-w-6xl mx-auto px-4">
+              <NavLinks mobile />
+            </div>
+          </div>
 
           <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
             {children}

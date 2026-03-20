@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, PROFILE_SCHEMA_RULES } from "../client";
 
 /**
  * Skill: Skills Editor
@@ -33,13 +33,12 @@ ${historyText}
 User's latest instruction: "${instruction}"
 
 Current Skills:
-${JSON.stringify(currentSkills, null, 2)}
+${JSON.stringify(currentSkills.map(({ name, category }) => ({ name, category })))}
 
 RULES:
 - If the user wants to ADD, REMOVE, or MODIFY skills, return both "reply" and "updatedSkills"
 - If the user is asking a QUESTION (not requesting changes), return only "reply" with no "updatedSkills"
-- Valid categories: language, framework, tool, database, cloud, soft
-- When adding skills, always assign the most appropriate category
+- ${PROFILE_SCHEMA_RULES}
 - Preserve existing skill IDs when modifying (only omit id for new skills)
 - Be concise in your reply — explain what you changed in 1-2 sentences
 - If a user asks to add a skill that already exists, mention it's already there

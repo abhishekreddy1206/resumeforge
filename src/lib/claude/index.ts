@@ -25,3 +25,4 @@ export { enhanceProfileFromHistory } from "./skills/profile-enhancer";
 export type { EnhanceSuggestion, EnhanceResult } from "./skills/profile-enhancer";
 export { parseCertifications } from "./skills/certification-parser";
 export { parseRecommendations } from "./skills/recommendation-parser";
+export { compactProfile } from "./client";

@@ -1,4 +1,4 @@
-import { ask } from "../client";
+import { ask, compactProfile } from "../client";
 
 /**
  * Skill: Resume Advisor
@@ -39,35 +39,45 @@ Resume tips: ${JSON.stringify(cachedMatch.resumeTips || [])}
 Verdict: ${cachedMatch.verdictSummary || "N/A"}\n`
     : "";
 
+  // Build a compact job context using structured fields instead of the raw description (potentially thousands of tokens)
+  let parsedSkills: string[] = [];
+  if (job.skills) {
+    try {
+      parsedSkills = typeof job.skills === "string" ? JSON.parse(job.skills) : job.skills;
+    } catch {
+      parsedSkills = [];
+    }
+  }
+  const compactJob = {
+    title: job.title,
+    company: job.company,
+    seniority: job.seniority,
+    skills: parsedSkills,
+    sponsorship: job.sponsorship,
+    summary: job.summary,
+    atsKeywords: job.atsKeywords,
+    requirements: job.requirements,
+  };
+
   const reply = await ask(`You are a resume strategy advisor helping a candidate tailor their resume for a specific job posting.
 
 ${historyText}
 User's question: "${message}"
 
 CANDIDATE PROFILE:
-${JSON.stringify(profile, null, 2)}
+${JSON.stringify(compactProfile(profile))}
 
 TARGET JOB:
-Title: ${job.title}
-Company: ${job.company}
-Description: ${job.description}
-Required Skills: ${job.skills || "Not specified"}
-Sponsorship: ${job.sponsorship || "Unknown"}
+${JSON.stringify(compactJob)}
 ${matchSection}
 RULES:
-- Give specific, actionable advice on how to tailor the resume for THIS job
-- Reference specific experiences, projects, or skills from the candidate's actual profile
-- Suggest which bullets to emphasize, reword, or reorder
-- Suggest which skills to highlight prominently and which to deprioritize
-- Consider which publications and certifications are most relevant to this role
-- Advise on whether to include specific recommendations that speak to skills the job requires
-- Point out where the candidate's experience strongly aligns with the job requirements
-- If the candidate asks about specific sections, focus your advice there
+- Give specific, actionable advice referencing the candidate's actual profile
+- Suggest which bullets to emphasize, reword, or reorder; which skills to highlight or deprioritize
+- Advise on relevant publications, certifications, and recommendations for this role
 - Be honest about gaps — suggest framing strategies, not fabrication
-- Suggest using the job's exact terminology where the candidate genuinely has the skill (ATS matching)
+- Use the job's exact terminology where the candidate genuinely has the skill (ATS matching)
 - Keep responses concise and practical (2-4 paragraphs max)
-- Use markdown formatting for clarity (bold for emphasis, bullet lists for tips)
-- Reply with ONLY your advice text — no JSON wrapping, no code fences`);
+- Use markdown formatting; reply with ONLY your advice text — no JSON wrapping, no code fences`);
 
   return { reply };
 }

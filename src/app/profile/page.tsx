@@ -236,11 +236,11 @@ function PublicationForm({ initial, onSave, onCancel }: {
   return (
     <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
       <Input placeholder="Title *" value={title} onChange={(e) => setTitle(e.target.value)} className="h-9 text-sm" />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input placeholder="Publisher" value={publisher} onChange={(e) => setPublisher(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="Date (YYYY)" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-sm" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input placeholder="URL" value={url} onChange={(e) => setUrl(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="DOI" value={doi} onChange={(e) => setDoi(e.target.value)} className="h-9 text-sm" />
       </div>
@@ -270,11 +270,11 @@ function CertificationForm({ initial, onSave, onCancel }: {
   return (
     <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
       <Input placeholder="Certification Name *" value={name} onChange={(e) => setName(e.target.value)} className="h-9 text-sm" />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input placeholder="Issuer (e.g., AWS)" value={issuer} onChange={(e) => setIssuer(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="Date (YYYY-MM)" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-sm" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input placeholder="Expiry Date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="Credential ID" value={credentialId} onChange={(e) => setCredentialId(e.target.value)} className="h-9 text-sm" />
       </div>
@@ -301,7 +301,7 @@ function RecommendationForm({ initial, onSave, onCancel }: {
 
   return (
     <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/3">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Input placeholder="Recommender Name *" value={recommenderName} onChange={(e) => setRecommenderName(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="Title" value={recommenderTitle} onChange={(e) => setRecommenderTitle(e.target.value)} className="h-9 text-sm" />
         <Input placeholder="Relationship" value={relationship} onChange={(e) => setRelationship(e.target.value)} className="h-9 text-sm" />
@@ -665,7 +665,7 @@ export default function ProfilePage() {
   const recommendations = getRecommendations();
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto pb-20 sm:pb-0">
       {/* ── Header ── */}
       <div className="border-b border-border pb-8 pt-2 mb-8 anim-fade-up">
         <div className="flex items-end justify-between gap-4">
@@ -1011,7 +1011,7 @@ export default function ProfilePage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => setEditingPub(pub.id)} className="p-1.5 rounded hover:bg-accent">
                               <Pencil className="w-3 h-3 text-muted-foreground" />
                             </button>
@@ -1116,7 +1116,7 @@ export default function ProfilePage() {
                             </a>
                           )}
                         </div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                           <button onClick={() => setEditingCert(cert.id)} className="p-1.5 rounded hover:bg-accent">
                             <Pencil className="w-3 h-3 text-muted-foreground" />
                           </button>
@@ -1211,7 +1211,7 @@ export default function ProfilePage() {
                               {rec.relationship ? ` (${rec.relationship})` : ""}
                             </p>
                           </div>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                             <button onClick={() => setEditingRec(i)} className="p-1.5 rounded hover:bg-accent">
                               <Pencil className="w-3 h-3 text-muted-foreground" />
                             </button>
@@ -1459,14 +1459,29 @@ export default function ProfilePage() {
         />
       )}
 
-      {/* Floating chat button (mobile) */}
-      {profile && !chatOpen && (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 sm:hidden w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg flex items-center justify-center hover:shadow-xl hover:scale-105 transition-all z-40"
-        >
-          <MessageSquare className="w-6 h-6" />
-        </button>
+      {/* Mobile sticky action bar */}
+      {profile && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border p-3 flex gap-2 sm:hidden">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 gap-1.5 border-primary/30 hover:bg-primary/10 hover:border-primary/50 text-primary"
+            onClick={handleEnhance}
+            disabled={enhancing}
+          >
+            {enhancing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Enhance
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 gap-1.5"
+            onClick={() => setChatOpen(!chatOpen)}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Edit with AI
+          </Button>
+        </div>
       )}
     </div>
   );

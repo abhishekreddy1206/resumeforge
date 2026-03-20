@@ -30,7 +30,7 @@ export function NavLinks({ mobile }: { mobile?: boolean }) {
 
   if (mobile) {
     return (
-      <div className="flex md:hidden items-center gap-0.5 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide py-1">
         {navLinks.map((link) => {
           const isActive =
             pathname === link.href ||
@@ -40,14 +40,14 @@ export function NavLinks({ mobile }: { mobile?: boolean }) {
             <a
               key={link.href}
               href={link.href}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-sm transition-colors whitespace-nowrap ${
                 isActive
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
               style={monoStyle}
             >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <Icon className="w-4 h-4 shrink-0" />
               {link.label}
             </a>
           );

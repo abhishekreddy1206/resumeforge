@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, compactProfile } from "../client";
 
 /**
  * Skill: Profile Enricher
@@ -60,8 +60,8 @@ Return the merged profile as JSON with this structure:
 Only include sections that have new data to add. Omit empty arrays.
 
 Existing Profile:
-${JSON.stringify(existingProfile, null, 2)}
+${JSON.stringify(compactProfile(existingProfile))}
 
 ${source.charAt(0).toUpperCase() + source.slice(1)} Data:
-${JSON.stringify(externalData, null, 2)}`);
+${JSON.stringify(externalData)}`, { timeoutMs: 300_000 });
 }
