@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Cormorant_Garamond, DM_Mono } from "next/font/google";
+import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,25 +8,24 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const cormorant = Cormorant_Garamond({
-  variable: "--font-cormorant",
+// Display: Fraunces — variable optical serif, warm ink-trap resilience in dark mode
+const fraunces = Fraunces({
+  variable: "--font-cormorant", // reuse var name so existing references pick it up
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
   style: ["normal", "italic"],
 });
 
-const dmMono = DM_Mono({
-  variable: "--font-dm-mono",
+// Body: Plus Jakarta Sans — humanist geometric grotesque, warm at all sizes
+const jakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-geist-sans", // reuse var name so existing references pick it up
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+// Mono: JetBrains Mono — technical character, reads cleanly at 0.6rem labels
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-dm-mono", // reuse var name so existing references pick it up
   subsets: ["latin"],
   weight: ["300", "400", "500"],
   style: ["normal", "italic"],
@@ -45,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${dmMono.variable} antialiased min-h-screen bg-background paper-bg`}
+        className={`${fraunces.variable} ${jakartaSans.variable} ${jetbrainsMono.variable} antialiased min-h-screen bg-background paper-bg`}
       >
         <ThemeProvider
           attribute="class"

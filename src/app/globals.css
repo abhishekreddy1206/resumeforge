@@ -135,23 +135,30 @@
 
 /* ─── Typography ─── */
 
+/* Fraunces: use upright for display — its natural warmth doesn't need italic */
 .font-display {
   font-family: var(--font-cormorant), "Georgia", serif;
   font-style: italic;
+  font-weight: 500;
+  /* Fraunces WONK axis adds character at display sizes */
+  font-variation-settings: "WONK" 1;
 }
 
 .font-display-upright {
   font-family: var(--font-cormorant), "Georgia", serif;
   font-style: normal;
   font-weight: 500;
+  font-variation-settings: "WONK" 0;
 }
 
+/* JetBrains Mono labels — slightly larger than DM Mono for better legibility */
 .label-mono {
   font-family: var(--font-dm-mono), "Courier New", monospace;
-  font-size: 0.625rem;
-  letter-spacing: 0.12em;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 500;
+  font-feature-settings: "zero" 1;
 }
 
 /* ─── Gradient text (warm, editorial) ─── */
@@ -299,4 +306,97 @@
 }
 .paste-zone:focus-within .paste-glow {
   animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────
+   Enhanced Buttons
+   ───────────────────────────────────────── */
+
+/* All buttons: Plus Jakarta Sans inherits from body, slightly tighter tracking */
+[data-slot="button"] {
+  letter-spacing: 0.01em;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+/* Primary — warm gradient depth + lift on hover */
+[data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]) {
+  background-image: linear-gradient(
+    168deg,
+    oklch(0.540 0.168 30) 0%,
+    oklch(0.498 0.174 27) 100%
+  );
+  box-shadow:
+    0 1px 2px oklch(0.520 0.170 30 / 0.28),
+    inset 0 1px 0 oklch(1 0 0 / 0.10);
+}
+[data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]):hover:not(:disabled) {
+  background-image: linear-gradient(
+    168deg,
+    oklch(0.558 0.170 30) 0%,
+    oklch(0.515 0.176 27) 100%
+  );
+  box-shadow:
+    0 4px 12px oklch(0.520 0.170 30 / 0.26),
+    0 1px 3px oklch(0.520 0.170 30 / 0.14),
+    inset 0 1px 0 oklch(1 0 0 / 0.10);
+  transform: translateY(-1px);
+}
+[data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]):active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 2px oklch(0.520 0.170 30 / 0.20),
+    inset 0 1px 2px oklch(0 0 0 / 0.06);
+}
+
+/* Primary dark mode — brass/amber gradient */
+.dark [data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]) {
+  background-image: linear-gradient(
+    168deg,
+    oklch(0.692 0.144 45) 0%,
+    oklch(0.650 0.152 42) 100%
+  );
+  box-shadow:
+    0 1px 3px oklch(0.665 0.150 42 / 0.42),
+    inset 0 1px 0 oklch(1 0 0 / 0.12);
+}
+.dark [data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]):hover:not(:disabled) {
+  background-image: linear-gradient(
+    168deg,
+    oklch(0.710 0.146 45) 0%,
+    oklch(0.668 0.155 42) 100%
+  );
+  box-shadow:
+    0 4px 14px oklch(0.665 0.150 42 / 0.36),
+    0 1px 4px oklch(0.665 0.150 42 / 0.20),
+    inset 0 1px 0 oklch(1 0 0 / 0.12);
+  transform: translateY(-1px);
+}
+.dark [data-slot="button"][class*="bg-primary"]:not([class*="bg-primary/"]):active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 2px oklch(0.665 0.150 42 / 0.25),
+    inset 0 1px 2px oklch(0 0 0 / 0.10);
+}
+
+/* Outline — crisper border, primary tint on hover */
+[data-slot="button"][class*="border-border"],
+[data-slot="button"][class*="border-input"] {
+  border-width: 1.5px;
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+    color 0.15s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+[data-slot="button"][class*="border-border"]:hover:not(:disabled),
+[data-slot="button"][class*="border-input"]:hover:not(:disabled) {
+  border-color: oklch(0.520 0.170 30 / 0.45);
+  background-color: oklch(0.520 0.170 30 / 0.05);
+  color: oklch(0.520 0.170 30);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px oklch(0.520 0.170 30 / 0.08);
+}
+.dark [data-slot="button"][class*="border-border"]:hover:not(:disabled),
+.dark [data-slot="button"][class*="border-input"]:hover:not(:disabled) {
+  border-color: oklch(0.665 0.150 42 / 0.55);
+  background-color: oklch(0.665 0.150 42 / 0.08);
+  color: oklch(0.720 0.140 44);
+  box-shadow: 0 2px 8px oklch(0.665 0.150 42 / 0.12);
 }
