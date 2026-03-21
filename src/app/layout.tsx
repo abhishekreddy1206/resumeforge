@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLinks } from "@/components/nav-links";
+import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,10 +43,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${dmMono.variable} antialiased min-h-screen bg-background paper-bg`}
       >
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange={false}
+        >
         <TooltipProvider>
           {/* Magazine masthead navigation */}
           <nav className="border-b border-border bg-card/95 backdrop-blur-xl sticky top-0 z-50">
@@ -72,8 +80,11 @@ export default function RootLayout({
                   </span>
                 </Link>
 
-                {/* Desktop nav */}
-                <NavLinks />
+                {/* Desktop nav + theme toggle */}
+                <div className="flex items-center gap-1">
+                  <NavLinks />
+                  <ThemeToggle />
+                </div>
               </div>
             </div>
             {/* Vermillion accent rule */}
@@ -81,8 +92,11 @@ export default function RootLayout({
           </nav>
           {/* Mobile nav row — sticks below the 56px header */}
           <div className="sticky top-14 z-40 bg-background border-b border-border sm:hidden">
-            <div className="max-w-6xl mx-auto px-4">
+            <div className="max-w-6xl mx-auto px-4 flex items-center">
               <NavLinks mobile />
+              <div className="ml-auto pl-2 shrink-0">
+                <ThemeToggle />
+              </div>
             </div>
           </div>
 
@@ -118,6 +132,7 @@ export default function RootLayout({
           </footer>
           <Toaster />
         </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
