@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrl } from "@/lib/parsers/web";
+import { normalizeJobUrl } from "@/lib/utils/normalize-url";
+import { runAutoMatch } from "@/lib/utils/auto-match";
 
 interface BatchResult {
   url: string;
   jobId?: string;
-  status: "created" | "failed";
+  status: "created" | "failed" | "duplicate";
   error?: string;
 }
 
@@ -36,20 +38,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Scrape all URLs in parallel (no AI tokens used)
+    // Load existing job URLs for duplicate detection
+    const existingUrlJobs = await prisma.job.findMany({
+      where: { url: { not: null } },
+      select: { url: true, title: true, company: true },
+    });
+    const existingNormalized = new Set(
+      existingUrlJobs.map((j) => normalizeJobUrl(j.url || ""))
+    );
+
+    // Filter out duplicates before scraping
+    const newUrls: string[] = [];
+    const results: BatchResult[] = [];
+    for (const url of uniqueUrls) {
+      const norm = normalizeJobUrl(url);
+      if (existingNormalized.has(norm)) {
+        results.push({ url, status: "duplicate", error: "Already added" });
+      } else {
+        newUrls.push(url);
+        existingNormalized.add(norm); // prevent dupes within the same batch
+      }
+    }
+
+    // Scrape remaining URLs in parallel (no AI tokens used)
     const scrapeResults = await Promise.allSettled(
-      uniqueUrls.map(async (url) => {
+      newUrls.map(async (url) => {
         const text = await scrapeJobUrl(url);
         return { url, text };
       })
     );
 
-    const results: BatchResult[] = [];
-
     // Create jobs for successful scrapes
     for (const result of scrapeResults) {
       if (result.status === "rejected") {
-        const url = uniqueUrls[scrapeResults.indexOf(result)];
+        const url = newUrls[scrapeResults.indexOf(result)];
         results.push({
           url,
           status: "failed",
@@ -100,9 +122,12 @@ export async function POST(request: NextRequest) {
                 atsKeywords: JSON.stringify(analysis.atsKeywords || {}),
                 seniority: analysis.seniority || null,
                 sponsorship: (analysis.sponsorship as string) || "unspecified",
+                terminologyMap: JSON.stringify(analysis.terminologyMap || []),
               },
             });
             console.log(`[jobs/batch] Analysis complete for job ${job.id}: ${analysis.title}`);
+            // Auto-run match scoring after analysis
+            return runAutoMatch(job.id);
           })
           .catch((err) => {
             console.error(`[jobs/batch] Analysis failed for job ${job.id}:`, err);
@@ -124,8 +149,9 @@ export async function POST(request: NextRequest) {
 
     const created = results.filter((r) => r.status === "created").length;
     const failed = results.filter((r) => r.status === "failed").length;
+    const duplicates = results.filter((r) => r.status === "duplicate").length;
 
-    return NextResponse.json({ results, created, failed });
+    return NextResponse.json({ results, created, failed, duplicates });
   } catch (error) {
     console.error("Batch job creation error:", error);
     return NextResponse.json(

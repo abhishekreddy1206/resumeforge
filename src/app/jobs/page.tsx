@@ -54,6 +54,8 @@ import {
   Download,
   Eye,
   Zap,
+  Trash2,
+  X,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 
@@ -65,6 +67,7 @@ interface Job {
   description: string;
   skills?: string;
   sponsorship?: string;
+  terminologyMap?: string;
   matchResult?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string }>;
@@ -73,6 +76,12 @@ interface Job {
 
 interface MatchResult {
   overallScore: number;
+  dimensionalScores?: {
+    directMatch: number;
+    transferable: number;
+    experienceDepth: number;
+    careerNarrative: number;
+  };
   breakdown: {
     directMatches: string[];
     bridgeableSkills: Array<{
@@ -254,12 +263,14 @@ function MatchPanel({
   onReanalyze,
   hasProfile,
   onApplyTips,
+  terminologyMap,
 }: {
   match: MatchResult | null;
   loading: boolean;
   onReanalyze?: () => void;
   hasProfile: boolean;
   onApplyTips?: () => void;
+  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>;
 }) {
   if (loading) {
     return (
@@ -355,6 +366,64 @@ function MatchPanel({
           </p>
         </div>
       </div>
+
+      {/* Dimensional Scores */}
+      {match.dimensionalScores && (
+        <div className="grid grid-cols-2 gap-x-5 gap-y-3 mb-6">
+          {([
+            { key: "directMatch" as const, label: "Direct Match", weight: "40%" },
+            { key: "transferable" as const, label: "Transferable", weight: "30%" },
+            { key: "experienceDepth" as const, label: "Experience Depth", weight: "20%" },
+            { key: "careerNarrative" as const, label: "Career Narrative", weight: "10%" },
+          ] as const).map(({ key, label, weight }) => {
+            const score = match.dimensionalScores![key];
+            const barColor =
+              score >= 80 ? "bg-emerald-500 dark:bg-emerald-400"
+              : score >= 60 ? "bg-blue-500 dark:bg-blue-400"
+              : score >= 40 ? "bg-amber-500 dark:bg-amber-400"
+              : "bg-red-500 dark:bg-red-400";
+            const textColor =
+              score >= 80 ? "text-emerald-700 dark:text-emerald-300"
+              : score >= 60 ? "text-blue-700 dark:text-blue-300"
+              : score >= 40 ? "text-amber-700 dark:text-amber-300"
+              : "text-red-700 dark:text-red-300";
+            return (
+              <div key={key}>
+                <div className="flex items-baseline justify-between mb-1">
+                  <span className="flex items-baseline gap-1.5">
+                    <span
+                      className="text-muted-foreground"
+                      style={{
+                        fontFamily: "var(--font-dm-mono)",
+                        fontSize: "0.5rem",
+                        letterSpacing: "0.1em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <span className="text-muted-foreground/40" style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.45rem" }}>
+                      {weight}
+                    </span>
+                  </span>
+                  <span
+                    className={textColor}
+                    style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "0.95rem" }}
+                  >
+                    {score}
+                  </span>
+                </div>
+                <div className="h-1 bg-border/40 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                    style={{ width: `${score}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Breakdown grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border/60 rounded-sm overflow-hidden border border-border/60">
@@ -506,6 +575,36 @@ function MatchPanel({
               >
                 {s}
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Terminology Guide */}
+      {terminologyMap && terminologyMap.length > 0 && (
+        <div className="mt-5">
+          <p
+            className="text-muted-foreground mb-2 flex items-center gap-1.5"
+            style={{
+              fontFamily: "var(--font-dm-mono)",
+              fontSize: "0.55rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+            }}
+          >
+            <ArrowRight className="w-3 h-3" />
+            Terminology Guide
+          </p>
+          <p className="text-[10px] text-muted-foreground/70 mb-2.5 leading-relaxed">
+            Use the JD&rsquo;s exact terms in your resume for better ATS matching.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+            {terminologyMap.map((t) => (
+              <div key={t.jdTerm} className="flex items-baseline gap-2 text-[11px] leading-snug">
+                <span className="text-primary font-medium shrink-0">{t.jdTerm}</span>
+                <span className="text-muted-foreground/50">&larr;</span>
+                <span className="text-muted-foreground truncate">{t.resumeSynonyms.join(", ")}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -749,6 +848,7 @@ function ExpandedJobDetail({
           onReanalyze={() => onFetchMatch(job.id, true)}
           hasProfile={hasProfile}
           onApplyTips={() => onOpenChatAndApplyTips(job)}
+          terminologyMap={(() => { try { return job.terminologyMap ? JSON.parse(job.terminologyMap) : undefined; } catch { return undefined; } })()}
         />
       </div>
 
@@ -1019,6 +1119,15 @@ export default function JobsPage() {
   const [profileEmails, setProfileEmails] = useState<string[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<string>("");
   const [previewResume, setPreviewResume] = useState<{ id: string; format: string } | null>(null);
+  const [deletingNoSponsorship, setDeletingNoSponsorship] = useState(false);
+  const [gapAggregation, setGapAggregation] = useState<{
+    aggregatedGaps: Array<{ gap: string; frequency: number; severity: "critical" | "important" | "specific"; jobs: string[]; relatedTerms: string[] }>;
+    leverageScores: Array<{ skill: string; jobsUnlocked: number; jobs: string[]; estimatedImpact: "high" | "medium" | "low" }>;
+    terminologyOverlap: Array<{ term: string; variants: string[]; frequency: number }>;
+    summary: string;
+  } | null>(null);
+  const [gapLoading, setGapLoading] = useState(false);
+  const [showGapPanel, setShowGapPanel] = useState(false);
 
   async function fetchJobs(p: number) {
     const res = await fetch(`/api/jobs?page=${p}&pageSize=${PAGE_SIZE}`);
@@ -1028,6 +1137,56 @@ export default function JobsPage() {
     setTotalJobs(data.total);
     setTotalPages(data.totalPages);
     setPage(data.page);
+  }
+
+  async function handleGapAnalysis() {
+    setGapLoading(true);
+    try {
+      const matchedJobIds = jobs
+        .filter((j) => j.matchResult)
+        .map((j) => j.id);
+      const res = await fetch("/api/jobs/gaps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: matchedJobIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      const data = await res.json();
+      setGapAggregation(data);
+      setShowGapPanel(true);
+    } catch (err) {
+      toast.error(`Gap analysis failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setGapLoading(false);
+    }
+  }
+
+  async function handleDeleteNoSponsorship() {
+    const noSponsorIds = jobs.filter((j) => j.sponsorship === "unavailable").map((j) => j.id);
+    if (noSponsorIds.length === 0) {
+      toast.info("No jobs without sponsorship on this page");
+      return;
+    }
+    if (!confirm(`Delete ${noSponsorIds.length} job${noSponsorIds.length > 1 ? "s" : ""} marked "No Sponsorship"?`)) return;
+    setDeletingNoSponsorship(true);
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: noSponsorIds }),
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      const data = await res.json();
+      toast.success(`Deleted ${data.deleted} job${data.deleted !== 1 ? "s" : ""}`);
+      await fetchJobs(page);
+    } catch (err) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDeletingNoSponsorship(false);
+    }
   }
 
   useEffect(() => {
@@ -1056,10 +1215,15 @@ export default function JobsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Poll for jobs still being analyzed (title === "Analyzing...")
+  // Poll for jobs still being analyzed or awaiting auto-match scoring
+  const pendingIdsRef = React.useRef<Set<string>>(new Set());
   useEffect(() => {
-    const pendingJobs = jobs.filter((j) => j.title === "Analyzing...");
-    if (pendingJobs.length === 0) return;
+    // Track jobs that are still analyzing
+    const analyzing = jobs.filter((j) => j.title === "Analyzing...");
+    analyzing.forEach((j) => pendingIdsRef.current.add(j.id));
+
+    // Nothing to poll for
+    if (pendingIdsRef.current.size === 0) return;
 
     const interval = setInterval(async () => {
       try {
@@ -1071,9 +1235,26 @@ export default function JobsPage() {
         setTotalJobs(data.total || 0);
         setTotalPages(data.totalPages || 1);
 
-        // Stop polling if no more pending jobs
-        const stillPending = freshJobs.some((j) => j.title === "Analyzing...");
-        if (!stillPending) clearInterval(interval);
+        // Remove jobs from pending once they have both a title and a match result
+        for (const job of freshJobs) {
+          if (
+            pendingIdsRef.current.has(job.id) &&
+            job.title !== "Analyzing..." &&
+            !job.title.startsWith("Analysis Failed") &&
+            job.matchResult
+          ) {
+            pendingIdsRef.current.delete(job.id);
+          }
+        }
+
+        // Also remove failed jobs from pending
+        for (const job of freshJobs) {
+          if (pendingIdsRef.current.has(job.id) && job.title.startsWith("Analysis Failed")) {
+            pendingIdsRef.current.delete(job.id);
+          }
+        }
+
+        if (pendingIdsRef.current.size === 0) clearInterval(interval);
       } catch {
         // silently retry next interval
       }
@@ -1081,6 +1262,37 @@ export default function JobsPage() {
 
     return () => clearInterval(interval);
   }, [jobs, page]);
+
+  const [retryingJobs, setRetryingJobs] = useState<Record<string, boolean>>({});
+
+  async function handleRetryAnalysis(job: Job) {
+    setRetryingJobs((prev) => ({ ...prev, [job.id]: true }));
+    try {
+      // Re-submit the job description for analysis by deleting and re-creating
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: job.description }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        // If duplicate, that's fine — the original still exists
+        if (!err.duplicate) throw new Error(err.error);
+      }
+      // Delete the failed job
+      await fetch("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [job.id] }),
+      });
+      toast.success("Re-analyzing job...");
+      await fetchJobs(page);
+    } catch (err) {
+      toast.error(`Retry failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setRetryingJobs((prev) => ({ ...prev, [job.id]: false }));
+    }
+  }
 
   async function fetchMatch(jobId: string, force = false) {
     if (matchLoading[jobId]) return;
@@ -1209,6 +1421,11 @@ export default function JobsPage() {
           });
           if (!res.ok) {
             const err = await res.json();
+            if (res.status === 409) {
+              toast.warning(err.error || "This job already exists");
+              setJobUrls("");
+              return;
+            }
             throw new Error(err.error);
           }
           await fetchJobs(1);
@@ -1228,10 +1445,14 @@ export default function JobsPage() {
           const data = await res.json();
           await fetchJobs(1);
           setJobUrls("");
-          if (data.failed > 0) {
-            toast.success(`Added ${data.created} job${data.created !== 1 ? "s" : ""} (${data.failed} failed)`);
+          const parts: string[] = [];
+          if (data.created > 0) parts.push(`${data.created} added`);
+          if (data.duplicates > 0) parts.push(`${data.duplicates} duplicate${data.duplicates !== 1 ? "s" : ""} skipped`);
+          if (data.failed > 0) parts.push(`${data.failed} failed`);
+          if (data.created > 0) {
+            toast.success(parts.join(", ") + " — analyzing in background...");
           } else {
-            toast.success(`Added ${data.created} job${data.created !== 1 ? "s" : ""} — analyzing in background...`);
+            toast.warning(parts.join(", "));
           }
         }
       } else if (payload.description) {
@@ -1242,6 +1463,11 @@ export default function JobsPage() {
         });
         if (!res.ok) {
           const err = await res.json();
+          if (res.status === 409) {
+            toast.warning(err.error || "This job description already exists");
+            setJobDescription("");
+            return;
+          }
           throw new Error(err.error);
         }
         await fetchJobs(1);
@@ -1320,7 +1546,7 @@ export default function JobsPage() {
   if (loading) return <JobsSkeleton />;
 
   return (
-    <div className={`space-y-0 transition-all duration-200 ${chatOpen ? "lg:mr-[420px]" : ""}`}>
+    <div className={`space-y-0 transition-all duration-200 `}>
       {/* ── Header ── */}
       <section className="border-b border-border pb-10 pt-2 anim-fade-up">
         <p className="text-muted-foreground mb-6" style={monoStyle}>
@@ -1449,16 +1675,134 @@ export default function JobsPage() {
       {/* ── Jobs Table ── */}
       {jobs.length > 0 ? (
         <section className="pt-8 anim-fade-up-2">
-          <p className="text-muted-foreground mb-4" style={monoStyle}>
-            Saved Jobs · {totalJobs} position{totalJobs !== 1 ? "s" : ""}
-            {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
-          </p>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <p className="text-muted-foreground" style={monoStyle}>
+              Saved Jobs · {totalJobs} position{totalJobs !== 1 ? "s" : ""}
+              {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
+            </p>
+            <div className="flex items-center gap-2">
+              {jobs.filter((j) => j.matchResult).length >= 2 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleGapAnalysis}
+                  disabled={gapLoading}
+                >
+                  {gapLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Target className="w-3.5 h-3.5" />
+                  )}
+                  Cross-Job Analysis
+                </Button>
+              )}
+              {jobs.some((j) => j.sponsorship === "unavailable") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950"
+                  onClick={handleDeleteNoSponsorship}
+                  disabled={deletingNoSponsorship}
+                >
+                  {deletingNoSponsorship ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  Delete No Sponsorship
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Gap Aggregation Panel */}
+          {showGapPanel && gapAggregation && (
+            <div className="mb-6 border border-border rounded-sm bg-card overflow-hidden">
+              <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground" style={monoStyle}>
+                    Cross-Job Gap Analysis
+                  </p>
+                  <p className="text-sm text-foreground/80 mt-1 leading-relaxed">{gapAggregation.summary}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowGapPanel(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-border/40">
+                {/* Critical Gaps */}
+                <div className="bg-card p-4">
+                  <p className="text-muted-foreground mb-3 flex items-center gap-1.5" style={monoStyle}>
+                    Gap Frequency
+                  </p>
+                  <div className="space-y-2">
+                    {gapAggregation.aggregatedGaps.slice(0, 8).map((g) => (
+                      <div key={g.gap} className="flex items-start gap-2">
+                        <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded-sm text-[9px] font-semibold uppercase tracking-wider border ${
+                          g.severity === "critical" ? "bg-red-50 text-red-700 border-red-200/50 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/30"
+                          : g.severity === "important" ? "bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/30"
+                          : "bg-muted text-muted-foreground border-border/50"
+                        }`} style={{ fontFamily: "var(--font-dm-mono)" }}>
+                          {g.frequency}x
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] text-foreground font-medium leading-snug">{g.gap}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{g.jobs.join(", ")}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Leverage Scores */}
+                <div className="bg-card p-4">
+                  <p className="text-muted-foreground mb-3 flex items-center gap-1.5" style={monoStyle}>
+                    <Zap className="w-3 h-3" />
+                    Skills to Develop
+                  </p>
+                  <div className="space-y-2">
+                    {gapAggregation.leverageScores.slice(0, 6).map((l) => (
+                      <div key={l.skill} className="flex items-start gap-2">
+                        <ImpactBadge impact={l.estimatedImpact} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] text-foreground font-medium leading-snug">{l.skill}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Unlocks {l.jobsUnlocked} job{l.jobsUnlocked !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Terminology Overlap */}
+                <div className="bg-card p-4">
+                  <p className="text-muted-foreground mb-3 flex items-center gap-1.5" style={monoStyle}>
+                    <ArrowRight className="w-3 h-3" />
+                    Common Terms
+                  </p>
+                  <div className="space-y-1.5">
+                    {gapAggregation.terminologyOverlap.slice(0, 8).map((t) => (
+                      <div key={t.term} className="flex items-baseline gap-2 text-[11px] leading-snug">
+                        <span className="text-primary font-medium shrink-0">{t.term}</span>
+                        <span className="text-muted-foreground/40 shrink-0">{t.frequency}x</span>
+                        <span className="text-muted-foreground truncate">{t.variants.join(", ")}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Mobile card stack (sm:hidden) ── */}
           <div className="sm:hidden space-y-2">
             {sortedJobs.map((job) => {
               const isExpanded = expandedJob === job.id;
-              const isAnalyzing = job.title === "Analyzing..." || job.title === "Analysis Failed — Click to Retry";
+              const isFailed = job.title === "Analysis Failed — Click to Retry";
+              const isAnalyzing = job.title === "Analyzing..." || isFailed;
               const bestScore = getBestScore(job);
               const hasVersions = (job.profileVersions?.length ?? 0) > 0;
 
@@ -1473,26 +1817,34 @@ export default function JobsPage() {
                   {/* Card header — always visible */}
                   <div
                     className="p-4 flex items-start gap-3"
-                    onClick={() => { if (!isAnalyzing) toggleExpand(job.id); }}
+                    onClick={() => { if (!isAnalyzing || isFailed) { if (isFailed) handleRetryAnalysis(job); else toggleExpand(job.id); } }}
                   >
                     {/* Company avatar */}
                     <div
                       className={cn(
                         "w-9 h-9 rounded-sm flex items-center justify-center shrink-0 font-bold text-sm",
-                        isAnalyzing
-                          ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
-                          : "bg-primary/8 text-primary"
+                        isFailed
+                          ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
+                          : isAnalyzing
+                            ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
+                            : "bg-primary/8 text-primary"
                       )}
                       style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1rem" }}
                     >
-                      {isAnalyzing
+                      {isAnalyzing && !isFailed
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         : (job.company || job.title)[0]?.toUpperCase()}
                     </div>
 
                     {/* Job info */}
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate">{job.title}</div>
+                      <div className="font-medium text-sm truncate">
+                        {isFailed ? (
+                          <span className="text-red-600 dark:text-red-400">
+                            {retryingJobs[job.id] ? "Re-analyzing..." : "Analysis Failed — Tap to Retry"}
+                          </span>
+                        ) : job.title}
+                      </div>
                       <div className="text-xs text-muted-foreground truncate">{job.company}</div>
 
                       {/* Badges row */}
@@ -1622,7 +1974,8 @@ export default function JobsPage() {
               <TableBody>
                 {sortedJobs.map((job) => {
                   const isExpanded = expandedJob === job.id;
-                  const isAnalyzing = job.title === "Analyzing..." || job.title === "Analysis Failed — Click to Retry";
+                  const isFailed = job.title === "Analysis Failed — Click to Retry";
+              const isAnalyzing = job.title === "Analyzing..." || isFailed;
                   const bestScore = getBestScore(job);
                   const hasVersions = (job.profileVersions?.length ?? 0) > 0;
                   const totalResumes = job.resumes.length + (job.profileVersions?.reduce((acc, v) => acc + v.resumes.length, 0) ?? 0);
@@ -1630,25 +1983,31 @@ export default function JobsPage() {
                   return (
                     <React.Fragment key={job.id}>
                     <TableRow
-                      className={`group cursor-pointer ${isAnalyzing ? "opacity-60" : ""} ${isExpanded ? "border-b-0" : ""}`}
-                      onClick={() => { if (!isAnalyzing) toggleExpand(job.id); }}
+                      className={`group cursor-pointer ${isAnalyzing && !isFailed ? "opacity-60" : ""} ${isExpanded ? "border-b-0" : ""}`}
+                      onClick={() => { if (isFailed) handleRetryAnalysis(job); else if (!isAnalyzing) toggleExpand(job.id); }}
                     >
                       {/* Title */}
                       <TableCell className="py-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <div
                             className={`w-8 h-8 rounded-sm flex items-center justify-center shrink-0 font-bold text-xs ${
-                              isAnalyzing
-                                ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
-                                : "bg-primary/8 text-primary"
+                              isFailed
+                                ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
+                                : isAnalyzing
+                                  ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
+                                  : "bg-primary/8 text-primary"
                             }`}
                             style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "0.9rem" }}
                           >
-                            {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : job.company.charAt(0)}
+                            {isAnalyzing && !isFailed ? <Loader2 className="w-3 h-3 animate-spin" /> : job.company.charAt(0)}
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-                              {job.title === "Analyzing..." ? "Analyzing..." : job.title}
+                              {isFailed ? (
+                                <span className="text-red-600 dark:text-red-400">
+                                  {retryingJobs[job.id] ? "Re-analyzing..." : "Analysis Failed — Click to Retry"}
+                                </span>
+                              ) : job.title === "Analyzing..." ? "Analyzing..." : job.title}
                             </p>
                             <p className="text-xs text-muted-foreground sm:hidden">{job.company}</p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -1719,7 +2078,18 @@ export default function JobsPage() {
 
                       {/* Actions */}
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        {isAnalyzing ? (
+                        {isFailed ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 text-xs h-7 text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800"
+                            onClick={() => handleRetryAnalysis(job)}
+                            disabled={retryingJobs[job.id]}
+                          >
+                            {retryingJobs[job.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                            Retry
+                          </Button>
+                        ) : isAnalyzing ? (
                           <span className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
                             <Loader2 className="w-3 h-3 animate-spin" />
                           </span>
