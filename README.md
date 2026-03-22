@@ -19,6 +19,10 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Publications & Certifications** — Store and display academic publications (with DOI) and professional certifications (with expiry and credential ID) on your profile.
 - **Recommendations** — Store professional recommendations with recommender name, title, relationship, and optional LinkedIn URL.
 - **Batch Job Import** — Paste multiple job URLs at once; jobs are scraped and analyzed in parallel.
+- **Application Tracking** — Mark jobs as applied and track application dates directly in the jobs list.
+- **Top Matches** — Dedicated view of jobs where your profile scores above 75%, ranked by compatibility.
+- **Cross-Job Gap Analysis** — Aggregate gaps and leverage scores across all matched jobs to identify which skills to develop for maximum impact.
+- **Experience Discovery** — AI generates targeted questions based on your matched job gaps to surface forgotten or underrepresented experiences in your profile.
 - **Multiple Formats** — Export as PDF (styled with react-pdf), DOCX (ATS-safe formatting with tab stops, no tables), or LaTeX (high-quality typesetting).
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
 
@@ -73,6 +77,7 @@ src/
 │   ├── profile/page.tsx            # Upload resume, enrich profile, chat editor
 │   ├── jobs/page.tsx               # Add/view job descriptions, match scoring, job chat
 │   ├── skills/page.tsx             # Skills dashboard
+│   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility
 │   ├── generate/page.tsx           # Generate tailored resumes
 │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
 │   └── api/
@@ -83,6 +88,7 @@ src/
 │       │   ├── enhance/            # AI enhancement suggestions from version history
 │       │   ├── refresh/            # Re-parse profile from stored resume
 │       │   ├── chat/               # Conversational profile editor (POST + apply)
+│       │   │   └── discover/       # AI experience discovery questions from job gaps
 │       │   ├── publications/       # Publications CRUD
 │       │   │   └── fetch/          # Scrape + AI-summarize a publication from URL
 │       │   ├── certifications/     # Certifications CRUD
@@ -94,6 +100,8 @@ src/
 │       │   ├── route.ts            # Job CRUD + analysis
 │       │   ├── match/              # Profile-to-job compatibility scoring
 │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
+│       │   ├── applied/            # Toggle job application status (applied/not applied)
+│       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
 │       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
 │       ├── resume/                 # Resume generation + download + critique
 │       ├── skills/
@@ -116,6 +124,8 @@ src/
 │   │       ├── resume-advisor.ts  # Per-job resume improvement advice
 │   │       ├── resume-tip-applier.ts # Apply AI-suggested tips to profile data
 │   │       ├── skills-editor.ts   # Conversational skills editing via chat
+│   │       ├── experience-discoverer.ts # Generate discovery questions from job gaps
+│   │       ├── gap-aggregator.ts  # Aggregate cross-job gaps and leverage scores
 │   │       ├── certification-parser.ts # AI parse of certification text
 │   │       └── recommendation-parser.ts # AI parse of recommendation text
 │   ├── parsers/
@@ -182,14 +192,14 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 
 | Model | Description |
 |-------|-------------|
-| `Profile` | Name, contact info (including multiple emails), summary, links, recommendations (JSON) |
+| `Profile` | Name, contact info (including multiple emails), summary, links (LinkedIn, GitHub, website, Twitter, Pinterest), recommendations (JSON) |
 | `Experience` | Work history with bullets and skills (JSON) |
 | `Education` | Degrees, schools, GPA |
 | `Project` | Portfolio projects with skills |
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, cached match result |
+| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, applied status with timestamp |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
 | `Resume` | Generated resume record with file path, format, and optional profile version link |
@@ -202,5 +212,7 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 4. **Add Job** — URL scraped or text pasted, Claude extracts requirements
 5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating (results cached on Job)
 6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
-7. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX/LaTeX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
-8. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
+7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
+8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
+9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX/LaTeX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
+10. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
