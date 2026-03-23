@@ -22,15 +22,24 @@ import {
   XIcon,
   Clock,
   Trash2,
+  Search,
 } from "lucide-react";
 import { computeDetailedDiff, serializeProfile } from "@/lib/utils/profile-diff";
 import { ProfileDiffView } from "@/components/diff-view";
+
+interface DiscoveryQuestion {
+  question: string;
+  targetGap: string;
+  relatedExperience?: string;
+  followUpIf: "yes" | "any";
+}
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updatedProfile?: Record<string, any>;
+  discoveryContext?: { targetGap: string; relatedExperience?: string };
 }
 
 interface ProfileChatPanelProps {
@@ -56,8 +65,13 @@ export function ProfileChatPanel({
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [savedSessions, setSavedSessions] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [discoveryMode, setDiscoveryMode] = useState(false);
+  const [discoveryQuestions, setDiscoveryQuestions] = useState<DiscoveryQuestion[]>([]);
+  const [discoveryIndex, setDiscoveryIndex] = useState(0);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const busyRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 1024);
@@ -88,14 +102,18 @@ export function ProfileChatPanel({
   }, [open]);
 
   const chatSessionIdRef = useRef<string | null>(null);
-  chatSessionIdRef.current = chatSessionId;
+  const savingRef = useRef(false);
+  if (!savingRef.current) {
+    chatSessionIdRef.current = chatSessionId;
+  }
 
   const saveSession = useCallback(async (msgs?: ChatMessage[]) => {
     const toSave = msgs || messages;
-    if (toSave.length === 0) return;
+    if (toSave.length === 0 || savingRef.current) return;
     const serialized = toSave.map((m) => ({ role: m.role, content: m.content }));
     const firstUserMsg = toSave.find((m) => m.role === "user");
     const title = firstUserMsg ? firstUserMsg.content.slice(0, 60) : "Profile chat";
+    savingRef.current = true;
     try {
       const currentId = chatSessionIdRef.current;
       if (currentId) {
@@ -118,6 +136,8 @@ export function ProfileChatPanel({
       }
     } catch (err) {
       console.error("[profile-chat] save session failed:", err);
+    } finally {
+      savingRef.current = false;
     }
   }, [messages]);
 
@@ -159,15 +179,66 @@ export function ProfileChatPanel({
   function handleNewChat() {
     if (messages.length > 0) saveSession();
     setMessages([]); setChatSessionId(null); setShowHistory(false);
+    setIsLoading(false); setApplying(false);
+    setDiscoveryMode(false); setDiscoveryQuestions([]); setDiscoveryIndex(0);
+  }
+
+  async function handleStartDiscovery() {
+    setDiscoveryLoading(true);
+    try {
+      const res = await fetch("/api/profile/chat/discover", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      const data = await res.json();
+      if (!data.questions || data.questions.length === 0) {
+        toast.info("No gaps found — your profile covers all matched jobs well.");
+        return;
+      }
+      setDiscoveryMode(true);
+      setDiscoveryQuestions(data.questions);
+      setDiscoveryIndex(0);
+      // Inject summary + first question as assistant messages
+      const firstQ = data.questions[0];
+      setMessages([
+        { role: "assistant", content: `**Experience Discovery**\n\n${data.summary}\n\nLet me ask you some targeted questions to surface experiences you may have forgotten to include.\n\n---\n\n${firstQ.question}` },
+      ]);
+    } catch (err) {
+      toast.error(`Discovery failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }
+
+  function advanceDiscovery() {
+    const nextIdx = discoveryIndex + 1;
+    if (nextIdx < discoveryQuestions.length) {
+      setDiscoveryIndex(nextIdx);
+      const q = discoveryQuestions[nextIdx];
+      setMessages((prev) => [...prev, { role: "assistant", content: q.question }]);
+    } else {
+      // All questions asked
+      setDiscoveryMode(false);
+      setMessages((prev) => [...prev, { role: "assistant", content: "That covers all the discovery questions. Review the suggested changes above and apply any that look good. You can continue chatting to refine further." }]);
+    }
   }
 
   async function handleSend() {
-    if (!input.trim() || isLoading) return;
-
+    if (!input.trim() || isLoading || busyRef.current.send) return;
+    busyRef.current.send = true;
     const userMessage = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
+
+    // Build discovery context if in discovery mode
+    const currentDiscoveryQ = discoveryMode && discoveryQuestions[discoveryIndex]
+      ? discoveryQuestions[discoveryIndex]
+      : null;
+    const discoveryCtx = currentDiscoveryQ
+      ? { targetGap: currentDiscoveryQ.targetGap, relatedExperience: currentDiscoveryQ.relatedExperience }
+      : undefined;
 
     try {
       const history = messages.map((m) => ({
@@ -182,6 +253,7 @@ export function ProfileChatPanel({
           message: userMessage,
           profileData: serializeProfile(profile),
           history,
+          discoveryContext: discoveryCtx,
         }),
       });
 
@@ -199,6 +271,11 @@ export function ProfileChatPanel({
           updatedProfile: data.updatedProfile,
         },
       ]);
+
+      // In discovery mode, advance to the next question after a short delay
+      if (discoveryMode) {
+        setTimeout(() => advanceDiscovery(), 1500);
+      }
     } catch (err) {
       toast.error(
         `Chat failed: ${err instanceof Error ? err.message : "Unknown error"}`
@@ -212,6 +289,7 @@ export function ProfileChatPanel({
       ]);
     } finally {
       setIsLoading(false);
+      busyRef.current.send = false;
     }
   }
 
@@ -320,6 +398,25 @@ export function ProfileChatPanel({
                   Tell me what to change in your profile. Try things like
                   &ldquo;Rewrite my summary for backend roles&rdquo; or
                   &ldquo;Add Docker to my skills&rdquo;
+                </p>
+              </div>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={handleStartDiscovery}
+                  disabled={discoveryLoading}
+                >
+                  {discoveryLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Search className="w-3 h-3" />
+                  )}
+                  Discover Hidden Experience
+                </Button>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  Surface forgotten skills &amp; experiences from job gaps
                 </p>
               </div>
             </div>
@@ -463,12 +560,18 @@ export function ProfileChatPanel({
     );
   }
 
-  // Desktop: fixed sticky sidebar
+  // Desktop: overlay panel
   if (!open) return null;
 
   return (
-    <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-lg animate-in slide-in-from-right-4 duration-200">
-      {chatBody}
-    </div>
+    <>
+      <div
+        className="fixed inset-0 bg-black/10 z-30 animate-in fade-in-0 duration-200"
+        onClick={() => onOpenChange(false)}
+      />
+      <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-xl animate-in slide-in-from-right-4 duration-200">
+        {chatBody}
+      </div>
+    </>
   );
 }

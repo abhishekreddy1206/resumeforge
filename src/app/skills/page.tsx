@@ -114,7 +114,7 @@ export default function SkillsPage() {
     filter === "all" ? grouped : { [filter]: grouped[filter] || [] };
 
   return (
-    <div className={`space-y-0 pb-20 sm:pb-0 ${chatOpen ? "lg:mr-[420px]" : ""} transition-[margin] duration-200`}>
+    <div className="space-y-0 pb-20 sm:pb-0 transition-[margin] duration-200">
       <SkillsChatPanel
         open={chatOpen}
         onOpenChange={setChatOpen}

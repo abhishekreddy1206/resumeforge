@@ -67,6 +67,7 @@ export function SkillsChatPanel({
   const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const busyRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 1024);
@@ -98,11 +99,14 @@ export function SkillsChatPanel({
   }, [open]);
 
   const chatSessionIdRef = useRef<string | null>(null);
-  chatSessionIdRef.current = chatSessionId;
+  const savingRef = useRef(false);
+  if (!savingRef.current) {
+    chatSessionIdRef.current = chatSessionId;
+  }
 
   const saveSession = useCallback(async (msgs?: ChatMessage[]) => {
     const toSave = msgs || messages;
-    if (toSave.length === 0) return;
+    if (toSave.length === 0 || savingRef.current) return;
     const serialized = toSave.map((m) => ({
       role: m.role,
       content: m.content,
@@ -112,6 +116,7 @@ export function SkillsChatPanel({
       ? firstUserMsg.content.slice(0, 60)
       : "Skills chat";
 
+    savingRef.current = true;
     try {
       const currentId = chatSessionIdRef.current;
       if (currentId) {
@@ -138,6 +143,8 @@ export function SkillsChatPanel({
       }
     } catch (err) {
       console.error("[skills-chat] save session failed:", err);
+    } finally {
+      savingRef.current = false;
     }
   }, [messages]);
 
@@ -190,11 +197,13 @@ export function SkillsChatPanel({
     setMessages([]);
     setChatSessionId(null);
     setShowHistory(false);
+    setIsLoading(false);
+    setApplying(false);
   }
 
   async function handleSend() {
-    if (!input.trim() || isLoading) return;
-
+    if (!input.trim() || isLoading || busyRef.current.send) return;
+    busyRef.current.send = true;
     const userMessage = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
@@ -239,6 +248,7 @@ export function SkillsChatPanel({
       ]);
     } finally {
       setIsLoading(false);
+      busyRef.current.send = false;
     }
   }
 
@@ -536,8 +546,14 @@ export function SkillsChatPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-lg animate-in slide-in-from-right-4 duration-200">
-      {chatBody}
-    </div>
+    <>
+      <div
+        className="fixed inset-0 bg-black/10 z-30 animate-in fade-in-0 duration-200"
+        onClick={() => onOpenChange(false)}
+      />
+      <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-xl animate-in slide-in-from-right-4 duration-200">
+        {chatBody}
+      </div>
+    </>
   );
 }

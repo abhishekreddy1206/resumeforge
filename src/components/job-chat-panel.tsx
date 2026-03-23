@@ -103,6 +103,8 @@ export function JobChatPanel({
   const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Ref-based guards to prevent duplicate calls from rapid clicks (state guards are async)
+  const busyRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 1024);
@@ -122,6 +124,11 @@ export function JobChatPanel({
       setSavedVersionId(null);
       setChatSessionId(null);
       setShowHistory(false);
+      setIsLoading(false);
+      setIsApplyingTips(false);
+      setIsRescoring(false);
+      setIsGenerating(false);
+      setIsSavingVersion(false);
     }
   }, [job, activeJobId]);
 
@@ -136,13 +143,18 @@ export function JobChatPanel({
   }, [open, job]);
 
   const chatSessionIdRef = useRef<string | null>(null);
-  chatSessionIdRef.current = chatSessionId;
+  const savingRef = useRef(false);
+  // Sync ref with state, but not while a save is in-flight (prevents race condition)
+  if (!savingRef.current) {
+    chatSessionIdRef.current = chatSessionId;
+  }
 
   const saveSession = useCallback(async (msgs?: ChatMessage[]) => {
     const toSave = msgs || messages;
-    if (toSave.length === 0 || !job) return;
+    if (toSave.length === 0 || !job || savingRef.current) return;
     const serialized = toSave.map((m) => ({ role: m.role, content: m.content }));
     const title = `${job.title} at ${job.company}`;
+    savingRef.current = true;
     try {
       const currentId = chatSessionIdRef.current;
       if (currentId) {
@@ -165,6 +177,8 @@ export function JobChatPanel({
       }
     } catch (err) {
       console.error("[job-chat] save session failed:", err);
+    } finally {
+      savingRef.current = false;
     }
   }, [messages, job]);
 
@@ -235,6 +249,8 @@ export function JobChatPanel({
     setMessages([]); setChatSessionId(null); setTemporaryProfile(null);
     setOriginalProfile(null); setLatestScore(null); setSavedVersionId(null);
     setShowHistory(false);
+    setIsLoading(false); setIsApplyingTips(false);
+    setIsRescoring(false); setIsGenerating(false);
   }
 
   useEffect(() => {
@@ -250,8 +266,8 @@ export function JobChatPanel({
   }, [open]);
 
   async function handleSend() {
-    if (!input.trim() || isLoading || !job) return;
-
+    if (!input.trim() || isLoading || !job || busyRef.current.send) return;
+    busyRef.current.send = true;
     const userMessage = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
@@ -297,11 +313,13 @@ export function JobChatPanel({
       ]);
     } finally {
       setIsLoading(false);
+      busyRef.current.send = false;
     }
   }
 
   async function handleApplyTips(instruction: string = "Apply all grounded resume tips to my profile") {
-    if (!job || isApplyingTips) return;
+    if (!job || isApplyingTips || busyRef.current.applyTips) return;
+    busyRef.current.applyTips = true;
 
     setMessages((prev) => [
       ...prev,
@@ -364,6 +382,7 @@ export function JobChatPanel({
       ]);
     } finally {
       setIsApplyingTips(false);
+      busyRef.current.applyTips = false;
     }
   }
 
@@ -383,6 +402,9 @@ export function JobChatPanel({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleDiscardChanges(updatedProfile: Record<string, any>) {
+    setTemporaryProfile(null);
+    setLatestScore(null);
+    setSavedVersionId(null);
     setMessages((prev) =>
       prev.map((m) =>
         m.updatedProfile === updatedProfile
@@ -393,8 +415,8 @@ export function JobChatPanel({
   }
 
   async function handleRescore() {
-    if (!job || !temporaryProfile || isRescoring) return;
-
+    if (!job || !temporaryProfile || isRescoring || busyRef.current.rescore) return;
+    busyRef.current.rescore = true;
     setIsRescoring(true);
     setMessages((prev) => [
       ...prev,
@@ -445,12 +467,13 @@ export function JobChatPanel({
       ]);
     } finally {
       setIsRescoring(false);
+      busyRef.current.rescore = false;
     }
   }
 
   async function handleGenerate(format: string = "pdf") {
-    if (!job || !temporaryProfile || isGenerating) return;
-
+    if (!job || !temporaryProfile || isGenerating || busyRef.current.generate) return;
+    busyRef.current.generate = true;
     setIsGenerating(true);
     setMessages((prev) => [
       ...prev,
@@ -460,15 +483,15 @@ export function JobChatPanel({
     try {
       // Auto-save a version if one doesn't exist yet for this session
       let versionId = savedVersionId;
-      if (!versionId) {
+      if (!versionId && latestScore) {
         const vRes = await fetch("/api/profile/versions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             profileSnapshot: temporaryProfile,
             jobId: job.id,
-            score: latestScore?.after ?? 0,
-            delta: latestScore?.delta ?? null,
+            score: latestScore.after,
+            delta: latestScore.delta,
           }),
         });
         if (vRes.ok) {
@@ -515,11 +538,13 @@ export function JobChatPanel({
       ]);
     } finally {
       setIsGenerating(false);
+      busyRef.current.generate = false;
     }
   }
 
   async function handleSaveVersion() {
-    if (!job || !temporaryProfile || !latestScore || isSavingVersion) return;
+    if (!job || !temporaryProfile || !latestScore || isSavingVersion || busyRef.current.saveVersion) return;
+    busyRef.current.saveVersion = true;
 
     setIsSavingVersion(true);
     try {
@@ -551,35 +576,6 @@ export function JobChatPanel({
         )
       );
 
-      // Auto-generate a PDF linked to this version
-      fetch("/api/resume/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId: job.id,
-          format: "pdf",
-          profileOverride: temporaryProfile,
-          profileVersionId: version.id,
-        }),
-      })
-        .then((r) => {
-          if (r.ok) return r.json();
-          throw new Error("PDF generation failed");
-        })
-        .then((data) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: "PDF resume auto-generated from this version.",
-              resumeResult: { id: data.id, format: "pdf" },
-            },
-          ]);
-        })
-        .catch(() => {
-          // Silently fail — the version is already saved
-        });
-
       toast.success("Profile version saved!");
       if (onVersionSaved && job) onVersionSaved(job.id);
     } catch (err) {
@@ -588,6 +584,7 @@ export function JobChatPanel({
       );
     } finally {
       setIsSavingVersion(false);
+      busyRef.current.saveVersion = false;
     }
   }
 
@@ -1085,12 +1082,18 @@ export function JobChatPanel({
     );
   }
 
-  // Desktop: fixed sticky sidebar
+  // Desktop: overlay panel
   if (!open) return null;
 
   return (
-    <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-lg animate-in slide-in-from-right-4 duration-200">
-      {chatBody}
-    </div>
+    <>
+      <div
+        className="fixed inset-0 bg-black/10 z-30 animate-in fade-in-0 duration-200"
+        onClick={() => onOpenChange(false)}
+      />
+      <div className="fixed right-0 top-[58px] sm:top-[66px] bottom-0 w-[420px] border-l border-border/50 bg-background z-40 flex flex-col shadow-xl animate-in slide-in-from-right-4 duration-200">
+        {chatBody}
+      </div>
+    </>
   );
 }

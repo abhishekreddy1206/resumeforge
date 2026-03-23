@@ -74,12 +74,17 @@ export async function POST(request: NextRequest) {
       })),
     };
 
+    // Pass only structured fields — the skill builds a compact job object from these.
+    // Intentionally excludes job.description (full raw JD, thousands of tokens, never used in prompt).
     const jobData = {
       title: job.title,
       company: job.company,
-      description: job.description,
+      seniority: job.seniority,
       skills: job.skills,
       sponsorship: job.sponsorship,
+      atsKeywords: job.atsKeywords,
+      requirements: job.requirements,
+      terminologyMap: job.terminologyMap,
     };
 
     // Use cached match analysis if available and fresh

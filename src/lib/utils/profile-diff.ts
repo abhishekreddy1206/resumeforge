@@ -285,6 +285,8 @@ export function serializeProfile(p: any) {
     linkedin: p.linkedin,
     github: p.github,
     website: p.website,
+    twitter: p.twitter,
+    pinterest: p.pinterest,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     experiences: (p.experiences || []).map((e: any) => ({
       company: e.company,
@@ -321,5 +323,43 @@ export function serializeProfile(p: any) {
       name: s.name,
       category: s.category,
     })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    publications: (p.publications || []).map((pub: any) => ({
+      title: pub.title,
+      publisher: pub.publisher,
+      date: pub.date,
+      url: pub.url,
+      doi: pub.doi,
+      description: pub.description,
+    })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    certifications: (p.certifications || []).map((c: any) => ({
+      name: c.name,
+      issuer: c.issuer,
+      date: c.date,
+      expiryDate: c.expiryDate,
+      credentialId: c.credentialId,
+      url: c.url,
+    })),
+    recommendations: (() => {
+      try {
+        const raw = typeof p.recommendations === "string"
+          ? JSON.parse(p.recommendations)
+          : p.recommendations;
+        return Array.isArray(raw) ? raw : [];
+      } catch {
+        return [];
+      }
+    })(),
+    additionalEmails: (() => {
+      try {
+        const raw = typeof p.additionalEmails === "string"
+          ? JSON.parse(p.additionalEmails)
+          : p.additionalEmails;
+        return Array.isArray(raw) ? raw : [];
+      } catch {
+        return [];
+      }
+    })(),
   };
 }

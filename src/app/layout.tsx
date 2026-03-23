@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Fraunces, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,8 +16,8 @@ const fraunces = Fraunces({
   style: ["normal", "italic"],
 });
 
-// Body: Plus Jakarta Sans — humanist geometric grotesque, warm at all sizes
-const jakartaSans = Plus_Jakarta_Sans({
+// Body: Source Sans 3 — humanist sans-serif, excellent readability at all sizes
+const sourceSans = Source_Sans_3({
   variable: "--font-geist-sans", // reuse var name so existing references pick it up
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
@@ -44,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${fraunces.variable} ${jakartaSans.variable} ${jetbrainsMono.variable} antialiased min-h-screen bg-background paper-bg`}
+        className={`${fraunces.variable} ${sourceSans.variable} ${jetbrainsMono.variable} antialiased min-h-screen bg-background paper-bg`}
       >
         <ThemeProvider
           attribute="class"

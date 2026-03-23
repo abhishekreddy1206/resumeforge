@@ -6,6 +6,8 @@ export interface ResumeData {
   linkedin?: string;
   github?: string;
   website?: string;
+  twitter?: string;
+  pinterest?: string;
   summary?: string;
   experiences?: Array<{
     company: string;

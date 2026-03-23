@@ -89,6 +89,18 @@ export async function POST(request: NextRequest) {
         name: s.name,
         category: s.category,
       })),
+      publications: profile.publications.map((p) => ({
+        title: p.title,
+        publisher: p.publisher,
+        date: p.date,
+        description: p.description,
+      })),
+      certifications: profile.certifications.map((c) => ({
+        name: c.name,
+        issuer: c.issuer,
+        date: c.date,
+        expiryDate: c.expiryDate,
+      })),
     };
 
     // Prepare job analysis
@@ -101,7 +113,8 @@ export async function POST(request: NextRequest) {
       seniority: job.seniority,
     };
 
-    const match = await matchProfileToJob(profileData, jobAnalysis);
+    const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{jdTerm: string; resumeSynonyms: string[]}>;
+    const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap);
 
     // Persist the match result
     await prisma.job.update({

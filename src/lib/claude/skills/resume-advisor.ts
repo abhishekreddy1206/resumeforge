@@ -48,6 +48,15 @@ Verdict: ${cachedMatch.verdictSummary || "N/A"}\n`
       parsedSkills = [];
     }
   }
+  let parsedTermMap: Array<{jdTerm: string; resumeSynonyms: string[]}> = [];
+  if (job.terminologyMap) {
+    try {
+      parsedTermMap = typeof job.terminologyMap === "string" ? JSON.parse(job.terminologyMap) : job.terminologyMap;
+    } catch {
+      parsedTermMap = [];
+    }
+  }
+
   const compactJob = {
     title: job.title,
     company: job.company,
@@ -57,6 +66,7 @@ Verdict: ${cachedMatch.verdictSummary || "N/A"}\n`
     summary: job.summary,
     atsKeywords: job.atsKeywords,
     requirements: job.requirements,
+    terminologyMap: parsedTermMap.length > 0 ? parsedTermMap : undefined,
   };
 
   const reply = await ask(`You are a resume strategy advisor helping a candidate tailor their resume for a specific job posting.

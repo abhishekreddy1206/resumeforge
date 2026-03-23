@@ -71,8 +71,8 @@ interface Job {
   terminologyMap?: string;
   matchResult?: string;
   createdAt: string;
-  resumes: Array<{ id: string; format: string }>;
-  profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string }> }>;
+  resumes: Array<{ id: string; format: string; createdAt: string }>;
+  profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
 }
 
 interface MatchResult {
@@ -724,14 +724,16 @@ function ExpandedJobDetail({
   onOpenChatAndApplyTips: (job: Job) => void;
   onHandleGenerateResume: (job: Job, format: "pdf" | "docx") => void;
   onSetSelectedEmail: (email: string) => void;
-  onSetPreviewResume: (r: { id: string; format: string } | null) => void;
+  onSetPreviewResume: (resumeId: string, job: Job) => void;
 }) {
   const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
   const seenIds = new Set<string>();
-  const allResumes: Array<{ id: string; format: string }> = [];
+  const allResumes: Array<{ id: string; format: string; createdAt: string }> = [];
   for (const r of [...(job.profileVersions?.flatMap((v) => v.resumes) ?? []), ...job.resumes]) {
     if (!seenIds.has(r.id)) { seenIds.add(r.id); allResumes.push(r); }
   }
+  // Sort newest first
+  allResumes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const latestPdf = allResumes.find((r) => r.format === "pdf");
 
   function jobHasResumeFormat(fmt: string): boolean {
@@ -939,7 +941,7 @@ function ExpandedJobDetail({
                 {v.resumes.length > 0 && (
                   <div className="flex gap-1">
                     {v.resumes.map((r) => (
-                      <button key={r.id} onClick={(e) => { e.stopPropagation(); onSetPreviewResume(r); }}>
+                      <button key={r.id} onClick={(e) => { e.stopPropagation(); onSetPreviewResume(r.id, job); }}>
                         <span className="text-[9px] px-1.5 py-0.5 rounded-sm border border-border/40 bg-card hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer text-muted-foreground hover:text-primary"
                           style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                           {r.format}
@@ -1003,10 +1005,10 @@ function ExpandedJobDetail({
                   disabled={generatingFormat !== null}
                   onClick={() => {
                     if (alreadyHas) {
-                      const existingResume = job.resumes.find((r) => r.format === fmt)
-                        || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
-                      if (existingResume) {
-                        onSetPreviewResume({ id: existingResume.id, format: fmt });
+                      // Open the latest resume of this format
+                      const fmtResumes = allResumes.filter((r) => r.format === fmt);
+                      if (fmtResumes.length > 0) {
+                        onSetPreviewResume(fmtResumes[0].id, job);
                       }
                     } else {
                       onHandleGenerateResume(job, fmt);
@@ -1064,8 +1066,8 @@ function ExpandedJobDetail({
         )}
       </div>
 
-      {/* PDF Preview — latest version only, compact thumbnail */}
-      {latestPdf && (
+      {/* PDF Versions — all versions as scrollable thumbnails */}
+      {allResumes.filter((r) => r.format === "pdf").length > 0 && (
         <div className="px-6 mt-2 pb-6">
           <div className="section-divider mb-4" />
           <p
@@ -1078,30 +1080,35 @@ function ExpandedJobDetail({
             }}
           >
             <FileText className="w-3 h-3" />
-            Latest PDF
+            Generated PDFs
+            <span className="text-muted-foreground/60 ml-1">({allResumes.filter((r) => r.format === "pdf").length})</span>
           </p>
-          <div className="max-w-[220px]">
-            <button
-              className="block w-full border border-border/50 rounded-sm overflow-hidden bg-muted/10 hover:border-primary/30 transition-colors group/pdf text-left"
-              onClick={(e) => { e.stopPropagation(); onSetPreviewResume({ id: latestPdf.id, format: "pdf" }); }}
-            >
-              <iframe
-                src={`/api/resume/download/${latestPdf.id}?inline=1`}
-                sandbox="allow-same-origin"
-                className="w-full h-[280px] border-0 pointer-events-none scale-100"
-                title="Resume preview"
-                tabIndex={-1}
-              />
-              <div className="flex items-center justify-center gap-1.5 px-2 py-1.5 border-t border-border/30 bg-card group-hover/pdf:bg-primary/5 transition-colors">
-                <Eye className="w-2.5 h-2.5 text-muted-foreground group-hover/pdf:text-primary" />
-                <span
-                  className="text-muted-foreground group-hover/pdf:text-primary transition-colors"
-                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.08em", textTransform: "uppercase" }}
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+            {allResumes.filter((r) => r.format === "pdf").map((pdf, i) => (
+              <div key={pdf.id} className="shrink-0">
+                <button
+                  className="block w-[180px] border border-border/50 rounded-sm overflow-hidden bg-muted/10 hover:border-primary/30 transition-colors group/pdf text-left"
+                  onClick={(e) => { e.stopPropagation(); onSetPreviewResume(pdf.id, job); }}
                 >
-                  View PDF
-                </span>
+                  <iframe
+                    src={`/api/resume/download/${pdf.id}?inline=1`}
+                    sandbox="allow-same-origin"
+                    className="w-full h-[230px] border-0 pointer-events-none scale-100"
+                    title={`Resume version ${i + 1}`}
+                    tabIndex={-1}
+                  />
+                  <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-t border-border/30 bg-card group-hover/pdf:bg-primary/5 transition-colors">
+                    <span
+                      className="text-muted-foreground group-hover/pdf:text-primary transition-colors truncate"
+                      style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.45rem", letterSpacing: "0.06em", textTransform: "uppercase" }}
+                    >
+                      {i === 0 ? "Latest" : new Date(pdf.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                    <Eye className="w-2.5 h-2.5 shrink-0 text-muted-foreground group-hover/pdf:text-primary" />
+                  </div>
+                </button>
               </div>
-            </button>
+            ))}
           </div>
         </div>
       )}
@@ -1135,7 +1142,10 @@ export default function JobsPage() {
   const [generatingFor, setGeneratingFor] = useState<string | null>(null); // "jobId:format"
   const [profileEmails, setProfileEmails] = useState<string[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<string>("");
-  const [previewResume, setPreviewResume] = useState<{ id: string; format: string } | null>(null);
+  const [previewResume, setPreviewResume] = useState<{
+    resumes: Array<{ id: string; format: string; createdAt: string }>;
+    currentIndex: number;
+  } | null>(null);
   const [deletingNoSponsorship, setDeletingNoSponsorship] = useState(false);
   const [gapAggregation, setGapAggregation] = useState<{
     aggregatedGaps: Array<{ gap: string; frequency: number; severity: "critical" | "important" | "specific"; jobs: string[]; relatedTerms: string[] }>;
@@ -1386,8 +1396,8 @@ export default function JobsPage() {
       // Refresh jobs to update resume counts
       await fetchJobs(page);
 
-      // Open preview modal
-      setPreviewResume({ id: data.id, format });
+      // Open preview — show this resume (full carousel available on re-expand)
+      setPreviewResume({ resumes: [{ id: data.id, format, createdAt: new Date().toISOString() }], currentIndex: 0 });
     } catch (err) {
       toast.error(`Generation failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -1400,6 +1410,18 @@ export default function JobsPage() {
     if (job.resumes.some((r) => r.format === format)) return true;
     if (job.profileVersions?.some((v) => v.resumes.some((r) => r.format === format))) return true;
     return false;
+  }
+
+  function openResumePreview(resumeId: string, job: Job) {
+    // Collect all resumes for the job, deduped, sorted newest first
+    const seenIds = new Set<string>();
+    const all: Array<{ id: string; format: string; createdAt: string }> = [];
+    for (const r of [...(job.profileVersions?.flatMap((v) => v.resumes) ?? []), ...job.resumes]) {
+      if (!seenIds.has(r.id)) { seenIds.add(r.id); all.push(r); }
+    }
+    all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const idx = all.findIndex((r) => r.id === resumeId);
+    setPreviewResume({ resumes: all, currentIndex: idx >= 0 ? idx : 0 });
   }
 
   function toggleExpand(jobId: string) {
@@ -1944,7 +1966,7 @@ export default function JobsPage() {
                       onOpenChatAndApplyTips={openChatAndApplyTips}
                       onHandleGenerateResume={handleGenerateResume}
                       onSetSelectedEmail={setSelectedEmail}
-                      onSetPreviewResume={setPreviewResume}
+                      onSetPreviewResume={openResumePreview}
                     />
                   )}
 
@@ -2186,7 +2208,7 @@ export default function JobsPage() {
                               onOpenChatAndApplyTips={openChatAndApplyTips}
                               onHandleGenerateResume={handleGenerateResume}
                               onSetSelectedEmail={setSelectedEmail}
-                              onSetPreviewResume={setPreviewResume}
+                              onSetPreviewResume={openResumePreview}
                             />
                           </TableCell>
                         </TableRow>
@@ -2269,91 +2291,130 @@ export default function JobsPage() {
         onAutoApplyConsumed={() => setAutoApplyTips(false)}
       />
 
-      {/* Resume Preview Modal */}
+      {/* Resume Preview Modal (Carousel) */}
       <Dialog open={!!previewResume} onOpenChange={(open: boolean) => { if (!open) setPreviewResume(null); }}>
         <DialogContent className="!max-w-5xl w-[96vw] !h-[92vh] !p-0 !gap-0 overflow-hidden flex flex-col !rounded-lg" showCloseButton={false}>
-          {/* Toolbar */}
-          <div className="px-5 py-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-card">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 bg-primary/10 flex items-center justify-center rounded">
-                <FileText className="w-3.5 h-3.5 text-primary" />
-              </div>
-              <div>
-                <DialogTitle className="text-sm font-medium leading-none">
-                  Resume Preview
-                </DialogTitle>
-                <p className="text-muted-foreground mt-0.5" style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  {previewResume?.format === "pdf" ? "PDF Document" : "DOCX Document"}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {previewResume?.format === "pdf" && (
-                <a
-                  href={previewResume ? `/api/resume/download/${previewResume.id}?inline=1` : "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs border border-border/50 hover:bg-muted/50 hover:border-border transition-all text-muted-foreground hover:text-foreground"
-                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase" }}
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  New Tab
-                </a>
-              )}
-              <a
-                href={previewResume ? `/api/resume/download/${previewResume.id}` : "#"}
-                download
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/30 transition-all text-primary"
-                style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase" }}
-              >
-                <Download className="w-3 h-3" />
-                Download
-              </a>
-              <div className="w-px h-5 bg-border/50 mx-1" />
-              <button
-                onClick={() => setPreviewResume(null)}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-sm hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-              >
-                <span className="sr-only">Close</span>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              </button>
-            </div>
-          </div>
-          {/* Document viewport */}
-          <div className="flex-1 min-h-0 bg-muted/30">
-            {previewResume?.format === "pdf" ? (
-              <iframe
-                src={`/api/resume/download/${previewResume.id}?inline=1`}
-                className="w-full h-full border-0"
-                title="Resume preview"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground">
-                <div className="w-16 h-16 rounded-lg bg-muted/50 border border-border/30 flex items-center justify-center">
-                  <FileText className="w-8 h-8 text-muted-foreground/50" />
+          {(() => {
+            const cur = previewResume?.resumes[previewResume.currentIndex];
+            const total = previewResume?.resumes.length ?? 0;
+            const idx = previewResume?.currentIndex ?? 0;
+            const hasPrev = idx > 0;
+            const hasNext = idx < total - 1;
+            return (
+              <>
+                {/* Toolbar */}
+                <div className="px-5 py-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-card">
+                  <div className="flex items-center gap-3">
+                    <div className="w-7 h-7 bg-primary/10 flex items-center justify-center rounded">
+                      <FileText className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-sm font-medium leading-none">
+                        Resume Preview
+                      </DialogTitle>
+                      <p className="text-muted-foreground mt-0.5" style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                        {cur?.format === "pdf" ? "PDF Document" : "DOCX Document"}
+                        {total > 1 && ` \u00b7 ${idx + 1} of ${total}`}
+                        {cur?.createdAt && ` \u00b7 ${new Date(cur.createdAt).toLocaleDateString()}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {/* Carousel nav */}
+                    {total > 1 && (
+                      <>
+                        <button
+                          onClick={() => hasPrev && setPreviewResume({ ...previewResume!, currentIndex: idx - 1 })}
+                          disabled={!hasPrev}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-sm hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                          title="Newer version"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-xs text-muted-foreground tabular-nums" style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem" }}>
+                          {idx + 1}/{total}
+                        </span>
+                        <button
+                          onClick={() => hasNext && setPreviewResume({ ...previewResume!, currentIndex: idx + 1 })}
+                          disabled={!hasNext}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-sm hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                          title="Older version"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                        <div className="w-px h-5 bg-border/50 mx-1" />
+                      </>
+                    )}
+                    {cur?.format === "pdf" && (
+                      <a
+                        href={cur ? `/api/resume/download/${cur.id}?inline=1` : "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs border border-border/50 hover:bg-muted/50 hover:border-border transition-all text-muted-foreground hover:text-foreground"
+                        style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase" }}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        New Tab
+                      </a>
+                    )}
+                    <a
+                      href={cur ? `/api/resume/download/${cur.id}` : "#"}
+                      download
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/30 transition-all text-primary"
+                      style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase" }}
+                    >
+                      <Download className="w-3 h-3" />
+                      Download
+                    </a>
+                    <div className="w-px h-5 bg-border/50 mx-1" />
+                    <button
+                      onClick={() => setPreviewResume(null)}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-sm hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    >
+                      <span className="sr-only">Close</span>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                    </button>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p
-                    className="text-foreground/70 mb-1"
-                    style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.25rem" }}
-                  >
-                    DOCX preview unavailable
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-4">Word documents cannot be rendered in the browser</p>
+                {/* Document viewport */}
+                <div className="flex-1 min-h-0 bg-muted/30">
+                  {cur?.format === "pdf" ? (
+                    <iframe
+                      key={cur.id}
+                      src={`/api/resume/download/${cur.id}?inline=1`}
+                      className="w-full h-full border-0"
+                      title="Resume preview"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground">
+                      <div className="w-16 h-16 rounded-lg bg-muted/50 border border-border/30 flex items-center justify-center">
+                        <FileText className="w-8 h-8 text-muted-foreground/50" />
+                      </div>
+                      <div className="text-center">
+                        <p
+                          className="text-foreground/70 mb-1"
+                          style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.25rem" }}
+                        >
+                          DOCX preview unavailable
+                        </p>
+                        <p className="text-xs text-muted-foreground mb-4">Word documents cannot be rendered in the browser</p>
+                      </div>
+                      <a
+                        href={cur ? `/api/resume/download/${cur.id}` : "#"}
+                        download
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download DOCX
+                      </a>
+                    </div>
+                  )}
                 </div>
-                <a
-                  href={previewResume ? `/api/resume/download/${previewResume.id}` : "#"}
-                  download
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download DOCX
-                </a>
-              </div>
-            )}
-          </div>
-          {/* Vermillion accent bar */}
-          <div className="h-0.5 bg-primary shrink-0" />
+                {/* Vermillion accent bar */}
+                <div className="h-0.5 bg-primary shrink-0" />
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

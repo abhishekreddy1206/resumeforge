@@ -9,6 +9,8 @@ interface ParsedResume {
   linkedin?: string;
   github?: string;
   website?: string;
+  twitter?: string;
+  pinterest?: string;
   experiences: Array<{
     company: string;
     title: string;
@@ -72,7 +74,7 @@ export async function parseResumeText(text: string): Promise<ParsedResume> {
 
 Schema:
 {
-  name*, email, phone, location, summary, linkedin, github, website,
+  name*, email, phone, location, summary, linkedin, github, website, twitter (x.com or twitter.com URL), pinterest,
   experiences: [{company*, title*, startDate* (YYYY-MM), endDate (YYYY-MM|null), current:bool, bullets:string[], skills:string[]}],
   educations: [{school*, degree*, field, startDate, endDate, gpa}],
   projects: [{name*, description, url, skills:string[]}],

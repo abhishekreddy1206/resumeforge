@@ -43,6 +43,8 @@ export async function POST(request: NextRequest) {
           educations: true,
           projects: true,
           skills: true,
+          publications: true,
+          certifications: true,
         },
       }),
     ]);
@@ -71,18 +73,19 @@ export async function POST(request: NextRequest) {
     const jobData = {
       title: job.title,
       company: job.company,
-      description: job.description,
-      skills: job.skills,
     };
 
     const safeHistory = Array.isArray(history) ? history.slice(-6) : [];
+
+    const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{jdTerm: string; resumeSynonyms: string[]}>;
 
     const result = await applyResumeTips(
       profileData,
       jobData,
       matchResult as Record<string, unknown>,
       safeInstruction,
-      safeHistory
+      safeHistory,
+      terminologyMap
     );
 
     return NextResponse.json(result);

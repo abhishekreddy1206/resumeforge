@@ -50,6 +50,8 @@ export async function PUT(request: NextRequest) {
         linkedin: data.linkedin,
         github: data.github,
         website: data.website,
+        twitter: data.twitter,
+        pinterest: data.pinterest,
       },
       include: {
         experiences: true,

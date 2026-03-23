@@ -35,6 +35,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    // Use the cached original match score as the baseline.
+    // This matches what the UI shows as "Original", so the delta is visually consistent.
+    const cachedMatch = safeJsonParse(job.matchResult) as Record<string, unknown> | null;
+    if (!cachedMatch || typeof cachedMatch.overallScore !== "number") {
+      return NextResponse.json(
+        { error: "No match analysis found — run Match Analysis first" },
+        { status: 400 }
+      );
+    }
+
+    const originalScore = cachedMatch.overallScore as number;
+
     const jobAnalysis = {
       title: job.title,
       company: job.company,
@@ -44,23 +56,16 @@ export async function POST(request: NextRequest) {
       seniority: job.seniority,
     };
 
-    // Get the original cached score for comparison
-    const originalMatch = safeJsonParse(job.matchResult) as Record<
-      string,
-      unknown
-    > | null;
-    const originalScore =
-      typeof originalMatch?.overallScore === "number"
-        ? originalMatch.overallScore
-        : null;
+    const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{jdTerm: string; resumeSynonyms: string[]}>;
 
-    // Re-score with the temporary profile (NOT cached to DB)
-    const newMatch = await matchProfileToJob(temporaryProfile, jobAnalysis);
+    // Only score the temporary profile — one Claude call instead of two.
+    const newMatch = await matchProfileToJob(temporaryProfile, jobAnalysis, terminologyMap);
+    const newScore = newMatch.overallScore;
 
     return NextResponse.json({
       originalScore,
-      newScore: newMatch.overallScore,
-      delta: originalScore !== null ? newMatch.overallScore - originalScore : null,
+      newScore,
+      delta: newScore - originalScore,
       match: newMatch,
     });
   } catch (error) {

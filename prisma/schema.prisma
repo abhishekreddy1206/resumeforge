@@ -19,6 +19,8 @@ model Profile {
   linkedin       String?
   github         String?
   website        String?
+  twitter        String?
+  pinterest      String?
   stackoverflowId  String?
   recommendations  String?  // JSON array of {recommenderName, recommenderTitle, relationship, text, linkedinUrl?}
   lastEnrichedAt   DateTime?
@@ -120,9 +122,12 @@ model Job {
   requirements String?  // JSON array of {requirement, classification, confidence, bridgeNote}
   atsKeywords  String?  // JSON object of {technical, domain, tools, softSkills}
   seniority    String?  // junior|mid|senior|staff|principal
-  sponsorship  String?  // available|unavailable|unspecified — visa/work authorization status
-  matchResult  String?  // JSON — cached profile match analysis
+  sponsorship     String?  // available|unavailable|unspecified — visa/work authorization status
+  terminologyMap  String?  // JSON array of {jdTerm, resumeSynonyms[]}
+  matchResult     String?  // JSON — cached profile match analysis
   matchedAt    DateTime? // when match was last computed (stale if profile.updatedAt > this)
+  applied      Boolean  @default(false)
+  appliedAt    DateTime?
   createdAt    DateTime @default(now())
 
   resumes         Resume[]

@@ -18,16 +18,20 @@ export async function applyResumeTips(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   matchResult: Record<string, any>,
   instruction: string,
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: string }>,
+  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ reply: string; updatedProfile: Record<string, any> }> {
   const historyText =
     history.length > 0
       ? `\nConversation so far:\n${history
-          .slice(-6)
+          .slice(-4)
           .map((m) => `${m.role}: ${m.content}`)
           .join("\n")}\n`
       : "";
+
+  // Cap terminology map to keep prompt size manageable
+  const trimmedTermMap = terminologyMap?.slice(0, 15);
 
   return askJson(`You are a resume optimization assistant. Apply specific resume tips to the candidate's profile to improve their match with the target job.
 
@@ -40,7 +44,7 @@ ${JSON.stringify(compactProfile(profile))}
 TARGET JOB:
 Title: ${job.title}
 Company: ${job.company}
-
+${trimmedTermMap && trimmedTermMap.length > 0 ? `\nTERMINOLOGY MAP (use the JD's exact terms where the candidate has the equivalent skill):\n${JSON.stringify(trimmedTermMap)}\n` : ""}
 MATCH ANALYSIS:
 Score: ${matchResult.overallScore}/100
 Direct matches: ${JSON.stringify(matchResult.breakdown?.directMatches || [])}
@@ -52,13 +56,19 @@ ${JSON.stringify(matchResult.resumeTips || [])}
 
 RULES:
 - Apply ONLY grounded tips (grounded:true) unless user explicitly asks for stretch tips
-- Reword bullets using JD terminology, reorder for relevance, add demonstrable skills not yet listed, adjust summary for this role
-- Do NOT fabricate; do NOT change the data shape: ${PROFILE_SCHEMA_RULES}
+- You MUST rewrite the summary to target this specific role — incorporate the job's key terms, domain, and required skills. The summary is the highest-impact ATS section; never leave it unchanged.
+- Reword experience bullets using exact JD terminology where the candidate genuinely has the skill
+- Reorder experiences and bullets to lead with the most relevant content
+- Add demonstrable skills not yet listed (only skills evidenced by experience bullets)
+- For publications: REMOVE or de-emphasize publications that are irrelevant to the target role. Only keep publications that strengthen the application. If none are relevant, return an empty publications array.
+- For certifications: highlight those matching JD requirements; omit irrelevant ones
+- For recommendations: select only those speaking to skills the job requires; omit irrelevant ones
+- Do NOT fabricate experience or skills; preserve the data shape: ${PROFILE_SCHEMA_RULES}
 - Be specific and concise in reply (3-5 sentences)
 
 Return JSON with SHORT field values (keep reply under 500 chars to avoid truncation):
 {
   "reply": "Brief summary of changes made",
   "updatedProfile": { /* full modified profile object */ }
-}`, { timeoutMs: 180_000 });
+}`, { timeoutMs: 300_000 });
 }

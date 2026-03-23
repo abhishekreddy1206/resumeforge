@@ -23,6 +23,7 @@ import {
   Github,
   Linkedin,
   Globe,
+  Twitter,
   Building2,
   GraduationCap,
   FolderGit2,
@@ -120,6 +121,8 @@ interface Profile {
   linkedin?: string;
   github?: string;
   website?: string;
+  twitter?: string;
+  pinterest?: string;
   recommendations?: string;
   experiences: Experience[];
   educations: Education[];
@@ -752,7 +755,7 @@ export default function ProfilePage() {
       )}
 
       {profile && (
-        <div className={`grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 transition-all duration-200 ${chatOpen ? "lg:mr-[420px]" : ""}`}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 transition-all duration-200">
           {/* ════════ Left Column ════════ */}
           <div className="space-y-6 min-w-0">
 
@@ -784,6 +787,20 @@ export default function ProfilePage() {
                       <a href={profile.website} target="_blank" rel="noopener noreferrer" title="Website"
                         className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
                         <Globe className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {profile.twitter && (
+                      <a href={profile.twitter} target="_blank" rel="noopener noreferrer" title="X / Twitter"
+                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
+                        <Twitter className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {profile.pinterest && (
+                      <a href={profile.pinterest} target="_blank" rel="noopener noreferrer" title="Pinterest"
+                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="17" x2="12" y2="8" /><path d="M8 11c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.8-2 5-4 7" /><circle cx="9" cy="19" r="1" />
+                        </svg>
                       </a>
                     )}
                   </div>

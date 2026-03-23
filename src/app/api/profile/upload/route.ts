@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
         linkedin: parsed.linkedin,
         github: parsed.github,
         website: parsed.website,
+        twitter: parsed.twitter,
+        pinterest: parsed.pinterest,
         experiences: {
           create: (parsed.experiences || []).map(
             (exp: {

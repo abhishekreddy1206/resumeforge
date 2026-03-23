@@ -19,10 +19,13 @@ export async function GET(request: NextRequest) {
         where,
         orderBy: { createdAt: "desc" },
         include: {
-          resumes: true,
+          resumes: {
+            orderBy: { createdAt: "desc" },
+            select: { id: true, format: true, createdAt: true },
+          },
           profileVersions: {
             orderBy: { createdAt: "desc" },
-            select: { id: true, score: true, delta: true, createdAt: true, resumes: { select: { id: true, format: true } } },
+            select: { id: true, score: true, delta: true, createdAt: true, resumes: { orderBy: { createdAt: "desc" }, select: { id: true, format: true, createdAt: true } } },
           },
         },
         skip,
