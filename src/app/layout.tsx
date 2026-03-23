@@ -82,15 +82,17 @@ export default function RootLayout({
                 {/* Desktop nav + theme toggle */}
                 <div className="flex items-center gap-1">
                   <NavLinks />
-                  <ThemeToggle />
+                  <div className="hidden md:block">
+                    <ThemeToggle />
+                  </div>
                 </div>
               </div>
             </div>
             {/* Vermillion accent rule */}
             <div className="h-0.5 bg-primary" />
           </nav>
-          {/* Mobile nav row — sticks below the 56px header */}
-          <div className="sticky top-14 z-40 bg-background border-b border-border sm:hidden">
+          {/* Mobile nav row — sticks below the header */}
+          <div className="sticky top-14 sm:top-16 z-40 bg-background border-b border-border md:hidden">
             <div className="max-w-6xl mx-auto px-4 flex items-center">
               <NavLinks mobile />
               <div className="ml-auto pl-2 shrink-0">

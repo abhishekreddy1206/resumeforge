@@ -592,7 +592,7 @@ export default function VersionsPage() {
                                                         <X className="w-3.5 h-3.5" />
                                                       </Button>
                                                     </div>
-                                                    <div className="border border-border rounded-sm overflow-hidden bg-white">
+                                                    <div className="border border-border rounded-sm overflow-hidden bg-card">
                                                       <iframe
                                                         src={`/api/resume/download/${previewResumeId}?inline=1`}
                                                         className="w-full border-0"
@@ -694,7 +694,7 @@ export default function VersionsPage() {
                                         <X className="w-3.5 h-3.5" />
                                       </Button>
                                     </div>
-                                    <div className="border border-border rounded-sm overflow-hidden bg-white">
+                                    <div className="border border-border rounded-sm overflow-hidden bg-card">
                                       <iframe
                                         src={`/api/resume/download/${previewResumeId}?inline=1`}
                                         className="w-full border-0"

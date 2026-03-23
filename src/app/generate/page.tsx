@@ -500,7 +500,7 @@ function GenerateContent() {
             <p className="text-muted-foreground mb-4" style={monoStyle}>
               02 · Output Format
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {(Object.keys(FORMAT_INFO) as FormatOption[]).map((fmt) => {
                 const info = FORMAT_INFO[fmt];
                 const Icon = info.icon;
