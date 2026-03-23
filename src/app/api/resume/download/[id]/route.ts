@@ -24,7 +24,6 @@ export async function GET(
     const contentTypes: Record<string, string> = {
       pdf: "application/pdf",
       docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      latex: "application/x-tex",
     };
     const contentType = contentTypes[resume.format] || "application/octet-stream";
 
@@ -34,14 +33,11 @@ export async function GET(
     const url = new URL(_request.url);
     const inline = url.searchParams.get("inline") === "1";
     const safeName = fileName.replace(/["\r\n]/g, "_");
-    const safeDisposition = inline && (resume.format === "pdf" || resume.format === "latex")
+    const safeDisposition = inline && resume.format === "pdf"
       ? `inline; filename="${safeName}"`
       : `attachment; filename="${safeName}"`;
 
-    // For inline LaTeX, serve as plain text so browsers render it
-    const effectiveContentType = inline && resume.format === "latex"
-      ? "text/plain; charset=utf-8"
-      : contentType;
+    const effectiveContentType = contentType;
 
     return new NextResponse(buffer, {
       headers: {

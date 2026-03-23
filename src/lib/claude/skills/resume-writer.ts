@@ -51,9 +51,6 @@ Group by category (Languages, Frameworks, Tools, Databases, Cloud). List JD-requ
 PUBLICATIONS & CERTIFICATIONS:
 Include only if relevant to the role. Omit irrelevant ones to save space.
 
-RECOMMENDATIONS:
-Select max 2-3 most relevant to the JD. Omit irrelevant ones.
-
 GAP ANALYSIS:
 Strengthen bullets matching JD; reframe experience using JD vocabulary; NEVER fabricate; de-emphasize irrelevant experience.
 
@@ -69,14 +66,15 @@ Return ONLY valid JSON:
   "linkedin": "string",
   "github": "string",
   "website": "string",
+  "twitter": "string",
+  "pinterest": "string",
   "summary": "string",
   "experiences": [{"company":"string","title":"string (FLIPPED format)","startDate":"YYYY-MM","endDate":"YYYY-MM|Present","bullets":"string[]"}],
   "educations": [{"school":"string","degree":"string","field":"string","endDate":"YYYY","gpa":"string"}],
   "projects": [{"name":"string","description":"string","url":"string"}],
   "skills": {"languages":"string[]","frameworks":"string[]","tools":"string[]","databases":"string[]","cloud":"string[]"},
   "publications": [{"title":"string","publisher":"string","date":"YYYY","url":"string","doi":"string","description":"string"}],
-  "certifications": [{"name":"string","issuer":"string","date":"YYYY","expiryDate":"string","credentialId":"string","url":"string"}],
-  "recommendations": [{"recommenderName":"string","recommenderTitle":"string","relationship":"string","text":"string"}]
+  "certifications": [{"name":"string","issuer":"string","date":"YYYY","expiryDate":"string","credentialId":"string","url":"string"}]
 }
 
 Candidate Profile:

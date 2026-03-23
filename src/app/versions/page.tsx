@@ -70,7 +70,7 @@ interface CompanyGroup {
   hasPdf: boolean;
 }
 
-type FormatOption = "pdf" | "docx" | "latex";
+type FormatOption = "pdf" | "docx";
 
 const monoStyle: React.CSSProperties = {
   fontFamily: "var(--font-dm-mono)",
@@ -423,7 +423,7 @@ export default function VersionsPage() {
                                   <div className="flex gap-0.5">
                                     {[...new Set(job.resumes.map((r) => r.format))].map((fmt) => (
                                       <Badge key={fmt} variant="outline" className="text-[9px] px-1 py-0 rounded-sm">
-                                        {fmt === "latex" ? "TEX" : fmt.toUpperCase()}
+                                        {fmt.toUpperCase()}
                                       </Badge>
                                     ))}
                                   </div>
@@ -493,7 +493,7 @@ export default function VersionsPage() {
                                                     <div className="flex gap-0.5">
                                                       {version.resumes.map((r) => (
                                                         <Badge key={r.id} variant="outline" className="text-[8px] px-1 py-0 rounded-sm">
-                                                          {r.format === "latex" ? "TEX" : r.format.toUpperCase()}
+                                                          {r.format.toUpperCase()}
                                                         </Badge>
                                                       ))}
                                                     </div>
@@ -516,7 +516,7 @@ export default function VersionsPage() {
                                                 <div>
                                                   <p className="text-muted-foreground mb-2" style={monoStyle}>Generate Resume</p>
                                                   <div className="flex gap-2">
-                                                    {(["pdf", "docx", "latex"] as FormatOption[]).map((fmt) => (
+                                                    {(["pdf", "docx"] as FormatOption[]).map((fmt) => (
                                                       <Button
                                                         key={fmt}
                                                         variant="outline"
@@ -530,7 +530,7 @@ export default function VersionsPage() {
                                                         ) : (
                                                           <Sparkles className="w-3 h-3" />
                                                         )}
-                                                        {fmt === "latex" ? "LaTeX" : fmt.toUpperCase()}
+                                                        {fmt.toUpperCase()}
                                                       </Button>
                                                     ))}
                                                   </div>
@@ -551,7 +551,7 @@ export default function VersionsPage() {
                                                           <div className="flex items-center gap-2">
                                                             <FileText className="w-3 h-3 text-muted-foreground" />
                                                             <span className="text-xs">
-                                                              {r.format === "latex" ? "TEX" : r.format.toUpperCase()}
+                                                              {r.format.toUpperCase()}
                                                             </span>
                                                             <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.5rem" }}>
                                                               {new Date(r.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
@@ -654,7 +654,7 @@ export default function VersionsPage() {
                                           >
                                             <div className="flex items-center gap-2">
                                               <FileText className="w-3 h-3 text-muted-foreground" />
-                                              <span className="text-xs">{r.format === "latex" ? "TEX" : r.format.toUpperCase()}</span>
+                                              <span className="text-xs">{r.format.toUpperCase()}</span>
                                               <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.5rem" }}>
                                                 {new Date(r.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                               </span>

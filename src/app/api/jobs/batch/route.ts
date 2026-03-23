@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrl } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
-import { runAutoMatch } from "@/lib/utils/auto-match";
+import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 
 interface BatchResult {
   url: string;
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
             });
             console.log(`[jobs/batch] Analysis complete for job ${job.id}: ${analysis.title}`);
             // Auto-run match scoring after analysis
-            return runAutoMatch(job.id);
+            return runAutoPipeline(job.id);
           })
           .catch((err) => {
             console.error(`[jobs/batch] Analysis failed for job ${job.id}:`, err);

@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import {
   FileText,
   FileSpreadsheet,
-  Code2,
   CheckCircle2,
   Download,
   Sparkles,
@@ -90,7 +89,7 @@ interface GeneratedResume {
   critique?: Critique;
 }
 
-type FormatOption = "pdf" | "docx" | "latex";
+type FormatOption = "pdf" | "docx";
 
 const FORMAT_INFO: Record<
   FormatOption,
@@ -98,7 +97,6 @@ const FORMAT_INFO: Record<
 > = {
   pdf: { label: "PDF", desc: "Universal format", icon: FileText },
   docx: { label: "DOCX", desc: "Editable in Word", icon: FileSpreadsheet },
-  latex: { label: "LaTeX", desc: "Beautiful typesetting", icon: Code2 },
 };
 
 const PROGRESS_STEPS = [
@@ -577,7 +575,7 @@ function GenerateContent() {
               className={buttonVariants({ size: "sm", className: "gap-1.5 rounded-sm shrink-0" })}
             >
               <Download className="w-3.5 h-3.5" />
-              Download {result.format === "latex" ? "TEX" : result.format.toUpperCase()}
+              Download {result.format.toUpperCase()}
             </a>
           </div>
 

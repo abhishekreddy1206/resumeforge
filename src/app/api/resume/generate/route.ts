@@ -3,7 +3,6 @@ import { prisma } from "@/lib/db";
 import { generateTailoredResume, critiqueResume } from "@/lib/claude";
 import { generatePdf } from "@/lib/generators/pdf";
 import { generateDocx } from "@/lib/generators/docx";
-import { generateLatex } from "@/lib/generators/latex";
 import fs from "fs/promises";
 import path from "path";
 
@@ -67,9 +66,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!["pdf", "docx", "latex"].includes(format)) {
+    if (!["pdf", "docx"].includes(format)) {
       return NextResponse.json(
-        { error: "Format must be 'pdf', 'docx', or 'latex'" },
+        { error: "Format must be 'pdf' or 'docx'" },
         { status: 400 }
       );
     }
@@ -171,18 +170,12 @@ export async function POST(request: NextRequest) {
     await fs.mkdir(dirPath, { recursive: true });
 
     const timestamp = Date.now();
-    const ext = format === "latex" ? "tex" : format;
-    const fileName = `resume-${sanitize(profile.name)}-${timestamp}.${ext}`;
+    const fileName = `resume-${sanitize(profile.name)}-${timestamp}.${format}`;
     const filePath = path.join(dirPath, fileName);
 
-    let buffer: Buffer;
-    if (format === "pdf") {
-      buffer = await generatePdf(tailoredContent);
-    } else if (format === "docx") {
-      buffer = await generateDocx(tailoredContent);
-    } else {
-      buffer = await generateLatex(tailoredContent);
-    }
+    const buffer = format === "pdf"
+      ? await generatePdf(tailoredContent)
+      : await generateDocx(tailoredContent);
 
     await fs.writeFile(filePath, buffer);
 

@@ -56,6 +56,7 @@ import {
   Zap,
   Trash2,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 
@@ -721,7 +722,7 @@ function ExpandedJobDetail({
   onSetExpandedJob: (id: string | null) => void;
   onFetchMatch: (jobId: string, force?: boolean) => void;
   onOpenChatAndApplyTips: (job: Job) => void;
-  onHandleGenerateResume: (job: Job, format: "pdf" | "docx" | "latex") => void;
+  onHandleGenerateResume: (job: Job, format: "pdf" | "docx") => void;
   onSetSelectedEmail: (email: string) => void;
   onSetPreviewResume: (r: { id: string; format: string } | null) => void;
 }) {
@@ -884,18 +885,23 @@ function ExpandedJobDetail({
           </div>
           {/* Score progression */}
           <div className="flex items-center gap-2 flex-wrap mb-3">
-            {match && (
-              <>
-                <span
-                  className="text-muted-foreground"
-                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                >
-                  Original
-                </span>
-                <MatchScoreBadge score={match.overallScore} />
-                <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
-              </>
-            )}
+            {job.profileVersions && job.profileVersions.length > 0 && (() => {
+              // Derive original score from the oldest version (score - delta)
+              const oldest = job.profileVersions[job.profileVersions.length - 1];
+              const originalScore = oldest.delta != null ? Math.round(oldest.score - oldest.delta) : (match?.overallScore ?? oldest.score);
+              return (
+                <>
+                  <span
+                    className="text-muted-foreground"
+                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                  >
+                    Original
+                  </span>
+                  <MatchScoreBadge score={originalScore} />
+                  <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
+                </>
+              );
+            })()}
             {job.profileVersions!.slice().reverse().map((v, vi) => (
               <span key={v.id} className="inline-flex items-center gap-1">
                 {vi > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
@@ -936,7 +942,7 @@ function ExpandedJobDetail({
                       <button key={r.id} onClick={(e) => { e.stopPropagation(); onSetPreviewResume(r); }}>
                         <span className="text-[9px] px-1.5 py-0.5 rounded-sm border border-border/40 bg-card hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer text-muted-foreground hover:text-primary"
                           style={{ fontFamily: "var(--font-dm-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                          {r.format === "latex" ? "tex" : r.format}
+                          {r.format}
                         </span>
                       </button>
                     ))}
@@ -984,38 +990,49 @@ function ExpandedJobDetail({
           </div>
         )}
         <div className="flex flex-wrap gap-2">
-          {(["pdf", "docx", "latex"] as const).map((fmt) => {
+          {(["pdf", "docx"] as const).map((fmt) => {
             const alreadyHas = jobHasResumeFormat(fmt);
-            const label = fmt === "latex" ? "LaTeX" : fmt.toUpperCase();
+            const label = fmt.toUpperCase();
             const isThisGenerating = generatingFormat === fmt;
             return (
-              <Button
-                key={fmt}
-                variant={alreadyHas ? "outline" : "default"}
-                size="sm"
-                className={`gap-1.5 rounded-sm text-xs transition-all ${isThisGenerating ? "min-w-[140px]" : ""}`}
-                disabled={generatingFormat !== null}
-                onClick={() => {
-                  if (alreadyHas) {
-                    const existingResume = job.resumes.find((r) => r.format === fmt)
-                      || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
-                    if (existingResume) {
-                      onSetPreviewResume({ id: existingResume.id, format: fmt });
+              <span key={fmt} className="inline-flex items-center gap-1">
+                <Button
+                  variant={alreadyHas ? "outline" : "default"}
+                  size="sm"
+                  className={`gap-1.5 rounded-sm text-xs transition-all ${isThisGenerating ? "min-w-[140px]" : ""}`}
+                  disabled={generatingFormat !== null}
+                  onClick={() => {
+                    if (alreadyHas) {
+                      const existingResume = job.resumes.find((r) => r.format === fmt)
+                        || job.profileVersions?.flatMap((v) => v.resumes).find((r) => r.format === fmt);
+                      if (existingResume) {
+                        onSetPreviewResume({ id: existingResume.id, format: fmt });
+                      }
+                    } else {
+                      onHandleGenerateResume(job, fmt);
                     }
-                  } else {
-                    onHandleGenerateResume(job, fmt);
-                  }
-                }}
-              >
-                {isThisGenerating ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : alreadyHas ? (
-                  <Eye className="w-3 h-3" />
-                ) : (
-                  <Sparkles className="w-3 h-3" />
+                  }}
+                >
+                  {isThisGenerating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : alreadyHas ? (
+                    <Eye className="w-3 h-3" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  {isThisGenerating ? `Generating ${label}...` : alreadyHas ? `${label}` : `Generate ${label}`}
+                </Button>
+                {alreadyHas && !generatingFormat && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 rounded-sm text-xs h-8 px-2 text-muted-foreground hover:text-primary"
+                    onClick={() => onHandleGenerateResume(job, fmt)}
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </Button>
                 )}
-                {isThisGenerating ? `Generating ${label}...` : alreadyHas ? `${label}` : `Generate ${label}`}
-              </Button>
+              </span>
             );
           })}
         </div>
@@ -1235,22 +1252,32 @@ export default function JobsPage() {
         setTotalJobs(data.total || 0);
         setTotalPages(data.totalPages || 1);
 
-        // Remove jobs from pending once they have both a title and a match result
+        // Remove jobs from pending once the full auto-pipeline has completed
         for (const job of freshJobs) {
-          if (
-            pendingIdsRef.current.has(job.id) &&
-            job.title !== "Analyzing..." &&
-            !job.title.startsWith("Analysis Failed") &&
-            job.matchResult
-          ) {
-            pendingIdsRef.current.delete(job.id);
-          }
-        }
+          if (!pendingIdsRef.current.has(job.id)) continue;
 
-        // Also remove failed jobs from pending
-        for (const job of freshJobs) {
-          if (pendingIdsRef.current.has(job.id) && job.title.startsWith("Analysis Failed")) {
+          // Failed analysis — stop polling for this job
+          if (job.title.startsWith("Analysis Failed")) {
             pendingIdsRef.current.delete(job.id);
+            continue;
+          }
+
+          // Still analyzing — keep polling
+          if (job.title === "Analyzing...") continue;
+
+          // Has match result — check if pipeline is done
+          if (job.matchResult) {
+            try {
+              const score = JSON.parse(job.matchResult)?.overallScore ?? 0;
+              // Score < 65: pipeline stops after match, we're done
+              // Score >= 65: pipeline continues (tips + rescore + maybe PDF)
+              //   → wait until profileVersions appear (tips applied & version saved)
+              if (score < 65 || (job.profileVersions && job.profileVersions.length > 0)) {
+                pendingIdsRef.current.delete(job.id);
+              }
+            } catch {
+              pendingIdsRef.current.delete(job.id);
+            }
           }
         }
 
@@ -1331,7 +1358,7 @@ export default function JobsPage() {
     setChatOpen(true);
   }
 
-  async function handleGenerateResume(job: Job, format: "pdf" | "docx" | "latex") {
+  async function handleGenerateResume(job: Job, format: "pdf" | "docx") {
     setGeneratingFor(`${job.id}:${format}`);
     try {
       // Check if the best version already has a resume in this format
@@ -2256,7 +2283,7 @@ export default function JobsPage() {
                   Resume Preview
                 </DialogTitle>
                 <p className="text-muted-foreground mt-0.5" style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  {previewResume?.format === "pdf" ? "PDF Document" : previewResume?.format === "latex" ? "LaTeX Source" : "DOCX Document"}
+                  {previewResume?.format === "pdf" ? "PDF Document" : "DOCX Document"}
                 </p>
               </div>
             </div>
@@ -2299,13 +2326,6 @@ export default function JobsPage() {
                 src={`/api/resume/download/${previewResume.id}?inline=1`}
                 className="w-full h-full border-0"
                 title="Resume preview"
-              />
-            ) : previewResume?.format === "latex" ? (
-              <iframe
-                src={`/api/resume/download/${previewResume.id}?inline=1`}
-                className="w-full h-full border-0"
-                title="LaTeX preview"
-                style={{ background: "var(--muted)" }}
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground">

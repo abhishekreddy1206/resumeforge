@@ -81,6 +81,8 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     data.linkedin,
     data.github,
     data.website,
+    data.twitter,
+    data.pinterest,
   ].filter(Boolean) as string[];
 
   if (contactParts.length > 0) {
@@ -430,40 +432,6 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
           })
         );
       }
-    }
-  }
-
-  // ── Recommendations ──
-  if (data.recommendations && data.recommendations.length > 0) {
-    children.push(sectionHeading("Recommendations"));
-    for (const rec of data.recommendations) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: `\u201C${rec.text}\u201D`,
-              italics: true,
-              size: 18,
-              color: COLORS.secondary,
-              font: "Calibri",
-            }),
-          ],
-          spacing: { after: 10 },
-        })
-      );
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: `\u2014 ${rec.recommenderName}${rec.recommenderTitle ? `, ${rec.recommenderTitle}` : ""}${rec.relationship ? ` (${rec.relationship})` : ""}`,
-              size: 17,
-              color: COLORS.muted,
-              font: "Calibri",
-            }),
-          ],
-          spacing: { after: 40 },
-        })
-      );
     }
   }
 

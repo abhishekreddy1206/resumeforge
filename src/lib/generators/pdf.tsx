@@ -61,31 +61,24 @@ const styles = StyleSheet.create({
   // ── Header ──
   header: {
     marginBottom: 1,
-    textAlign: "center",
+    alignItems: "center",
   },
   name: {
     fontSize: 22,
     fontWeight: "bold",
     color: COLORS.primary,
-    letterSpacing: 1.0,
-    marginBottom: 4,
+    letterSpacing: 0.5,
+    textAlign: "center",
+    lineHeight: 1,
+    marginBottom: 6,
   },
   contactRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    flexWrap: "wrap",
     fontSize: 8.5,
     color: COLORS.muted,
-    gap: 0,
-    maxWidth: "100%",
-  },
-  contactItem: {
-    paddingHorizontal: 4,
-    color: COLORS.muted,
+    textAlign: "center",
+    lineHeight: 1.5,
   },
   contactLink: {
-    paddingHorizontal: 4,
     color: COLORS.accent,
     textDecoration: "none",
   },
@@ -96,7 +89,7 @@ const styles = StyleSheet.create({
   headerRule: {
     borderBottomWidth: 1.5,
     borderBottomColor: COLORS.rule,
-    marginTop: 6,
+    marginTop: 4,
     marginBottom: 2,
   },
   // ── Sections ──
@@ -327,39 +320,62 @@ function cleanUrl(url: string): string {
     .replace(/\/$/, "");
 }
 
+function ContactLine({ items }: { items: Array<{ text: string; href?: string }> }) {
+  if (items.length === 0) return null;
+  return (
+    <Text style={styles.contactRow}>
+      {items.map((item, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <Text style={styles.contactSep}>  |  </Text>}
+          {item.href ? (
+            <Link src={item.href} style={styles.contactLink}>
+              {item.text}
+            </Link>
+          ) : (
+            <Text>{item.text}</Text>
+          )}
+        </React.Fragment>
+      ))}
+    </Text>
+  );
+}
+
 function ResumeDocument({ data }: { data: ResumeData }) {
-  const contactItems: Array<{ text: string; href?: string }> = [];
+  // Split contacts into two lines: basic info and links
+  const infoItems: Array<{ text: string; href?: string }> = [];
+  const linkItems: Array<{ text: string; href?: string }> = [];
+
   if (data.email)
-    contactItems.push({ text: data.email, href: `mailto:${data.email}` });
-  if (data.phone) contactItems.push({ text: data.phone });
-  if (data.location) contactItems.push({ text: data.location });
+    infoItems.push({ text: data.email, href: `mailto:${data.email}` });
+  if (data.phone) infoItems.push({ text: data.phone });
+  if (data.location) infoItems.push({ text: data.location });
   if (data.linkedin)
-    contactItems.push({ text: cleanUrl(data.linkedin), href: data.linkedin });
+    linkItems.push({ text: cleanUrl(data.linkedin), href: data.linkedin });
   if (data.github)
-    contactItems.push({ text: cleanUrl(data.github), href: data.github });
+    linkItems.push({ text: cleanUrl(data.github), href: data.github });
   if (data.website)
-    contactItems.push({ text: cleanUrl(data.website), href: data.website });
+    linkItems.push({ text: cleanUrl(data.website), href: data.website });
+  if (data.twitter)
+    linkItems.push({ text: cleanUrl(data.twitter), href: data.twitter });
+  if (data.pinterest)
+    linkItems.push({ text: cleanUrl(data.pinterest), href: data.pinterest });
 
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.name}>{data.name}</Text>
-          {contactItems.length > 0 && (
-            <View style={styles.contactRow}>
-              {contactItems.map((item, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <Text style={styles.contactSep}> | </Text>}
-                  {item.href ? (
-                    <Link src={item.href} style={styles.contactLink}>
-                      {item.text}
-                    </Link>
-                  ) : (
-                    <Text style={styles.contactItem}>{item.text}</Text>
-                  )}
-                </React.Fragment>
-              ))}
+          <View style={{ width: "100%", marginBottom: 2 }}>
+            <Text style={styles.name}>{data.name}</Text>
+          </View>
+          {infoItems.length > 0 && (
+            <View style={{ width: "100%" }}>
+              <ContactLine items={infoItems} />
+            </View>
+          )}
+          {linkItems.length > 0 && (
+            <View style={{ width: "100%" }}>
+              <ContactLine items={linkItems} />
             </View>
           )}
         </View>
@@ -504,23 +520,6 @@ function ResumeDocument({ data }: { data: ResumeData }) {
                     {cleanUrl(cert.url)}
                   </Link>
                 )}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Recommendations */}
-        {data.recommendations && data.recommendations.length > 0 && (
-          <View style={styles.section}>
-            <SectionHeading title="Recommendations" />
-            {data.recommendations.map((rec, i) => (
-              <View key={i} style={styles.recItem}>
-                <Text style={styles.recText}>&ldquo;{rec.text}&rdquo;</Text>
-                <Text style={styles.recAttribution}>
-                  — {rec.recommenderName}
-                  {rec.recommenderTitle ? `, ${rec.recommenderTitle}` : ""}
-                  {rec.relationship ? ` (${rec.relationship})` : ""}
-                </Text>
               </View>
             ))}
           </View>

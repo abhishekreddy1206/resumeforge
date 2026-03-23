@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { analyzeJobDescription, matchProfileToJob } from "@/lib/claude";
+import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrl } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
-import { runAutoMatch } from "@/lib/utils/auto-match";
+import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 
 export async function GET(request: NextRequest) {
   try {
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
         });
         console.log(`[jobs] Async analysis complete for job ${job.id}: ${analysis.title}`);
         // Auto-run match scoring after analysis
-        return runAutoMatch(job.id);
+        return runAutoPipeline(job.id);
       })
       .catch((err) => {
         console.error(`[jobs] Async analysis failed for job ${job.id}:`, err);
