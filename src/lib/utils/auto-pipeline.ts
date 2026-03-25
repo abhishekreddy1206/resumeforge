@@ -44,6 +44,12 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
 
   if (!profile || !job) return;
 
+  // Skip jobs that don't offer sponsorship — no point spending tokens
+  if (job.sponsorship === "unavailable") {
+    console.log(`[auto-pipeline] Skipping job ${jobId} — no sponsorship`);
+    return;
+  }
+
   const profileData = serializeProfile(profile);
 
   const jobAnalysis = {

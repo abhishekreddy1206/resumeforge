@@ -53,6 +53,7 @@ import {
   ArrowDown,
   Download,
   Eye,
+  EyeOff,
   Zap,
   Trash2,
   X,
@@ -1147,6 +1148,8 @@ export default function JobsPage() {
     currentIndex: number;
   } | null>(null);
   const [deletingNoSponsorship, setDeletingNoSponsorship] = useState(false);
+  const [hideApplied, setHideApplied] = useState(true);
+  const [hideNoSponsorship, setHideNoSponsorship] = useState(true);
   const [gapAggregation, setGapAggregation] = useState<{
     aggregatedGaps: Array<{ gap: string; frequency: number; severity: "critical" | "important" | "specific"; jobs: string[]; relatedTerms: string[] }>;
     leverageScores: Array<{ skill: string; jobsUnlocked: number; jobs: string[]; estimatedImpact: "high" | "medium" | "low" }>;
@@ -1157,7 +1160,10 @@ export default function JobsPage() {
   const [showGapPanel, setShowGapPanel] = useState(false);
 
   async function fetchJobs(p: number) {
-    const res = await fetch(`/api/jobs?page=${p}&pageSize=${PAGE_SIZE}`);
+    const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
+    if (hideApplied) params.set("excludeApplied", "true");
+    if (hideNoSponsorship) params.set("excludeNoSponsorship", "true");
+    const res = await fetch(`/api/jobs?${params}`);
     if (!res.ok) return;
     const data = await res.json();
     setJobs(data.jobs);
@@ -1217,8 +1223,11 @@ export default function JobsPage() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams({ page: "1", pageSize: String(PAGE_SIZE) });
+    if (hideApplied) params.set("excludeApplied", "true");
+    if (hideNoSponsorship) params.set("excludeNoSponsorship", "true");
     Promise.all([
-      fetch(`/api/jobs?page=1&pageSize=${PAGE_SIZE}`).then((r) => r.json()),
+      fetch(`/api/jobs?${params}`).then((r) => r.json()),
       fetch("/api/profile").then((r) => r.ok ? r.json() : null),
     ])
       .then(([j, p]) => {
@@ -1240,7 +1249,8 @@ export default function JobsPage() {
         }
       })
       .finally(() => setLoading(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hideApplied, hideNoSponsorship]);
 
   // Poll for jobs still being analyzed or awaiting auto-match scoring
   const pendingIdsRef = React.useRef<Set<string>>(new Set());
@@ -1254,7 +1264,10 @@ export default function JobsPage() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/jobs?page=${page}&pageSize=${PAGE_SIZE}`);
+        const pollParams = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+        if (hideApplied) pollParams.set("excludeApplied", "true");
+        if (hideNoSponsorship) pollParams.set("excludeNoSponsorship", "true");
+        const res = await fetch(`/api/jobs?${pollParams}`);
         if (!res.ok) return;
         const data = await res.json();
         const freshJobs: Job[] = data.jobs || [];
@@ -1730,6 +1743,24 @@ export default function JobsPage() {
               {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
             </p>
             <div className="flex items-center gap-2">
+              <Button
+                variant={hideApplied ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => setHideApplied((v) => !v)}
+              >
+                {hideApplied ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                Applied
+              </Button>
+              <Button
+                variant={hideNoSponsorship ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => setHideNoSponsorship((v) => !v)}
+              >
+                {hideNoSponsorship ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                No Sponsorship
+              </Button>
               {jobs.filter((j) => j.matchResult).length >= 2 && (
                 <Button
                   variant="outline"
@@ -1746,7 +1777,7 @@ export default function JobsPage() {
                   Cross-Job Analysis
                 </Button>
               )}
-              {jobs.some((j) => j.sponsorship === "unavailable") && (
+              {!hideNoSponsorship && jobs.some((j) => j.sponsorship === "unavailable") && (
                 <Button
                   variant="outline"
                   size="sm"

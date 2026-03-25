@@ -32,6 +32,12 @@ export async function runAutoMatch(jobId: string): Promise<void> {
 
   if (!profile || !job) return;
 
+  // Skip jobs that don't offer sponsorship — no point spending tokens
+  if (job.sponsorship === "unavailable") {
+    console.log(`[auto-match] Skipping job ${jobId} — no sponsorship`);
+    return;
+  }
+
   const profileData = {
     name: profile.name,
     summary: profile.summary,

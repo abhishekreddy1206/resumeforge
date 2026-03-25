@@ -50,6 +50,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // No-sponsorship jobs don't need ATS matching
+    if (job.sponsorship === "unavailable") {
+      return NextResponse.json(
+        { error: "Skipped — job does not offer sponsorship" },
+        { status: 422 }
+      );
+    }
+
     // Return cached match if it's still fresh (profile hasn't changed since)
     if (
       !force &&
