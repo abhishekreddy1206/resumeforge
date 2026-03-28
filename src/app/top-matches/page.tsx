@@ -16,6 +16,9 @@ import {
   Circle,
   Trophy,
   Loader2,
+  Eye,
+  Download,
+  FileText,
 } from "lucide-react";
 
 interface Job {
@@ -28,6 +31,7 @@ interface Job {
   appliedAt?: string;
   matchResult?: string;
   createdAt: string;
+  resumes: Array<{ id: string; format: string; createdAt: string }>;
   profileVersions?: Array<{
     id: string;
     score: number;
@@ -244,6 +248,43 @@ export default function TopMatchesPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
+                    {job.resumes.length > 0 && (() => {
+                      const latest = job.resumes[0];
+                      const isPdf = latest.format === "pdf";
+                      return (
+                        <>
+                          {isPdf && (
+                            <a
+                              href={`/api/resume/download/${latest.id}?inline=1`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex"
+                            >
+                              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
+                                <Eye className="w-3 h-3" />
+                                <span className="hidden sm:inline">View</span>
+                              </Button>
+                            </a>
+                          )}
+                          <a
+                            href={`/api/resume/download/${latest.id}`}
+                            download
+                            className="inline-flex"
+                          >
+                            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
+                              <Download className="w-3 h-3" />
+                              <span className="hidden sm:inline">Download</span>
+                            </Button>
+                          </a>
+                          {job.resumes.length > 1 && (
+                            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                              <FileText className="w-2.5 h-2.5 inline mr-0.5" />
+                              {job.resumes.length}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                     {job.url && (
                       <a
                         href={job.url}

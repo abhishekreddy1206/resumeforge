@@ -66,6 +66,8 @@ import {
   X,
   RefreshCw,
   Cpu,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
@@ -87,6 +89,8 @@ interface Job {
   terminologyMap?: string;
   matchResult?: string;
   aiModel?: string;
+  applied: boolean;
+  appliedAt?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string; createdAt: string }>;
   profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
@@ -1167,6 +1171,7 @@ export default function JobsPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [versionSavedForJob, setVersionSavedForJob] = useState<string | null>(null);
+  const [togglingApplied, setTogglingApplied] = useState<string | null>(null);
   const [autoApplyTips, setAutoApplyTips] = useState(false);
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -1345,6 +1350,30 @@ export default function JobsPage() {
   }, [jobs, page]);
 
   const [retryingJobs, setRetryingJobs] = useState<Record<string, boolean>>({});
+
+  async function toggleApplied(jobId: string, current: boolean) {
+    setTogglingApplied(jobId);
+    try {
+      const res = await fetch("/api/jobs/applied", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, applied: !current }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? { ...j, applied: !current, appliedAt: !current ? new Date().toISOString() : undefined }
+            : j
+        )
+      );
+      toast.success(!current ? "Marked as applied" : "Unmarked");
+    } catch {
+      toast.error("Failed to update applied status");
+    } finally {
+      setTogglingApplied(null);
+    }
+  }
 
   async function handleRetryAnalysis(job: Job) {
     setRetryingJobs((prev) => ({ ...prev, [job.id]: true }));
@@ -2001,6 +2030,11 @@ export default function JobsPage() {
                             <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
                           </Badge>
                         )}
+                        {job.applied && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Applied
+                          </Badge>
+                        )}
                         {job.aiModel && job.aiModel !== "sonnet" && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
                             <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
@@ -2019,8 +2053,29 @@ export default function JobsPage() {
                       </div>
                     </div>
 
-                    {/* Right side: chat button + chevron */}
+                    {/* Right side: applied toggle + chat button + chevron */}
                     <div className="flex items-center gap-1 shrink-0">
+                      {!isAnalyzing && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-8 w-8",
+                            job.applied && "text-emerald-600 dark:text-emerald-400"
+                          )}
+                          onClick={(e) => { e.stopPropagation(); toggleApplied(job.id, job.applied); }}
+                          disabled={togglingApplied === job.id}
+                          title={job.applied ? "Applied" : "Mark as applied"}
+                        >
+                          {togglingApplied === job.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : job.applied ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <Circle className="w-3.5 h-3.5" />
+                          )}
+                        </Button>
+                      )}
                       {hasProfile && !isAnalyzing && (
                         <Button
                           variant={chatOpen && chatJob?.id === job.id ? "default" : "ghost"}
@@ -2114,6 +2169,9 @@ export default function JobsPage() {
                     <button onClick={() => handleSort("createdAt")} className="flex items-center text-xs font-medium uppercase tracking-wider">
                       Added <SortIcon field="createdAt" />
                     </button>
+                  </TableHead>
+                  <TableHead className="w-[70px] text-center hidden md:table-cell">
+                    <span className="text-xs font-medium uppercase tracking-wider">Applied</span>
                   </TableHead>
                   <TableHead className="w-[140px] text-right">
                     <span className="text-xs font-medium uppercase tracking-wider">Actions</span>
@@ -2230,6 +2288,31 @@ export default function JobsPage() {
                         </span>
                       </TableCell>
 
+                      {/* Applied */}
+                      <TableCell className="text-center hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                        {!isAnalyzing && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "h-7 w-7",
+                              job.applied && "text-emerald-600 dark:text-emerald-400"
+                            )}
+                            onClick={() => toggleApplied(job.id, job.applied)}
+                            disabled={togglingApplied === job.id}
+                            title={job.applied ? `Applied ${job.appliedAt ? new Date(job.appliedAt).toLocaleDateString() : ""}` : "Mark as applied"}
+                          >
+                            {togglingApplied === job.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : job.applied ? (
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            ) : (
+                              <Circle className="w-3.5 h-3.5" />
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+
                       {/* Actions */}
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         {isFailed ? (
@@ -2298,7 +2381,7 @@ export default function JobsPage() {
                     {/* Inline expanded detail panel — immediately after this row */}
                     {isExpanded && (
                         <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={6} className="p-0 whitespace-normal">
+                          <TableCell colSpan={7} className="p-0 whitespace-normal">
                             <ExpandedJobDetail
                               job={job}
                               match={matchResults[job.id]}
