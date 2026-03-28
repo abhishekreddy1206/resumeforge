@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
 import {
   Card,
   CardContent,
@@ -357,6 +358,8 @@ export default function ProfilePage() {
   const [applyingEnhance, setApplyingEnhance] = useState(false);
 
   const enhancePanelRef = useRef<HTMLDivElement>(null);
+  const leftColRef = useScrollReveal<HTMLDivElement>([profile]);
+  const rightColRef = useScrollReveal<HTMLDivElement>([profile]);
 
   const fetchProfile = useCallback(async () => {
     const res = await fetch("/api/profile");
@@ -757,7 +760,7 @@ export default function ProfilePage() {
       {profile && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 transition-all duration-200">
           {/* ════════ Left Column ════════ */}
-          <div className="space-y-6 min-w-0">
+          <div className="space-y-6 min-w-0" ref={leftColRef}>
 
             {/* ── Header Card ── */}
             <Card className="shadow-sm overflow-hidden anim-fade-up-1">
@@ -856,7 +859,7 @@ export default function ProfilePage() {
 
             {/* ── Experience ── */}
             {profile.experiences.length > 0 && (
-              <Card className="shadow-sm anim-fade-up-2">
+              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={Building2} title="Experience" count={profile.experiences.length} />
                   <div className="space-y-5">
@@ -889,7 +892,7 @@ export default function ProfilePage() {
 
             {/* ── Projects ── */}
             {profile.projects.length > 0 && (
-              <Card className="shadow-sm anim-fade-up-2">
+              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.06s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={FolderGit2} title="Projects" count={profile.projects.length} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -919,7 +922,7 @@ export default function ProfilePage() {
 
             {/* ── Education ── */}
             {profile.educations.length > 0 && (
-              <Card className="shadow-sm anim-fade-up-3">
+              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.12s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={GraduationCap} title="Education" count={profile.educations.length} />
                   <div className="space-y-3">
@@ -941,7 +944,7 @@ export default function ProfilePage() {
             )}
 
             {/* ── Publications (CRUD) ── */}
-            <Card className="shadow-sm anim-fade-up-3">
+            <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.18s" } as React.CSSProperties}>
               <CardContent className="pt-6">
                 <SectionHeading
                   icon={BookOpen}
@@ -1055,7 +1058,7 @@ export default function ProfilePage() {
             </Card>
 
             {/* ── Certifications (CRUD) ── */}
-            <Card className="shadow-sm anim-fade-up-3">
+            <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.24s" } as React.CSSProperties}>
               <CardContent className="pt-6">
                 <SectionHeading
                   icon={Award}
@@ -1152,7 +1155,7 @@ export default function ProfilePage() {
             </Card>
 
             {/* ── Recommendations (CRUD) ── */}
-            <Card className="shadow-sm anim-fade-up-4">
+            <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.3s" } as React.CSSProperties}>
               <CardContent className="pt-6">
                 <SectionHeading
                   icon={Quote}
@@ -1248,7 +1251,7 @@ export default function ProfilePage() {
             </Card>
 
             {/* ── Upload (Replace) ── */}
-            <Card className="shadow-sm">
+            <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.36s" } as React.CSSProperties}>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -1274,7 +1277,7 @@ export default function ProfilePage() {
           </div>
 
           {/* ════════ Right Column (Sidebar) ════════ */}
-          <div className="space-y-6">
+          <div className="space-y-6" ref={rightColRef}>
 
             {/* ── Skills ── */}
             {profile.skills.length > 0 && (
@@ -1407,7 +1410,7 @@ export default function ProfilePage() {
             )}
 
             {/* ── Enrich from External Sources (Collapsible) ── */}
-            <Card className="shadow-sm anim-fade-up-2">
+            <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.06s" } as React.CSSProperties}>
               <CardContent className="pt-5">
                 <button
                   onClick={() => setEnrichOpen(!enrichOpen)}

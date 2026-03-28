@@ -43,7 +43,7 @@ interface JobAnalysis {
  * Also extracts categorized ATS keywords for verbatim matching
  * and detects visa sponsorship / work authorization status.
  */
-export async function analyzeJobDescription(description: string): Promise<JobAnalysis> {
+export async function analyzeJobDescription(description: string, options?: { model?: string }): Promise<JobAnalysis> {
   return askJson(`Analyze the job description and extract structured data.
 
 REQUIREMENT CLASSIFICATION — classify each requirement as:
@@ -93,5 +93,5 @@ Return ONLY valid JSON:
 }
 
 Job description:
-${description}`);
+${description}`, { skill: "job-analyzer", model: options?.model });
 }

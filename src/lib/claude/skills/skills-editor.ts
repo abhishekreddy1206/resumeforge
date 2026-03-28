@@ -53,5 +53,5 @@ Return JSON:
 If the user asked a question without requesting changes, return:
 {
   "reply": "Your answer here"
-}`);
+}`, { skill: "skills-editor" });
 }

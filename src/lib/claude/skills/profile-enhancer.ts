@@ -98,5 +98,5 @@ Return ONLY valid JSON:
 {
   "suggestions": [{"category":"string","field":"string","current":"string","suggested":"string","reasoning":"string","impactEstimate":"high|medium|low"}],
   "overallInsight": "string"
-}`, { timeoutMs: 300_000 });
+}`, { timeoutMs: 600_000, skill: "profile-enhancer" });
 }

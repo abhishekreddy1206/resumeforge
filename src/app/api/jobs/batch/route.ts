@@ -19,7 +19,7 @@ interface BatchResult {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { urls } = await request.json();
+    const { urls, aiModel } = await request.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
@@ -104,13 +104,14 @@ export async function POST(request: NextRequest) {
             atsKeywords: null,
             seniority: null,
             sponsorship: "unspecified",
+            aiModel: aiModel || "sonnet",
           },
         });
 
         results.push({ url, jobId: job.id, status: "created" });
 
         // Fire analysis asynchronously — each job gets its own call
-        analyzeJobDescription(text)
+        analyzeJobDescription(text, { model: job.aiModel })
           .then(async (analysis) => {
             await prisma.job.update({
               where: { id: job.id },

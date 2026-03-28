@@ -19,7 +19,8 @@ export async function applyResumeTips(
   matchResult: Record<string, any>,
   instruction: string,
   history: Array<{ role: string; content: string }>,
-  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>
+  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>,
+  options?: { model?: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ reply: string; updatedProfile: Record<string, any> }> {
   const historyText =
@@ -29,9 +30,6 @@ export async function applyResumeTips(
           .map((m) => `${m.role}: ${m.content}`)
           .join("\n")}\n`
       : "";
-
-  // Cap terminology map to keep prompt size manageable
-  const trimmedTermMap = terminologyMap?.slice(0, 15);
 
   return askJson(`You are a resume optimization assistant. Apply specific resume tips to the candidate's profile to improve their match with the target job.
 
@@ -44,7 +42,7 @@ ${JSON.stringify(compactProfile(profile))}
 TARGET JOB:
 Title: ${job.title}
 Company: ${job.company}
-${trimmedTermMap && trimmedTermMap.length > 0 ? `\nTERMINOLOGY MAP (use the JD's exact terms where the candidate has the equivalent skill):\n${JSON.stringify(trimmedTermMap)}\n` : ""}
+${terminologyMap && terminologyMap.length > 0 ? `\nTERMINOLOGY MAP (use the JD's exact terms where the candidate has the equivalent skill):\n${JSON.stringify(terminologyMap)}\n` : ""}
 MATCH ANALYSIS:
 Score: ${matchResult.overallScore}/100
 Direct matches: ${JSON.stringify(matchResult.breakdown?.directMatches || [])}
@@ -70,5 +68,5 @@ Return JSON with SHORT field values (keep reply under 500 chars to avoid truncat
 {
   "reply": "Brief summary of changes made",
   "updatedProfile": { /* full modified profile object */ }
-}`, { timeoutMs: 300_000 });
+}`, { timeoutMs: 600_000, skill: "resume-tip-applier", model: options?.model });
 }

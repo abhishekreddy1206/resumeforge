@@ -67,7 +67,8 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     resumeSynonyms: string[];
   }>;
 
-  const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap);
+  const modelOpts = { model: job.aiModel };
+  const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap, modelOpts);
 
   // Persist match result
   await prisma.job.update({
@@ -108,7 +109,8 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       match,
       instruction,
       [],
-      terminologyMap
+      terminologyMap,
+      modelOpts
     );
 
     updatedProfile = tipResult.updatedProfile;
@@ -121,7 +123,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
   // --- Step 3: Rescore with optimized profile ---
   let newScore: number;
   try {
-    const newMatch = await matchProfileToJob(updatedProfile, jobAnalysis, terminologyMap);
+    const newMatch = await matchProfileToJob(updatedProfile, jobAnalysis, terminologyMap, modelOpts);
     newScore = newMatch.overallScore;
     const delta = newScore - match.overallScore;
 
@@ -164,7 +166,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
 
     // --- Step 4: Auto-generate PDF ---
     try {
-      const tailoredContent = await generateTailoredResume(updatedProfile, jobAnalysis);
+      const tailoredContent = await generateTailoredResume(updatedProfile, jobAnalysis, modelOpts);
 
       const buffer = await generatePdf(tailoredContent);
 

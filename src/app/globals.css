@@ -181,8 +181,10 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.028'/%3E%3C/svg%3E");
 }
 .dark .paper-bg {
-  /* Slightly more visible grain on dark to add depth */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.048'/%3E%3C/svg%3E");
+  /* Stronger grain + warm vignette for dark mode depth */
+  background-image:
+    radial-gradient(ellipse at 50% 40%, transparent 0%, oklch(0.06 0.01 50 / 0.5) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
 }
 
 /* ─── Hide scrollbar ─── */
@@ -203,7 +205,10 @@
   box-shadow: 0 6px 20px -4px oklch(0.145 0.010 55 / 0.10), 0 2px 6px -2px oklch(0.145 0.010 55 / 0.06);
 }
 .dark .card-hover:hover {
-  box-shadow: 0 6px 20px -4px oklch(0 0 0 / 0.40), 0 2px 6px -2px oklch(0 0 0 / 0.24);
+  box-shadow:
+    0 6px 20px -4px oklch(0 0 0 / 0.40),
+    0 2px 6px -2px oklch(0 0 0 / 0.24),
+    0 0 0 1px oklch(0.670 0.148 44 / 0.08);
 }
 
 /* ─── Glass ─── */
@@ -399,4 +404,44 @@
   background-color: oklch(0.665 0.150 42 / 0.08);
   color: oklch(0.720 0.140 44);
   box-shadow: 0 2px 8px oklch(0.665 0.150 42 / 0.12);
+}
+
+/* ─── Scroll-triggered reveal ─── */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger children via CSS custom property */
+.scroll-reveal[style*="--reveal-delay"] {
+  transition-delay: var(--reveal-delay);
+}
+
+/* ─── Smooth expand/collapse (CSS grid trick) ─── */
+.expand-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+.expand-grid.expanded {
+  grid-template-rows: 1fr;
+}
+.expand-grid > .expand-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ─── Score ring glow ─── */
+.score-ring-glow {
+  filter: drop-shadow(0 0 6px var(--ring-glow-color, oklch(0.55 0.15 150 / 0.35)));
+}
+
+/* ─── Dark mode nav accent fade ─── */
+.dark .nav-accent {
+  background: linear-gradient(to right, oklch(0.670 0.148 44) 0%, oklch(0.670 0.148 44 / 0.3) 50%, oklch(0.670 0.148 44 / 0) 100%);
 }

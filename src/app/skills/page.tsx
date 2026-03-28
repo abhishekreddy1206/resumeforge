@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkillsChatPanel } from "@/components/skills-chat-panel";
+import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
 import { MessageSquare } from "lucide-react";
 
 interface Skill {
@@ -63,6 +64,7 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
   const [chatOpen, setChatOpen] = useState(false);
+  const gridRef = useScrollReveal<HTMLDivElement>([grouped]);
 
   function loadSkills() {
     fetch("/api/skills")
@@ -189,11 +191,11 @@ export default function SkillsPage() {
 
       {/* ── Skills Grid ─── */}
       <section className="pt-10 anim-fade-up-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-x-12">
-          {Object.entries(filteredGrouped).map(([category, categorySkills]) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-x-12" ref={gridRef}>
+          {Object.entries(filteredGrouped).map(([category, categorySkills], idx) => {
             const config = CATEGORY_CONFIG[category] || { label: category, num: "—" };
             return (
-              <div key={category}>
+              <div key={category} className="scroll-reveal" style={{ "--reveal-delay": `${idx * 0.06}s` } as React.CSSProperties}>
                 <div className="flex items-baseline gap-3 mb-4">
                   <span className="text-primary" style={{ ...monoStyle, fontSize: "0.6rem" }}>
                     {config.num}

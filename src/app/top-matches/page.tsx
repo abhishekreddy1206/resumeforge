@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -94,6 +95,7 @@ export default function TopMatchesPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const listRef = useScrollReveal<HTMLDivElement>([jobs]);
 
   async function fetchJobs() {
     try {
@@ -195,14 +197,15 @@ export default function TopMatchesPage() {
             </p>
           </div>
 
-          <div className="space-y-2">
-            {topJobs.map(({ job, score }) => (
+          <div className="space-y-2" ref={listRef}>
+            {topJobs.map(({ job, score }, idx) => (
               <div
                 key={job.id}
                 className={cn(
-                  "border border-border rounded-sm transition-colors hover:bg-accent/10",
+                  "border border-border rounded-sm transition-colors hover:bg-accent/10 scroll-reveal",
                   job.applied && "bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/30"
                 )}
+                style={{ "--reveal-delay": `${idx * 0.05}s` } as React.CSSProperties}
               >
                 <div className="p-4 sm:p-5 flex items-center gap-4">
                   {/* Company avatar */}

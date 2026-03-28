@@ -25,6 +25,13 @@ import {
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogTitle,
@@ -58,8 +65,16 @@ import {
   Trash2,
   X,
   RefreshCw,
+  Cpu,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
+import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
+
+const AI_MODELS = [
+  { value: "sonnet", label: "Sonnet", description: "Balanced" },
+  { value: "haiku", label: "Haiku", description: "Fast & cheap" },
+  { value: "opus", label: "Opus", description: "Most capable" },
+];
 
 interface Job {
   id: string;
@@ -71,6 +86,7 @@ interface Job {
   sponsorship?: string;
   terminologyMap?: string;
   matchResult?: string;
+  aiModel?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string; createdAt: string }>;
   profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
@@ -161,11 +177,17 @@ function MatchScoreBadge({ score }: { score: number }) {
 function ScoreRing({ score }: { score: number }) {
   const circumference = 2 * Math.PI * 38;
   const offset = circumference - (score / 100) * circumference;
-  const color =
-    score >= 80 ? "stroke-emerald-500 dark:stroke-emerald-400"
-    : score >= 60 ? "stroke-blue-500 dark:stroke-blue-400"
-    : score >= 40 ? "stroke-amber-500 dark:stroke-amber-400"
-    : "stroke-red-500 dark:stroke-red-400";
+  const gradientId = `score-grad-${score}`;
+  const glowColor =
+    score >= 80 ? "oklch(0.55 0.15 150 / 0.4)"
+    : score >= 60 ? "oklch(0.55 0.13 260 / 0.4)"
+    : score >= 40 ? "oklch(0.60 0.15 70 / 0.4)"
+    : "oklch(0.55 0.20 25 / 0.4)";
+  const [gradStart, gradEnd] =
+    score >= 80 ? ["#34d399", "#059669"]
+    : score >= 60 ? ["#60a5fa", "#2563eb"]
+    : score >= 40 ? ["#fbbf24", "#d97706"]
+    : ["#f87171", "#dc2626"];
   const bgColor =
     score >= 80 ? "text-emerald-700 dark:text-emerald-300"
     : score >= 60 ? "text-blue-700 dark:text-blue-300"
@@ -173,13 +195,20 @@ function ScoreRing({ score }: { score: number }) {
     : "text-red-700 dark:text-red-300";
 
   return (
-    <div className="relative w-20 h-20 shrink-0">
+    <div className="relative w-20 h-20 shrink-0 score-ring-glow" style={{ "--ring-glow-color": glowColor } as React.CSSProperties}>
       <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={gradStart} />
+            <stop offset="100%" stopColor={gradEnd} />
+          </linearGradient>
+        </defs>
         <circle cx="40" cy="40" r="38" fill="none" strokeWidth="3" className="stroke-border/40" />
         <circle
           cx="40" cy="40" r="38" fill="none" strokeWidth="3.5"
           strokeLinecap="round"
-          className={`${color} transition-all duration-700 ease-out`}
+          stroke={`url(#${gradientId})`}
+          className="transition-all duration-700 ease-out"
           style={{ strokeDasharray: circumference, strokeDashoffset: offset }}
         />
       </svg>
@@ -1129,6 +1158,7 @@ export default function JobsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [jobUrls, setJobUrls] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [selectedModel, setSelectedModel] = useState("sonnet");
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [matchResults, setMatchResults] = useState<
     Record<string, MatchResult>
@@ -1158,6 +1188,7 @@ export default function JobsPage() {
   } | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
   const [showGapPanel, setShowGapPanel] = useState(false);
+  const jobListRef = useScrollReveal<HTMLElement>([jobs]);
 
   async function fetchJobs(p: number) {
     const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
@@ -1479,7 +1510,7 @@ export default function JobsPage() {
           const res = await fetch("/api/jobs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: urls[0] }),
+            body: JSON.stringify({ url: urls[0], aiModel: selectedModel }),
           });
           if (!res.ok) {
             const err = await res.json();
@@ -1498,7 +1529,7 @@ export default function JobsPage() {
           const res = await fetch("/api/jobs/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ urls }),
+            body: JSON.stringify({ urls, aiModel: selectedModel }),
           });
           if (!res.ok) {
             const err = await res.json();
@@ -1521,7 +1552,7 @@ export default function JobsPage() {
         const res = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: payload.description }),
+          body: JSON.stringify({ description: payload.description, aiModel: selectedModel }),
         });
         if (!res.ok) {
           const err = await res.json();
@@ -1692,24 +1723,38 @@ export default function JobsPage() {
                 })()}
               </div>
               <div className="flex items-center justify-between gap-3 mt-3">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground hidden sm:block">
                   Paste multiple URLs to batch-import. Lever, Greenhouse, Ashby, and most job boards supported.
                 </p>
-                <Button
-                  onClick={() => handleSubmit({ urls: jobUrls })}
-                  disabled={submitting || !jobUrls.trim()}
-                  className="shrink-0 gap-2 w-full sm:w-auto"
-                >
-                  {submitting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Adding...
-                    </>
-                  ) : (() => {
-                    const count = jobUrls.split(/[\n,]+/).map(u => u.trim()).filter(u => u.startsWith("http")).length;
-                    return count > 1 ? `Add ${count} Jobs` : "Add Job";
-                  })()}
-                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Select value={selectedModel} onValueChange={(v) => v && setSelectedModel(v)}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs shrink-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AI_MODELS.map((m) => (
+                        <SelectItem key={m.value} value={m.value} className="text-xs">
+                          {m.label} <span className="text-muted-foreground ml-1">({m.description})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => handleSubmit({ urls: jobUrls })}
+                    disabled={submitting || !jobUrls.trim()}
+                    className="shrink-0 gap-2 flex-1 sm:flex-initial"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Adding...
+                      </>
+                    ) : (() => {
+                      const count = jobUrls.split(/[\n,]+/).map(u => u.trim()).filter(u => u.startsWith("http")).length;
+                      return count > 1 ? `Add ${count} Jobs` : "Add Job";
+                    })()}
+                  </Button>
+                </div>
               </div>
             </TabsContent>
             <TabsContent value="text" className="space-y-3 mt-4">
@@ -1720,14 +1765,28 @@ export default function JobsPage() {
                 value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
               />
-              <Button
-                onClick={() =>
-                  handleSubmit({ description: jobDescription })
-                }
-                disabled={submitting || !jobDescription}
-              >
-                {submitting ? "Analyzing..." : "Add Job"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select value={selectedModel} onValueChange={(v) => v && setSelectedModel(v)}>
+                  <SelectTrigger className="w-[130px] h-8 text-xs shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value} className="text-xs">
+                        {m.label} <span className="text-muted-foreground ml-1">({m.description})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() =>
+                    handleSubmit({ description: jobDescription })
+                  }
+                  disabled={submitting || !jobDescription}
+                >
+                  {submitting ? "Analyzing..." : "Add Job"}
+                </Button>
+              </div>
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -1736,7 +1795,7 @@ export default function JobsPage() {
 
       {/* ── Jobs Table ── */}
       {jobs.length > 0 ? (
-        <section className="pt-8 anim-fade-up-2">
+        <section className="pt-8 anim-fade-up-2" ref={jobListRef}>
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <p className="text-muted-foreground" style={monoStyle}>
               Saved Jobs · {totalJobs} position{totalJobs !== 1 ? "s" : ""}
@@ -1879,7 +1938,7 @@ export default function JobsPage() {
 
           {/* ── Mobile card stack (sm:hidden) ── */}
           <div className="sm:hidden space-y-2">
-            {sortedJobs.map((job) => {
+            {sortedJobs.map((job, idx) => {
               const isExpanded = expandedJob === job.id;
               const isFailed = job.title === "Analysis Failed — Click to Retry";
               const isAnalyzing = job.title === "Analyzing..." || isFailed;
@@ -1887,8 +1946,8 @@ export default function JobsPage() {
               const hasVersions = (job.profileVersions?.length ?? 0) > 0;
 
               return (
+                <div key={job.id} className="scroll-reveal" style={{ "--reveal-delay": `${idx * 0.04}s` } as React.CSSProperties}>
                 <div
-                  key={job.id}
                   className={cn(
                     "border border-border rounded-sm cursor-pointer transition-colors",
                     isExpanded ? "bg-accent/30" : "hover:bg-accent/10"
@@ -1942,6 +2001,11 @@ export default function JobsPage() {
                             <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
                           </Badge>
                         )}
+                        {job.aiModel && job.aiModel !== "sonnet" && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
+                            <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
+                          </Badge>
+                        )}
                         {job.url && (
                           <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
                             <ExternalLink className="w-3 h-3" />
@@ -1981,25 +2045,29 @@ export default function JobsPage() {
                     </div>
                   </div>
 
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <ExpandedJobDetail
-                      job={job}
-                      match={matchResults[job.id]}
-                      isMatchLoading={matchLoading[job.id] || false}
-                      hasProfile={hasProfile}
-                      hasVersions={hasVersions}
-                      generatingFor={generatingFor}
-                      profileEmails={profileEmails}
-                      selectedEmail={selectedEmail}
-                      onSetExpandedJob={setExpandedJob}
-                      onFetchMatch={fetchMatch}
-                      onOpenChatAndApplyTips={openChatAndApplyTips}
-                      onHandleGenerateResume={handleGenerateResume}
-                      onSetSelectedEmail={setSelectedEmail}
-                      onSetPreviewResume={openResumePreview}
-                    />
-                  )}
+                  {/* Expanded detail — smooth expand/collapse */}
+                  <div className={cn("expand-grid", isExpanded && "expanded")}>
+                    <div className="expand-inner">
+                      {isExpanded && (
+                        <ExpandedJobDetail
+                          job={job}
+                          match={matchResults[job.id]}
+                          isMatchLoading={matchLoading[job.id] || false}
+                          hasProfile={hasProfile}
+                          hasVersions={hasVersions}
+                          generatingFor={generatingFor}
+                          profileEmails={profileEmails}
+                          selectedEmail={selectedEmail}
+                          onSetExpandedJob={setExpandedJob}
+                          onFetchMatch={fetchMatch}
+                          onOpenChatAndApplyTips={openChatAndApplyTips}
+                          onHandleGenerateResume={handleGenerateResume}
+                          onSetSelectedEmail={setSelectedEmail}
+                          onSetPreviewResume={openResumePreview}
+                        />
+                      )}
+                    </div>
+                  </div>
 
                   {/* Version saved indicator */}
                   {versionSavedForJob === job.id && (
@@ -2011,6 +2079,7 @@ export default function JobsPage() {
                       <History className="w-3 h-3" /> Version saved
                     </a>
                   )}
+                </div>
                 </div>
               );
             })}
@@ -2052,13 +2121,13 @@ export default function JobsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedJobs.map((job) => {
+                {sortedJobs.map((job, idx) => {
                   const isExpanded = expandedJob === job.id;
                   const isFailed = job.title === "Analysis Failed — Click to Retry";
               const isAnalyzing = job.title === "Analyzing..." || isFailed;
                   const bestScore = getBestScore(job);
                   const hasVersions = (job.profileVersions?.length ?? 0) > 0;
-                  const totalResumes = job.resumes.length + (job.profileVersions?.reduce((acc, v) => acc + v.resumes.length, 0) ?? 0);
+                  const totalResumes = job.resumes.length;
 
                   return (
                     <React.Fragment key={job.id}>
@@ -2099,6 +2168,11 @@ export default function JobsPage() {
                               {job.sponsorship === "unavailable" && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
                                   <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+                                </Badge>
+                              )}
+                              {job.aiModel && job.aiModel !== "sonnet" && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
+                                  <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
                                 </Badge>
                               )}
                               {job.url && (

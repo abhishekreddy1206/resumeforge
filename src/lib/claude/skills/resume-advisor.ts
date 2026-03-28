@@ -18,7 +18,8 @@ export async function adviseOnResume(
   message: string,
   history: Array<{ role: string; content: string }>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cachedMatch?: Record<string, any> | null
+  cachedMatch?: Record<string, any> | null,
+  options?: { model?: string }
 ): Promise<{ reply: string }> {
   const historyText =
     history.length > 0
@@ -66,7 +67,7 @@ Verdict: ${cachedMatch.verdictSummary || "N/A"}\n`
     summary: job.summary,
     atsKeywords: job.atsKeywords,
     requirements: job.requirements,
-    terminologyMap: parsedTermMap.length > 0 ? parsedTermMap : undefined,
+    terminologyMap: parsedTermMap.length > 0 ? parsedTermMap.slice(0, 15) : undefined,
   };
 
   const reply = await ask(`You are a resume strategy advisor helping a candidate tailor their resume for a specific job posting.
@@ -87,7 +88,7 @@ RULES:
 - Be honest about gaps — suggest framing strategies, not fabrication
 - Use the job's exact terminology where the candidate genuinely has the skill (ATS matching)
 - Keep responses concise and practical (2-4 paragraphs max)
-- Use markdown formatting; reply with ONLY your advice text — no JSON wrapping, no code fences`);
+- Use markdown formatting; reply with ONLY your advice text — no JSON wrapping, no code fences`, { skill: "resume-advisor", model: options?.model });
 
   return { reply };
 }

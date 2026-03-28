@@ -90,7 +90,7 @@ export async function DELETE(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { url, description } = await request.json();
+    const { url, description, aiModel } = await request.json();
 
     if (!url && !description) {
       return NextResponse.json(
@@ -163,11 +163,12 @@ export async function POST(request: NextRequest) {
         atsKeywords: null,
         seniority: null,
         sponsorship: "unspecified",
+        aiModel: aiModel || "sonnet",
       },
     });
 
     // Fire Claude analysis asynchronously — don't block the response
-    analyzeJobDescription(jobText)
+    analyzeJobDescription(jobText, { model: job.aiModel })
       .then(async (analysis) => {
         await prisma.job.update({
           where: { id: job.id },

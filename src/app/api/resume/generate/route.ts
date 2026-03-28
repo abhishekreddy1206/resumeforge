@@ -147,7 +147,8 @@ export async function POST(request: NextRequest) {
     // Generate tailored resume content with Claude
     const tailoredContent = await generateTailoredResume(
       profileData,
-      jobAnalysis
+      jobAnalysis,
+      { model: job.aiModel }
     );
 
     // Apply email override if provided
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
     // Fire critique asynchronously — don't block the response
     evictStaleCritiqueEntries();
     critiqueCache.set(resume.id, { status: "pending", createdAt: Date.now() });
-    critiqueResume(tailoredContent, jobAnalysis)
+    critiqueResume(tailoredContent, jobAnalysis, { model: job.aiModel })
       .then((critique) => {
         critiqueCache.set(resume.id, { status: "done", data: critique, createdAt: Date.now() });
       })

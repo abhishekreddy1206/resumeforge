@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
 import {
   Zap,
   Briefcase,
@@ -13,6 +14,11 @@ import {
   Sparkles,
   ChevronRight,
   ArrowRight,
+  DollarSign,
+  Activity,
+  Cpu,
+  GitBranch,
+  Target,
 } from "lucide-react";
 
 interface Profile {
@@ -32,6 +38,25 @@ interface Job {
   resumes: Array<{ id: string; format: string }>;
 }
 
+interface AnalyticsData {
+  tokenUsage: {
+    daily: Array<{ day: string; cost: number; inputTokens: number; outputTokens: number; calls: number }>;
+    totals: { cost: number; inputTokens: number; outputTokens: number; calls: number };
+    bySkill: Array<{ skill: string; cost: number; inputTokens: number; outputTokens: number; calls: number }>;
+    byModel: Array<{ model: string; cost: number; calls: number }>;
+  };
+  versions: Array<{
+    id: string;
+    score: number;
+    delta: number | null;
+    label: string | null;
+    createdAt: string;
+    job: { id: string; title: string; company: string };
+    resumes: Array<{ id: string; format: string; createdAt: string }>;
+  }>;
+  resumeCount: number;
+}
+
 const monoStyle: React.CSSProperties = {
   fontFamily: "var(--font-dm-mono)",
   fontSize: "0.625rem",
@@ -39,6 +64,12 @@ const monoStyle: React.CSSProperties = {
   textTransform: "uppercase" as const,
   fontWeight: 500,
 };
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
 
 function DashboardSkeleton() {
   return (
@@ -64,19 +95,44 @@ function DashboardSkeleton() {
   );
 }
 
+// Simple bar chart using pure CSS
+function MiniBarChart({ data, maxValue }: { data: Array<{ label: string; value: number }>; maxValue: number }) {
+  return (
+    <div className="flex items-end gap-[3px] h-16">
+      {data.map((d, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+          <div
+            className="w-full bg-primary/20 dark:bg-primary/30 rounded-t-[1px] transition-all hover:bg-primary/40 min-h-[2px]"
+            style={{ height: `${maxValue > 0 ? Math.max((d.value / maxValue) * 100, 3) : 3}%` }}
+          />
+          <div className="absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-popover border border-border text-xs px-2 py-1 rounded-sm shadow-sm whitespace-nowrap z-10">
+            <span className="font-medium">${d.value.toFixed(4)}</span>
+            <br />
+            <span className="text-muted-foreground" style={{ fontSize: "0.55rem" }}>{d.label}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const analyticsRef = useScrollReveal<HTMLDivElement>([analytics]);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/profile").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/jobs?pageSize=50").then((r) => r.json()),
+      fetch("/api/analytics").then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([p, j]) => {
+      .then(([p, j, a]) => {
         setProfile(p);
         setJobs(j.jobs || j);
+        setAnalytics(a);
         if (p) {
           fetch("/api/profile/refresh", { method: "POST" })
             .then((r) => r.json())
@@ -96,24 +152,11 @@ export default function Dashboard() {
   if (loading) return <DashboardSkeleton />;
 
   const stats = [
-    {
-      label: "Skills Tracked",
-      value: profile ? profile.skills.length : 0,
-      icon: Zap,
-    },
-    {
-      label: "Jobs Saved",
-      value: jobs.length,
-      icon: Briefcase,
-    },
-    {
-      label: "Resumes Made",
-      value: totalResumes,
-      icon: FileText,
-    },
+    { label: "Skills Tracked", value: profile ? profile.skills.length : 0, icon: Zap },
+    { label: "Jobs Saved", value: jobs.length, icon: Briefcase },
+    { label: "Resumes Made", value: totalResumes, icon: FileText },
   ];
 
-  // Group skills by category for overview
   const skillsByCategory = profile?.skills.reduce(
     (acc, s) => {
       if (!acc[s.category]) acc[s.category] = [];
@@ -122,6 +165,9 @@ export default function Dashboard() {
     },
     {} as Record<string, string[]>
   ) ?? {};
+
+  const totals = analytics?.tokenUsage.totals;
+  const hasAnalytics = totals && totals.calls > 0;
 
   return (
     <div className="space-y-0">
@@ -157,7 +203,6 @@ export default function Dashboard() {
           )}
         </h1>
 
-        {/* Accent rule */}
         <div className="section-divider mb-5" />
 
         <p className="text-muted-foreground text-sm sm:text-base max-w-xl mb-7 leading-relaxed">
@@ -288,6 +333,208 @@ export default function Dashboard() {
             })}
           </div>
         </section>
+      )}
+
+      {/* ── AI Usage Analytics ─────────────────────────────── */}
+      {hasAnalytics && (
+        <div ref={analyticsRef}>
+          <section className="border-b border-border py-10 scroll-reveal" style={{ "--reveal-delay": "0s" } as React.CSSProperties}>
+            <p className="text-muted-foreground mb-6" style={monoStyle}>
+              AI Usage Analytics
+            </p>
+
+            {/* Cost + Token overview cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+              {[
+                { label: "Total Cost", value: `$${totals.cost.toFixed(4)}`, icon: DollarSign },
+                { label: "API Calls", value: String(totals.calls), icon: Activity },
+                { label: "Input Tokens", value: formatTokens(totals.inputTokens), icon: Cpu },
+                { label: "Output Tokens", value: formatTokens(totals.outputTokens), icon: Cpu },
+              ].map((card) => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.label} className="border border-border rounded-sm p-4">
+                    <p className="text-muted-foreground flex items-center gap-1.5 mb-2" style={monoStyle}>
+                      <Icon className="w-2.5 h-2.5" />
+                      {card.label}
+                    </p>
+                    <p
+                      className="text-foreground leading-none"
+                      style={{
+                        fontFamily: "var(--font-cormorant)",
+                        fontStyle: "italic",
+                        fontSize: "clamp(1.2rem, 3vw, 1.8rem)",
+                        fontWeight: 400,
+                      }}
+                    >
+                      {card.value}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Daily cost chart */}
+            {analytics.tokenUsage.daily.length > 1 && (
+              <div className="mb-8">
+                <p className="text-muted-foreground mb-3" style={monoStyle}>
+                  Daily Cost (Last 30 Days)
+                </p>
+                <div className="border border-border rounded-sm p-4">
+                  <MiniBarChart
+                    data={analytics.tokenUsage.daily.map((d) => ({
+                      label: new Date(d.day + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                      value: d.cost,
+                    }))}
+                    maxValue={Math.max(...analytics.tokenUsage.daily.map((d) => d.cost))}
+                  />
+                  <div className="flex justify-between mt-2">
+                    <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                      {new Date(analytics.tokenUsage.daily[0].day + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                    <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                      {new Date(analytics.tokenUsage.daily[analytics.tokenUsage.daily.length - 1].day + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Two-column: By Skill + By Model */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Cost by skill */}
+              <div>
+                <p className="text-muted-foreground mb-3" style={monoStyle}>
+                  Cost by Skill
+                </p>
+                <div className="border border-border rounded-sm divide-y divide-border">
+                  {analytics.tokenUsage.bySkill.map((s) => {
+                    const pct = totals.cost > 0 ? (s.cost / totals.cost) * 100 : 0;
+                    return (
+                      <div key={s.skill} className="px-4 py-3 flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium truncate">{s.skill}</span>
+                            <span className="text-xs text-muted-foreground shrink-0 ml-2">
+                              ${s.cost.toFixed(4)}
+                            </span>
+                          </div>
+                          <div className="h-1 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary/60 rounded-full"
+                              style={{ width: `${Math.max(pct, 1)}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                              {s.calls} calls
+                            </span>
+                            <span className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                              {formatTokens(s.inputTokens + s.outputTokens)} tokens
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Cost by model */}
+              <div>
+                <p className="text-muted-foreground mb-3" style={monoStyle}>
+                  Cost by Model
+                </p>
+                <div className="border border-border rounded-sm divide-y divide-border">
+                  {analytics.tokenUsage.byModel.map((m) => {
+                    const pct = totals.cost > 0 ? (m.cost / totals.cost) * 100 : 0;
+                    return (
+                      <div key={m.model} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">{m.model}</span>
+                          <span className="text-xs text-muted-foreground">${m.cost.toFixed(4)}</span>
+                        </div>
+                        <div className="h-1 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary/60 rounded-full"
+                            style={{ width: `${Math.max(pct, 1)}%` }}
+                          />
+                        </div>
+                        <span className="text-muted-foreground mt-1 block" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                          {m.calls} calls · {pct.toFixed(1)}% of total
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Profile Versions & Resumes ──────────────────── */}
+          {analytics.versions.length > 0 && (
+            <section className="border-b border-border py-10 scroll-reveal" style={{ "--reveal-delay": "0.06s" } as React.CSSProperties}>
+              <div className="flex items-center justify-between mb-6">
+                <p className="text-muted-foreground" style={monoStyle}>
+                  Profile Versions · Resume Generation History
+                </p>
+                <a
+                  href="/versions"
+                  className="text-primary flex items-center gap-1 transition-opacity hover:opacity-70"
+                  style={monoStyle}
+                >
+                  View all
+                  <ChevronRight className="w-3 h-3" />
+                </a>
+              </div>
+
+              <div className="border border-border rounded-sm divide-y divide-border">
+                {analytics.versions.slice(0, 10).map((v) => (
+                  <div key={v.id} className="px-4 py-3 flex items-center gap-4">
+                    <div
+                      className="w-9 h-9 rounded-sm flex items-center justify-center shrink-0 bg-primary/8 text-primary font-bold"
+                      style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1rem" }}
+                    >
+                      {v.job.company[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm truncate">{v.job.title}</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                          <Target className="w-2.5 h-2.5" />
+                          {v.score}%
+                        </span>
+                        {v.delta !== null && v.delta > 0 && (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            +{v.delta.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-muted-foreground">{v.job.company}</span>
+                        <span className="text-xs text-muted-foreground">
+                          · {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                        {v.resumes.length > 0 && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+                            · <FileText className="w-2.5 h-2.5" /> {v.resumes.length} resume{v.resumes.length !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {v.resumes.map((r) => (
+                        <Badge key={r.id} variant="secondary" className="text-[10px] rounded-sm px-1.5">
+                          {r.format.toUpperCase()}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
       )}
 
       {/* ── Two-column: Jobs + Skills ─────────────────────── */}

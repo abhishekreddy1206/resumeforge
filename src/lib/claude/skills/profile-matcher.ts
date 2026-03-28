@@ -39,7 +39,8 @@ export async function matchProfileToJob(
   profile: Record<string, any>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   jobAnalysis: Record<string, any>,
-  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>
+  terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>,
+  options?: { model?: string }
 ): Promise<MatchResult> {
   // Cap terminology map to keep prompt size manageable
   const trimmedTermMap = terminologyMap?.slice(0, 15);
@@ -93,5 +94,5 @@ Return ONLY valid JSON:
   "resumeTips": [{"priority": 1, "action": "Reword cloud infrastructure bullets to use 'Kubernetes' where container work applies", "impact": "high", "grounded": true}],
   "skillsToHighlight": ["Python", "React", "AWS", "Docker"],
   "verdictSummary": "Strong technical match but missing management experience. Focus resume on system design and team leadership moments."
-}`);
+}`, { skill: "profile-matcher", model: options?.model });
 }

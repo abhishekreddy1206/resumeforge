@@ -47,5 +47,5 @@ Return JSON:
 If the user asked a question without requesting changes, return:
 {
   "reply": "Your answer here"
-}`, { timeoutMs: 240_000 });
+}`, { timeoutMs: 600_000, skill: "profile-editor" });
 }

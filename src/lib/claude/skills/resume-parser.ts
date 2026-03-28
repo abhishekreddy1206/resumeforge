@@ -87,5 +87,5 @@ Schema:
 Extract all skills mentioned (explicit + implicit from context). For experiences, extract skills used even if not listed.
 
 Resume:
-${text}`);
+${text}`, { skill: "resume-parser" });
 }

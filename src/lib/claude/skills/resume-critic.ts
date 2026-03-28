@@ -40,7 +40,8 @@ export interface ResumeCritique {
 export async function critiqueResume(
   resume: ResumeData,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  jobAnalysis: Record<string, any>
+  jobAnalysis: Record<string, any>,
+  options?: { model?: string }
 ): Promise<ResumeCritique> {
   return askJson<ResumeCritique>(`You are an expert resume reviewer. Critique this resume against the target job from multiple perspectives.
 
@@ -88,5 +89,5 @@ Resume content:
 ${JSON.stringify(resume)}
 
 Target Job:
-${JSON.stringify(jobAnalysis)}`, { timeoutMs: 300_000 });
+${JSON.stringify(jobAnalysis)}`, { timeoutMs: 600_000, skill: "resume-critic", model: options?.model });
 }

@@ -44,7 +44,7 @@ Return ONLY a JSON object in this exact format:
 
 Text to parse:
 ${text.slice(0, 5000)}
-`);
+`, { skill: "certification-parser", model: "haiku" });
 
   return result.certifications || [];
 }

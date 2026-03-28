@@ -1,6 +1,6 @@
 import { spawn, execSync } from "child_process";
 
-const DEFAULT_TIMEOUT_MS = 180_000; // 3 minutes
+const DEFAULT_TIMEOUT_MS = 480_000; // 8 minutes
 const MAX_TIMEOUT_MS = 600_000; // 10 minutes
 
 // Resolve the full path to claude CLI at startup so spawned subprocesses can find it
@@ -21,6 +21,12 @@ const log = {
     console.warn(`[claude-client] WARN: ${msg}`, data ? JSON.stringify(data, null, 2) : ""),
 };
 
+export interface AskOptions {
+  timeoutMs?: number;
+  model?: string;
+  skill?: string;
+}
+
 /**
  * Build a clean env for the claude subprocess.
  * Strips ANTHROPIC_API_KEY so the CLI uses the Claude Code subscription
@@ -30,6 +36,45 @@ function buildClaudeEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
   return env;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface CLIEnvelope {
+  result?: string;
+  duration_ms?: number;
+  total_cost_usd?: number;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  modelUsage?: Record<string, unknown>;
+}
+
+/**
+ * Fire-and-forget token usage logging to SQLite.
+ * Uses dynamic import to avoid circular dependency with db module.
+ */
+async function logTokenUsage(skill: string, envelope: CLIEnvelope): Promise<void> {
+  const { prisma } = await import("@/lib/db");
+  const usage = envelope.usage ?? {};
+  const modelName = envelope.modelUsage
+    ? Object.keys(envelope.modelUsage)[0] ?? "unknown"
+    : "unknown";
+
+  await prisma.tokenUsage.create({
+    data: {
+      skill,
+      model: modelName,
+      inputTokens: usage.input_tokens ?? 0,
+      outputTokens: usage.output_tokens ?? 0,
+      cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+      cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+      costUsd: envelope.total_cost_usd ?? 0,
+      durationMs: envelope.duration_ms ?? 0,
+    },
+  });
 }
 
 export function extractJson(text: string): Record<string, unknown> {
@@ -104,17 +149,19 @@ function repairJson(raw: string): Record<string, unknown> | null {
 /**
  * Send a prompt to Claude via the Claude Code CLI (`claude -p`).
  * Uses your Claude Code subscription — no API credits needed.
+ * Returns the text response; token usage is logged to SQLite automatically.
  */
-export async function ask(prompt: string, options?: { timeoutMs?: number }): Promise<string> {
+export async function ask(prompt: string, options?: AskOptions): Promise<string> {
   const timeoutMs = Math.min(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+  const model = options?.model ?? "sonnet";
   const promptPreview = prompt.slice(0, 100).replace(/\n/g, " ");
-  log.info(`Sending prompt (${prompt.length} chars): "${promptPreview}..."`);
+  log.info(`Sending prompt (${prompt.length} chars, model=${model}): "${promptPreview}..."`);
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
     const proc = spawn(
       CLAUDE_PATH,
-      ["-p", "--output-format", "text", "--no-session-persistence", "--model", "sonnet"],
+      ["-p", "--output-format", "json", "--no-session-persistence", "--model", model],
       {
         stdio: ["pipe", "pipe", "pipe"],
         env: buildClaudeEnv(),
@@ -168,8 +215,28 @@ export async function ask(prompt: string, options?: { timeoutMs?: number }): Pro
         return;
       }
 
-      log.info(`Claude responded (${stdout.length} chars, ${elapsed}ms)`);
-      resolve(stdout.trim());
+      // Parse JSON envelope from CLI output
+      let result: string;
+      try {
+        const envelope: CLIEnvelope = JSON.parse(stdout);
+        result = envelope.result ?? stdout.trim();
+
+        const usage = envelope.usage;
+        log.info(`Claude responded (model=${model}, ${elapsed}ms, in=${usage?.input_tokens ?? "?"}tok, out=${usage?.output_tokens ?? "?"}tok, cost=$${envelope.total_cost_usd?.toFixed(4) ?? "?"})`);
+
+        // Fire-and-forget token logging
+        if (options?.skill) {
+          logTokenUsage(options.skill, envelope).catch((err) =>
+            log.warn("Token logging failed", { error: (err as Error).message })
+          );
+        }
+      } catch {
+        // Fallback: if JSON parse fails, treat as raw text
+        log.warn("Failed to parse CLI JSON envelope, falling back to raw text");
+        result = stdout.trim();
+      }
+
+      resolve(result);
     });
 
     proc.stdin.write(prompt);
@@ -215,7 +282,7 @@ export const PROFILE_SCHEMA_RULES = `Preserve data shape exactly. bullets/skills
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function askJson<T = Record<string, any>>(
   prompt: string,
-  options?: { timeoutMs?: number }
+  options?: AskOptions
 ): Promise<T> {
   const text = await ask(prompt, options);
   try {

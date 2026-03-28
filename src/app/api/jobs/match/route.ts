@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     };
 
     const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{jdTerm: string; resumeSynonyms: string[]}>;
-    const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap);
+    const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap, { model: job.aiModel });
 
     // Persist the match result
     await prisma.job.update({

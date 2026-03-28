@@ -102,7 +102,8 @@ export async function POST(request: NextRequest) {
       jobData,
       message,
       safeHistory,
-      cachedMatch as Record<string, unknown> | null
+      cachedMatch as Record<string, unknown> | null,
+      { model: job.aiModel }
     );
 
     return NextResponse.json(result);

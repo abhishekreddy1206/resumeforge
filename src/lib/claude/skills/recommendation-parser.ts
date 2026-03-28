@@ -42,7 +42,7 @@ Return ONLY a JSON object in this exact format:
 
 Text to parse:
 ${text.slice(0, 8000)}
-`);
+`, { skill: "recommendation-parser", model: "haiku" });
 
   return result.recommendations || [];
 }

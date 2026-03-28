@@ -63,5 +63,5 @@ Existing Profile:
 ${JSON.stringify(compactProfile(existingProfile))}
 
 ${source.charAt(0).toUpperCase() + source.slice(1)} Data:
-${JSON.stringify(externalData)}`, { timeoutMs: 300_000 });
+${JSON.stringify(externalData)}`, { timeoutMs: 600_000, skill: "profile-enricher" });
 }

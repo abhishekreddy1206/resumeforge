@@ -89,7 +89,7 @@ export default function RootLayout({
               </div>
             </div>
             {/* Vermillion accent rule */}
-            <div className="h-0.5 bg-primary" />
+            <div className="h-0.5 bg-primary nav-accent" />
           </nav>
           {/* Mobile nav row — sticks below the header */}
           <div className="sticky top-14 sm:top-16 z-40 bg-background border-b border-border md:hidden">

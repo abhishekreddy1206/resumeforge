@@ -17,7 +17,8 @@ export async function generateTailoredResume(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   profile: Record<string, any>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  jobAnalysis: Record<string, any>
+  jobAnalysis: Record<string, any>,
+  options?: { model?: string }
 ) {
   return askJson<ResumeData>(`You are an expert ATS-optimized resume writer. Given the candidate's profile and target job, create a tailored resume.
 
@@ -43,7 +44,7 @@ AI FINGERPRINT AVOIDANCE:
 ${AI_FINGERPRINT_BANNED}
 
 SUMMARY SECTION:
-3-4 sentences max. Name the target role, lead with years + domain, include 3-4 key JD keywords naturally.
+3-4 sentences max. Lead with years of experience + domain expertise. Weave in 3-4 key JD keywords naturally. Do NOT name the specific company or state you are applying for a specific role — keep the summary professional and broadly applicable so it reads like a confident self-description, not a cover letter.
 
 SKILLS SECTION:
 Group by category (Languages, Frameworks, Tools, Databases, Cloud). List JD-required skills first. Remove irrelevant skills.
@@ -81,5 +82,5 @@ Candidate Profile:
 ${JSON.stringify(compactProfile(profile))}
 
 Target Job:
-${JSON.stringify(jobAnalysis)}`, { timeoutMs: 300_000 });
+${JSON.stringify(jobAnalysis)}`, { timeoutMs: 600_000, skill: "resume-writer", model: options?.model });
 }
