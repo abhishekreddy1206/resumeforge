@@ -1,6 +1,6 @@
 # ResumeForge
 
-AI-powered resume builder for software engineers. Upload your resume, add target jobs, and generate perfectly tailored, ATS-optimized resumes in PDF, DOCX, or LaTeX format.
+AI-powered resume builder for software engineers. Upload your resume, add target jobs, and generate perfectly tailored, ATS-optimized resumes in PDF or DOCX format.
 
 ## Features
 
@@ -23,7 +23,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Top Matches** — Dedicated view of jobs where your profile scores above 75%, ranked by compatibility.
 - **Cross-Job Gap Analysis** — Aggregate gaps and leverage scores across all matched jobs to identify which skills to develop for maximum impact.
 - **Experience Discovery** — AI generates targeted questions based on your matched job gaps to surface forgotten or underrepresented experiences in your profile.
-- **Multiple Formats** — Export as PDF (styled with react-pdf), DOCX (ATS-safe formatting with tab stops, no tables), or LaTeX (high-quality typesetting).
+- **Multiple Formats** — Export as PDF (styled with react-pdf) or DOCX (ATS-safe formatting with tab stops, no tables).
+- **Token Usage Analytics** — Track AI call costs, token counts, and per-skill breakdowns across the full optimization history.
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
 
 ## Tech Stack
@@ -31,14 +32,13 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 16 (App Router, TypeScript) |
-| AI | Claude API via Anthropic SDK (`claude-sonnet-4-6`) |
+| AI | Claude Code CLI subprocess (`claude -p`) |
 | Database | SQLite via Prisma |
 | UI | Tailwind CSS + shadcn/ui |
 | PDF Parsing | pdf-parse |
 | DOCX Parsing | mammoth |
 | PDF Generation | @react-pdf/renderer |
 | DOCX Generation | docx |
-| LaTeX Generation | string templating (outputs `.tex`) |
 | Web Scraping | cheerio (job URLs), GitHub API, StackOverflow API |
 
 ## Quick Start
@@ -64,9 +64,10 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for all AI features |
 | `DATABASE_URL` | Yes | SQLite path (default: `file:./prisma/dev.db`) |
 | `GITHUB_TOKEN` | No | GitHub personal access token for higher API rate limits |
+
+AI features run through the **Claude Code CLI** (`claude -p`) as a subprocess. The CLI uses your Claude Code subscription directly — no `ANTHROPIC_API_KEY` is needed.
 
 ## Project Structure
 
@@ -107,10 +108,11 @@ src/
 │       ├── skills/
 │       │   ├── route.ts            # Skills listing
 │       │   └── chat/               # Conversational skills editor (POST + apply)
+│       ├── analytics/              # Token usage and cost analytics
 │       └── chats/                  # Chat session CRUD (list/get/delete by id)
 ├── lib/
 │   ├── claude/                     # AI modules
-│   │   ├── client.ts              # Anthropic SDK wrapper (ask / askJson helpers)
+│   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
 │   │   ├── index.ts               # Re-exports all AI modules
 │   │   └── skills/
 │   │       ├── resume-parser.ts   # Parse resume text → structured data
@@ -134,8 +136,7 @@ src/
 │   │   └── web.ts                 # Job URL scraping, GitHub API, StackOverflow API
 │   ├── generators/
 │   │   ├── pdf.tsx                # Styled PDF resume generation
-│   │   ├── docx.ts               # ATS-safe DOCX resume generation
-│   │   └── latex.ts              # LaTeX resume generation (outputs .tex)
+│   │   └── docx.ts               # ATS-safe DOCX resume generation
 │   └── db.ts                      # Prisma client singleton
 ├── components/
 │   ├── nav-links.tsx              # App navigation
@@ -143,6 +144,8 @@ src/
 │   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
 │   ├── skills-chat-panel.tsx      # Conversational skills editor UI
 │   ├── diff-view.tsx              # Side-by-side diff view for profile changes
+│   ├── theme-provider.tsx         # Dark/light theme context
+│   ├── theme-toggle.tsx           # Theme switcher button
 │   └── ui/                        # shadcn/ui components
 └── generated/prisma/               # Prisma generated client
 ```
@@ -182,11 +185,17 @@ import { yourModuleFunction } from "@/lib/claude";
 
 | Function | Returns | Use for |
 |----------|---------|---------|
-| `ask(prompt)` | `string` | Free-form text responses |
-| `askJson(prompt)` | `Record<string, unknown>` | Structured JSON responses (auto-extracts from markdown code blocks) |
+| `ask(prompt, options?)` | `string` | Free-form text responses |
+| `askJson(prompt, options?)` | `T` (generic) | Structured JSON responses (auto-extracts from markdown code blocks) |
 | `extractJson(text)` | `Record<string, unknown>` | Manual JSON extraction from a string |
+| `compactProfile(profile)` | `Record<string, unknown>` | Strip Prisma metadata from profile objects before sending to Claude |
 
-All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC_API_KEY` in the environment.
+All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CLI uses your Claude Code subscription — no `ANTHROPIC_API_KEY` is required or passed to the subprocess. Token usage (tokens, cost, duration) is automatically logged to the `TokenUsage` table after each call when a `skill` name is provided in options.
+
+`AskOptions`:
+- `timeoutMs` — override the default 8-minute timeout (max 10 minutes)
+- `model` — Claude model string (default: `"sonnet"`)
+- `skill` — skill name for token usage logging
 
 ## Data Models
 
@@ -199,7 +208,8 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, applied status with timestamp |
+| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, applied status with timestamp, AI model selection |
+| `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
 | `Resume` | Generated resume record with file path, format, and optional profile version link |
@@ -214,5 +224,5 @@ All helpers use `claude-sonnet-4-6` via the Anthropic SDK and require `ANTHROPIC
 6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
 7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
 8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
-9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX/LaTeX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
+9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
 10. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
