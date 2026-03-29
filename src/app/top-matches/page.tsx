@@ -48,6 +48,111 @@ const monoStyle: React.CSSProperties = {
   fontWeight: 500,
 };
 
+function JobCard({ job, score, idx, togglingId, toggleApplied }: {
+  job: Job; score: number; idx: number;
+  togglingId: string | null;
+  toggleApplied: (id: string, current: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "border border-border rounded-sm transition-colors hover:bg-accent/10 scroll-reveal",
+        job.applied && "bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/30"
+      )}
+      style={{ "--reveal-delay": `${idx * 0.05}s` } as React.CSSProperties}
+    >
+      <div className="p-4 sm:p-5 flex items-center gap-4">
+        <div
+          className="w-10 h-10 rounded-sm flex items-center justify-center shrink-0 bg-primary/8 text-primary font-bold"
+          style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.1rem" }}
+        >
+          {(job.company || job.title)[0]?.toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm truncate">{job.title}</span>
+            <ScoreBadge score={score} />
+            {job.sponsorship === "available" && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
+              </Badge>
+            )}
+            {job.sponsorship === "unavailable" && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
+                <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
+              </Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+            <span>{job.company}</span>
+            {job.applied && job.appliedAt && (
+              <span className="text-emerald-600 dark:text-emerald-400">
+                · Applied {new Date(job.appliedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {job.resumes.length > 0 && (() => {
+            const latest = job.resumes[0];
+            const isPdf = latest.format === "pdf";
+            return (
+              <>
+                {isPdf && (
+                  <a href={`/api/resume/download/${latest.id}?inline=1`} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
+                      <Eye className="w-3 h-3" />
+                      <span className="hidden sm:inline">View</span>
+                    </Button>
+                  </a>
+                )}
+                <a href={`/api/resume/download/${latest.id}`} download className="inline-flex">
+                  <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
+                    <Download className="w-3 h-3" />
+                    <span className="hidden sm:inline">Download</span>
+                  </Button>
+                </a>
+                {job.resumes.length > 1 && (
+                  <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                    <FileText className="w-2.5 h-2.5 inline mr-0.5" />
+                    {job.resumes.length}
+                  </span>
+                )}
+              </>
+            );
+          })()}
+          {job.url && (
+            <a href={job.url} target="_blank" rel="noopener noreferrer" className="inline-flex">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
+                <ExternalLink className="w-3 h-3" />
+                <span className="hidden sm:inline">Apply</span>
+              </Button>
+            </a>
+          )}
+          <Button
+            variant={job.applied ? "default" : "outline"}
+            size="sm"
+            className={cn("gap-1.5 text-xs h-8", job.applied && "bg-emerald-600 hover:bg-emerald-700 text-white")}
+            onClick={() => toggleApplied(job.id, job.applied)}
+            disabled={togglingId === job.id}
+          >
+            {togglingId === job.id ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : job.applied ? (
+              <CheckCircle2 className="w-3 h-3" />
+            ) : (
+              <Circle className="w-3 h-3" />
+            )}
+            <span className="hidden sm:inline">
+              {job.applied ? "Applied" : "Mark Applied"}
+            </span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getLatestScore(job: Job): number | null {
   if (job.profileVersions && job.profileVersions.length > 0) {
     return job.profileVersions[0].score;
@@ -141,13 +246,19 @@ export default function TopMatchesPage() {
     }
   }
 
-  // Filter to jobs with score > 75, sorted by date added (newest first)
-  const topJobs = jobs
+  // All scored jobs (>= 75), split into active (last 30 days) and applied (any time)
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+  const allScoredJobs = jobs
     .map((job) => ({ job, score: getLatestScore(job) }))
     .filter((item): item is { job: Job; score: number } => item.score !== null && item.score >= 75)
     .sort((a, b) => new Date(b.job.createdAt).getTime() - new Date(a.job.createdAt).getTime());
 
-  const appliedCount = topJobs.filter((t) => t.job.applied).length;
+  const activeJobs = allScoredJobs.filter(
+    (t) => !t.job.applied && new Date(t.job.createdAt) >= oneMonthAgo
+  );
+  const appliedJobs = allScoredJobs.filter((t) => t.job.applied);
 
   if (loading) return <PageSkeleton />;
 
@@ -174,7 +285,7 @@ export default function TopMatchesPage() {
         </p>
       </section>
 
-      {topJobs.length === 0 ? (
+      {activeJobs.length === 0 && appliedJobs.length === 0 ? (
         <section className="pt-16 pb-20 text-center anim-fade-up">
           <Trophy className="w-10 h-10 mx-auto text-muted-foreground/30 mb-4" />
           <p
@@ -196,134 +307,37 @@ export default function TopMatchesPage() {
         <section className="pt-8 anim-fade-up-2">
           <div className="flex items-center justify-between mb-5">
             <p className="text-muted-foreground" style={monoStyle}>
-              {topJobs.length} position{topJobs.length !== 1 ? "s" : ""}
-              {appliedCount > 0 && ` · ${appliedCount} applied`}
+              {activeJobs.length} match{activeJobs.length !== 1 ? "es" : ""}
+              {appliedJobs.length > 0 && ` · ${appliedJobs.length} applied`}
+              {" · last 30 days"}
             </p>
           </div>
 
+          {/* Active (non-applied) jobs */}
           <div className="space-y-2" ref={listRef}>
-            {topJobs.map(({ job, score }, idx) => (
-              <div
-                key={job.id}
-                className={cn(
-                  "border border-border rounded-sm transition-colors hover:bg-accent/10 scroll-reveal",
-                  job.applied && "bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/30"
-                )}
-                style={{ "--reveal-delay": `${idx * 0.05}s` } as React.CSSProperties}
-              >
-                <div className="p-4 sm:p-5 flex items-center gap-4">
-                  {/* Company avatar */}
-                  <div
-                    className="w-10 h-10 rounded-sm flex items-center justify-center shrink-0 bg-primary/8 text-primary font-bold"
-                    style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontSize: "1.1rem" }}
-                  >
-                    {(job.company || job.title)[0]?.toUpperCase()}
-                  </div>
-
-                  {/* Job info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm truncate">{job.title}</span>
-                      <ScoreBadge score={score} />
-                      {job.sponsorship === "available" && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
-                          <ShieldCheck className="w-2.5 h-2.5" /> Sponsors
-                        </Badge>
-                      )}
-                      {job.sponsorship === "unavailable" && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
-                          <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                      <span>{job.company}</span>
-                      {job.applied && job.appliedAt && (
-                        <span className="text-emerald-600 dark:text-emerald-400">
-                          · Applied {new Date(job.appliedAt).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    {job.resumes.length > 0 && (() => {
-                      const latest = job.resumes[0];
-                      const isPdf = latest.format === "pdf";
-                      return (
-                        <>
-                          {isPdf && (
-                            <a
-                              href={`/api/resume/download/${latest.id}?inline=1`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex"
-                            >
-                              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
-                                <Eye className="w-3 h-3" />
-                                <span className="hidden sm:inline">View</span>
-                              </Button>
-                            </a>
-                          )}
-                          <a
-                            href={`/api/resume/download/${latest.id}`}
-                            download
-                            className="inline-flex"
-                          >
-                            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
-                              <Download className="w-3 h-3" />
-                              <span className="hidden sm:inline">Download</span>
-                            </Button>
-                          </a>
-                          {job.resumes.length > 1 && (
-                            <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                              <FileText className="w-2.5 h-2.5 inline mr-0.5" />
-                              {job.resumes.length}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                    {job.url && (
-                      <a
-                        href={job.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex"
-                      >
-                        <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8">
-                          <ExternalLink className="w-3 h-3" />
-                          <span className="hidden sm:inline">Apply</span>
-                        </Button>
-                      </a>
-                    )}
-                    <Button
-                      variant={job.applied ? "default" : "outline"}
-                      size="sm"
-                      className={cn(
-                        "gap-1.5 text-xs h-8",
-                        job.applied && "bg-emerald-600 hover:bg-emerald-700 text-white"
-                      )}
-                      onClick={() => toggleApplied(job.id, job.applied)}
-                      disabled={togglingId === job.id}
-                    >
-                      {togglingId === job.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : job.applied ? (
-                        <CheckCircle2 className="w-3 h-3" />
-                      ) : (
-                        <Circle className="w-3 h-3" />
-                      )}
-                      <span className="hidden sm:inline">
-                        {job.applied ? "Applied" : "Mark Applied"}
-                      </span>
-                    </Button>
-                  </div>
-                </div>
-              </div>
+            {activeJobs.map(({ job, score }, idx) => (
+              <JobCard key={job.id} job={job} score={score} idx={idx} togglingId={togglingId} toggleApplied={toggleApplied} />
             ))}
           </div>
+
+          {/* Applied jobs — separate section at bottom */}
+          {appliedJobs.length > 0 && (
+            <>
+              <div className="flex items-center gap-3 mt-10 mb-4">
+                <div className="h-px flex-1 bg-border" />
+                <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
+                  <CheckCircle2 className="w-3 h-3 inline mr-1 text-emerald-600 dark:text-emerald-400" />
+                  Applied · {appliedJobs.length}
+                </p>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <div className="space-y-2 opacity-75">
+                {appliedJobs.map(({ job, score }, idx) => (
+                  <JobCard key={job.id} job={job} score={score} idx={idx} togglingId={togglingId} toggleApplied={toggleApplied} />
+                ))}
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>

@@ -10,6 +10,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +69,7 @@ import {
   Cpu,
   CheckCircle2,
   Circle,
+  Search,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
@@ -494,9 +496,9 @@ function MatchPanel({
             />
           </div>
           <div className="flex flex-wrap gap-1 overflow-hidden">
-            {breakdown.directMatches.map((s) => (
+            {breakdown.directMatches.map((s, i) => (
               <span
-                key={s}
+                key={`${s}-${i}`}
                 className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/40 px-1.5 py-0.5 rounded-sm truncate max-w-full"
               >
                 {s}
@@ -576,8 +578,8 @@ function MatchPanel({
           </div>
           {breakdown.gaps.length > 0 ? (
             <ul className="space-y-1.5 overflow-hidden">
-              {breakdown.gaps.map((g) => (
-                <li key={g} className="text-[11px] text-muted-foreground leading-snug truncate" title={g}>
+              {breakdown.gaps.map((g, i) => (
+                <li key={`${g}-${i}`} className="text-[11px] text-muted-foreground leading-snug truncate" title={g}>
                   <span className="text-red-400 dark:text-red-500 mr-1">&mdash;</span>{g}
                 </li>
               ))}
@@ -1150,7 +1152,7 @@ function ExpandedJobDetail({
   );
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 30;
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -1172,6 +1174,7 @@ export default function JobsPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [versionSavedForJob, setVersionSavedForJob] = useState<string | null>(null);
   const [togglingApplied, setTogglingApplied] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [autoApplyTips, setAutoApplyTips] = useState(false);
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -1629,7 +1632,18 @@ export default function JobsPage() {
     return null;
   }
 
-  const sortedJobs = [...jobs].sort((a, b) => {
+  const filteredJobs = searchQuery.trim()
+    ? jobs.filter((j) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          j.title.toLowerCase().includes(q) ||
+          j.company.toLowerCase().includes(q) ||
+          (j.skills && j.skills.toLowerCase().includes(q))
+        );
+      })
+    : jobs;
+
+  const sortedJobs = [...filteredJobs].sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
     switch (sortField) {
       case "title":
@@ -1829,8 +1843,26 @@ export default function JobsPage() {
             <p className="text-muted-foreground" style={monoStyle}>
               Saved Jobs · {totalJobs} position{totalJobs !== 1 ? "s" : ""}
               {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
+              {searchQuery.trim() && ` · ${filteredJobs.length} shown`}
             </p>
             <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search jobs..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8 w-[180px] pl-8 pr-8 text-xs"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
               <Button
                 variant={hideApplied ? "default" : "outline"}
                 size="sm"

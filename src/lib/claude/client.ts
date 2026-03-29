@@ -219,7 +219,7 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
       let result: string;
       try {
         const envelope: CLIEnvelope = JSON.parse(stdout);
-        result = envelope.result ?? stdout.trim();
+        result = envelope.result || stdout.trim();
 
         const usage = envelope.usage;
         log.info(`Claude responded (model=${model}, ${elapsed}ms, in=${usage?.input_tokens ?? "?"}tok, out=${usage?.output_tokens ?? "?"}tok, cost=$${envelope.total_cost_usd?.toFixed(4) ?? "?"})`);
