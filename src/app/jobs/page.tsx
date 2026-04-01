@@ -1164,7 +1164,7 @@ export default function JobsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [jobUrls, setJobUrls] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [selectedModel, setSelectedModel] = useState("sonnet");
+  const [selectedModel, setSelectedModel] = useState("haiku");
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [matchResults, setMatchResults] = useState<
     Record<string, MatchResult>
@@ -1381,7 +1381,13 @@ export default function JobsPage() {
   async function handleRetryAnalysis(job: Job) {
     setRetryingJobs((prev) => ({ ...prev, [job.id]: true }));
     try {
-      // Re-submit the job description for analysis by deleting and re-creating
+      // Delete the failed job first so the re-submit doesn't get a duplicate conflict
+      await fetch("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [job.id] }),
+      });
+      // Re-submit the job description for analysis
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1389,15 +1395,8 @@ export default function JobsPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        // If duplicate, that's fine — the original still exists
-        if (!err.duplicate) throw new Error(err.error);
+        throw new Error(err.error);
       }
-      // Delete the failed job
-      await fetch("/api/jobs", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [job.id] }),
-      });
       toast.success("Re-analyzing job...");
       await fetchJobs(page);
     } catch (err) {
@@ -2067,7 +2066,7 @@ export default function JobsPage() {
                             <CheckCircle2 className="w-2.5 h-2.5" /> Applied
                           </Badge>
                         )}
-                        {job.aiModel && job.aiModel !== "sonnet" && (
+                        {job.aiModel && job.aiModel !== "haiku" && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
                             <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
                           </Badge>
@@ -2260,7 +2259,7 @@ export default function JobsPage() {
                                   <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
                                 </Badge>
                               )}
-                              {job.aiModel && job.aiModel !== "sonnet" && (
+                              {job.aiModel && job.aiModel !== "haiku" && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
                                   <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
                                 </Badge>

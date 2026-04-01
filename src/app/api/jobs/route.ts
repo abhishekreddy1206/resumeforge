@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
         atsKeywords: null,
         seniority: null,
         sponsorship: "unspecified",
-        aiModel: aiModel || "sonnet",
+        aiModel: aiModel || "haiku",
       },
     });
 
