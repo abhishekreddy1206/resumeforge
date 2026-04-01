@@ -106,38 +106,45 @@ export function extractJson(text: string): Record<string, unknown> {
 
 /**
  * Attempt to repair truncated JSON (e.g., unterminated strings).
+ * Uses a stack-based approach to properly track nesting depth.
  * Returns parsed object on success, null on failure.
  */
 function repairJson(raw: string): Record<string, unknown> | null {
   let s = raw.trim();
 
-  // If string ends abruptly inside a JSON string value, close it
-  // Count unescaped quotes to see if we're inside a string
+  // Track nesting with a stack for accurate repair
+  const stack: string[] = [];
   let inString = false;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\" && inString) {
-      i++; // skip escaped char
-      continue;
+  let i = 0;
+
+  while (i < s.length) {
+    const ch = s[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < s.length) {
+        i += 2; // skip escaped char
+        continue;
+      }
+      if (ch === '"') inString = false;
+    } else {
+      if (ch === '"') inString = true;
+      else if (ch === "{") stack.push("}");
+      else if (ch === "[") stack.push("]");
+      else if (ch === "}" || ch === "]") stack.pop();
     }
-    if (s[i] === '"') inString = !inString;
+    i++;
   }
 
+  // Close unterminated string
   if (inString) {
-    // We're inside an unterminated string — close it
-    // Remove any trailing incomplete escape sequence
     s = s.replace(/\\$/, "");
     s += '"';
   }
 
-  // Close any open braces/brackets
-  const openBraces = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
-  const openBrackets = (s.match(/\[/g) || []).length - (s.match(/\]/g) || []).length;
+  // Remove trailing comma or colon (incomplete key-value)
+  s = s.replace(/[,:\s]+$/, "");
 
-  // Remove trailing comma before we close
-  s = s.replace(/,\s*$/, "");
-
-  for (let i = 0; i < openBrackets; i++) s += "]";
-  for (let i = 0; i < openBraces; i++) s += "}";
+  // Close all open brackets/braces in reverse order
+  while (stack.length > 0) s += stack.pop();
 
   try {
     return JSON.parse(s);
@@ -284,14 +291,25 @@ export async function askJson<T = Record<string, any>>(
   prompt: string,
   options?: AskOptions
 ): Promise<T> {
-  const text = await ask(prompt, options);
+  const jsonEnforcement = "\n\nCRITICAL: Your response MUST be a single valid JSON object. No markdown, no commentary, no code fences, no text before or after the JSON. Start with { and end with }.";
+  const text = await ask(prompt + jsonEnforcement, options);
   try {
     return extractJson(text) as T;
-  } catch (err) {
-    log.error("JSON parsing failed", {
-      error: (err as Error).message,
-      responsePreview: text.slice(0, 500),
+  } catch (firstErr) {
+    // Retry once: send the failed response back and ask for just JSON
+    log.warn("JSON parse failed, retrying with repair prompt", {
+      responsePreview: text.slice(0, 300),
     });
-    throw err;
+    const repairPrompt = `Your previous response was not valid JSON. Here is what you returned:\n\n${text.slice(0, 4000)}\n\nConvert this into the exact JSON object that was requested. Return ONLY the JSON object — no markdown, no explanation. Start with { and end with }.`;
+    const retryText = await ask(repairPrompt, options);
+    try {
+      return extractJson(retryText) as T;
+    } catch (retryErr) {
+      log.error("JSON parsing failed after retry", {
+        error: (retryErr as Error).message,
+        responsePreview: retryText.slice(0, 500),
+      });
+      throw retryErr;
+    }
   }
 }

@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
       matchResult as Record<string, unknown>,
       safeInstruction,
       safeHistory,
-      terminologyMap
+      terminologyMap,
+      { model: job.aiModel }
     );
 
     return NextResponse.json(result);

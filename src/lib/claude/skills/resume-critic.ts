@@ -76,13 +76,13 @@ Verdict: 85+→submit, 80-84→strong, 75-79→needs_work, <75→fundamental_iss
 Return ONLY valid JSON:
 
 {
-  "perspectives": [{"perspective":"string","timeSpent":"string","score":"number","strengths":"string[]","weaknesses":"string[]"}],
-  "dimensions": [{"dimension":"string","weight":"number","score":"number","feedback":"string"}],
-  "overallScore": "number",
-  "atsKeywordMatchRate": "number",
-  "aiFingerprints": "string[]",
-  "topImprovements": [{"priority":"number","change":"string","pointImpact":"number"}],
-  "verdict": "submit|strong|needs_work|fundamental_issues"
+  "perspectives": [{"perspective":"ATS Robot","timeSpent":"0s","score":85,"strengths":["..."],"weaknesses":["..."]}],
+  "dimensions": [{"dimension":"Bullet Quality","weight":0.20,"score":78,"feedback":"..."}],
+  "overallScore": 82,
+  "atsKeywordMatchRate": 71,
+  "aiFingerprints": ["delve","robust"],
+  "topImprovements": [{"priority":1,"change":"Add Kubernetes to skills section","pointImpact":3}],
+  "verdict": "strong"
 }
 
 Resume content:

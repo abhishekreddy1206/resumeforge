@@ -76,7 +76,6 @@ import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
 
 const AI_MODELS = [
   { value: "sonnet", label: "Sonnet", description: "Balanced" },
-  { value: "haiku", label: "Haiku", description: "Fast & cheap" },
   { value: "opus", label: "Opus", description: "Most capable" },
 ];
 
@@ -746,6 +745,8 @@ function ExpandedJobDetail({
   onHandleGenerateResume,
   onSetSelectedEmail,
   onSetPreviewResume,
+  onReanalyze,
+  isReanalyzing,
 }: {
   job: Job;
   match: MatchResult | undefined;
@@ -761,6 +762,8 @@ function ExpandedJobDetail({
   onHandleGenerateResume: (job: Job, format: "pdf" | "docx") => void;
   onSetSelectedEmail: (email: string) => void;
   onSetPreviewResume: (resumeId: string, job: Job) => void;
+  onReanalyze: (job: Job, model: string) => void;
+  isReanalyzing: boolean;
 }) {
   const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
   const seenIds = new Set<string>();
@@ -837,6 +840,35 @@ function ExpandedJobDetail({
                   <ExternalLink className="w-2.5 h-2.5" /> View Posting
                 </a>
               )}
+              {/* Model re-analyze selector */}
+              <span className="inline-flex items-center">
+                <Select value="" onValueChange={(m) => m && onReanalyze(job, m)}>
+                  <SelectTrigger
+                    className="h-auto px-2 py-0.5 border-border/40 shadow-none gap-1 rounded-sm bg-transparent hover:bg-muted/40 transition-colors"
+                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.55rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                    disabled={isReanalyzing}
+                  >
+                    {isReanalyzing ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-2.5 h-2.5" />
+                    )}
+                    <Cpu className="w-2.5 h-2.5 opacity-60" />
+                    {job.aiModel || "sonnet"}
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    {AI_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        <span className="flex items-center gap-2">
+                          {m.label}
+                          <span className="text-muted-foreground text-[10px]">{m.description}</span>
+                          {m.value === (job.aiModel || "sonnet") && <span className="text-[10px] text-muted-foreground">(current)</span>}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
             </div>
           </div>
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mt-1 -mr-2" onClick={() => onSetExpandedJob(null)}>
@@ -1164,7 +1196,7 @@ export default function JobsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [jobUrls, setJobUrls] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [selectedModel, setSelectedModel] = useState("haiku");
+  const [selectedModel, setSelectedModel] = useState("sonnet");
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [matchResults, setMatchResults] = useState<
     Record<string, MatchResult>
@@ -1378,29 +1410,23 @@ export default function JobsPage() {
     }
   }
 
-  async function handleRetryAnalysis(job: Job) {
+  async function handleReanalyze(job: Job, newModel?: string) {
+    const model = newModel || job.aiModel || "sonnet";
     setRetryingJobs((prev) => ({ ...prev, [job.id]: true }));
     try {
-      // Delete the failed job first so the re-submit doesn't get a duplicate conflict
-      await fetch("/api/jobs", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [job.id] }),
-      });
-      // Re-submit the job description for analysis
       const res = await fetch("/api/jobs", {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: job.description }),
+        body: JSON.stringify({ jobId: job.id, aiModel: model }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error);
       }
-      toast.success("Re-analyzing job...");
+      toast.success(`Re-analyzing with ${model}...`);
       await fetchJobs(page);
     } catch (err) {
-      toast.error(`Retry failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+      toast.error(`Re-analyze failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setRetryingJobs((prev) => ({ ...prev, [job.id]: false }));
     }
@@ -2016,7 +2042,7 @@ export default function JobsPage() {
                   {/* Card header — always visible */}
                   <div
                     className="p-4 flex items-start gap-3"
-                    onClick={() => { if (!isAnalyzing || isFailed) { if (isFailed) handleRetryAnalysis(job); else toggleExpand(job.id); } }}
+                    onClick={() => { if (!isAnalyzing || isFailed) { if (isFailed) handleReanalyze(job); else toggleExpand(job.id); } }}
                   >
                     {/* Company avatar */}
                     <div
@@ -2066,7 +2092,7 @@ export default function JobsPage() {
                             <CheckCircle2 className="w-2.5 h-2.5" /> Applied
                           </Badge>
                         )}
-                        {job.aiModel && job.aiModel !== "haiku" && (
+                        {job.aiModel && job.aiModel !== "sonnet" && (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
                             <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
                           </Badge>
@@ -2122,6 +2148,26 @@ export default function JobsPage() {
                           <MessageSquare className="w-3.5 h-3.5" />
                         </Button>
                       )}
+                      {!isAnalyzing && (
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <Select value="" onValueChange={(m) => m && handleReanalyze(job, m)}>
+                            <SelectTrigger className="h-8 w-8 p-0 border-0 shadow-none [&>svg:last-child]:hidden justify-center" title="Re-analyze with model">
+                              {retryingJobs[job.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                            </SelectTrigger>
+                            <SelectContent align="end">
+                              {AI_MODELS.map((m) => (
+                                <SelectItem key={m.value} value={m.value}>
+                                  <span className="flex items-center gap-2">
+                                    {m.label}
+                                    <span className="text-muted-foreground text-[10px]">{m.description}</span>
+                                    {m.value === (job.aiModel || "sonnet") && <span className="text-[10px] text-muted-foreground">(current)</span>}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </span>
+                      )}
                       <ChevronDown
                         className={cn(
                           "w-4 h-4 text-muted-foreground transition-transform mt-0.5",
@@ -2150,6 +2196,8 @@ export default function JobsPage() {
                           onHandleGenerateResume={handleGenerateResume}
                           onSetSelectedEmail={setSelectedEmail}
                           onSetPreviewResume={openResumePreview}
+                          onReanalyze={handleReanalyze}
+                          isReanalyzing={!!retryingJobs[job.id]}
                         />
                       )}
                     </div>
@@ -2222,7 +2270,7 @@ export default function JobsPage() {
                     <React.Fragment key={job.id}>
                     <TableRow
                       className={`group cursor-pointer ${isAnalyzing && !isFailed ? "opacity-60" : ""} ${isExpanded ? "border-b-0" : ""}`}
-                      onClick={() => { if (isFailed) handleRetryAnalysis(job); else if (!isAnalyzing) toggleExpand(job.id); }}
+                      onClick={() => { if (isFailed) handleReanalyze(job); else if (!isAnalyzing) toggleExpand(job.id); }}
                     >
                       {/* Title */}
                       <TableCell className="py-3">
@@ -2259,7 +2307,7 @@ export default function JobsPage() {
                                   <ShieldAlert className="w-2.5 h-2.5" /> No Sponsorship
                                 </Badge>
                               )}
-                              {job.aiModel && job.aiModel !== "haiku" && (
+                              {job.aiModel && job.aiModel !== "sonnet" && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5">
                                   <Cpu className="w-2.5 h-2.5" /> {job.aiModel}
                                 </Badge>
@@ -2351,7 +2399,7 @@ export default function JobsPage() {
                             variant="outline"
                             size="sm"
                             className="gap-1 text-xs h-7 text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800"
-                            onClick={() => handleRetryAnalysis(job)}
+                            onClick={() => handleReanalyze(job)}
                             disabled={retryingJobs[job.id]}
                           >
                             {retryingJobs[job.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
@@ -2377,6 +2425,25 @@ export default function JobsPage() {
                                 <MessageSquare className="w-3.5 h-3.5" />
                               </Button>
                             )}
+                            <Select
+                              value=""
+                              onValueChange={(model) => model && handleReanalyze(job, model)}
+                            >
+                              <SelectTrigger className="h-7 w-7 p-0 border-0 shadow-none [&>svg:last-child]:hidden justify-center" title="Re-analyze with model">
+                                {retryingJobs[job.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              </SelectTrigger>
+                              <SelectContent align="end">
+                                {AI_MODELS.map((m) => (
+                                  <SelectItem key={m.value} value={m.value}>
+                                    <span className="flex items-center gap-2">
+                                      {m.label}
+                                      <span className="text-muted-foreground text-[10px]">{m.description}</span>
+                                      {m.value === (job.aiModel || "sonnet") && <span className="text-[10px] text-muted-foreground">(current)</span>}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             {isExpanded ? (
                               <Button
                                 variant="ghost"
@@ -2428,6 +2495,8 @@ export default function JobsPage() {
                               onHandleGenerateResume={handleGenerateResume}
                               onSetSelectedEmail={setSelectedEmail}
                               onSetPreviewResume={openResumePreview}
+                              onReanalyze={handleReanalyze}
+                              isReanalyzing={!!retryingJobs[job.id]}
                             />
                           </TableCell>
                         </TableRow>

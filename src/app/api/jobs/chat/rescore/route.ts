@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{jdTerm: string; resumeSynonyms: string[]}>;
 
     // Only score the temporary profile — one Claude call instead of two.
-    const newMatch = await matchProfileToJob(temporaryProfile, jobAnalysis, terminologyMap);
+    const newMatch = await matchProfileToJob(temporaryProfile, jobAnalysis, terminologyMap, { model: job.aiModel });
     const newScore = newMatch.overallScore;
 
     return NextResponse.json({

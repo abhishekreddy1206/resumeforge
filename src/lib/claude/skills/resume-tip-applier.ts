@@ -62,9 +62,8 @@ RULES:
 - For certifications: highlight those matching JD requirements; omit irrelevant ones
 - For recommendations: select only those speaking to skills the job requires; omit irrelevant ones
 - Do NOT fabricate experience or skills; preserve the data shape: ${PROFILE_SCHEMA_RULES}
-- Be specific and concise in reply (3-5 sentences)
 
-Return JSON with SHORT field values (keep reply under 500 chars to avoid truncation):
+Return ONLY valid JSON (keep reply field under 500 chars):
 {
   "reply": "Brief summary of changes made",
   "updatedProfile": { /* full modified profile object */ }

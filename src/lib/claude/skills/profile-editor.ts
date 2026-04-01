@@ -38,7 +38,7 @@ RULES:
 - ${PROFILE_SCHEMA_RULES}
 - Be concise in your reply — explain what you changed in 1-2 sentences
 
-Return JSON:
+Return ONLY valid JSON:
 {
   "reply": "Brief explanation of what was changed (or answer to their question)",
   "updatedProfile": { /* full modified profile object — ONLY if changes were made */ }

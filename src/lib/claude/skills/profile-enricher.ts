@@ -46,7 +46,7 @@ RULES:
 - Do NOT fabricate experience or skills not evidenced by the data
 - Deduplicate skills (don't add "JavaScript" if "JavaScript" already exists)
 - For skills, categorize as: language, framework, tool, database, cloud, or soft
-Return the merged profile as JSON with this structure:
+Return ONLY valid JSON with this structure:
 {
   "summary": "enhanced summary incorporating new info",
   "projects": [{ "name": "...", "description": "...", "url": "...", "skills": ["..."] }],
