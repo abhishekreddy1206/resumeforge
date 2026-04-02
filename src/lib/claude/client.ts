@@ -292,16 +292,17 @@ export async function askJson<T = Record<string, any>>(
   options?: AskOptions
 ): Promise<T> {
   const jsonEnforcement = "\n\nCRITICAL: Your response MUST be a single valid JSON object. No markdown, no commentary, no code fences, no text before or after the JSON. Start with { and end with }.";
-  const text = await ask(prompt + jsonEnforcement, options);
+  const enforced = prompt + jsonEnforcement;
+  const text = await ask(enforced, options);
   try {
     return extractJson(text) as T;
   } catch (firstErr) {
-    // Retry once: send the failed response back and ask for just JSON
-    log.warn("JSON parse failed, retrying with repair prompt", {
+    // Retry once by re-running the same prompt — simpler and more reliable
+    // than asking the model to reconstruct from a truncated fragment
+    log.warn("JSON parse failed, retrying original prompt", {
       responsePreview: text.slice(0, 300),
     });
-    const repairPrompt = `Your previous response was not valid JSON. Here is what you returned:\n\n${text.slice(0, 4000)}\n\nConvert this into the exact JSON object that was requested. Return ONLY the JSON object — no markdown, no explanation. Start with { and end with }.`;
-    const retryText = await ask(repairPrompt, options);
+    const retryText = await ask(enforced, options);
     try {
       return extractJson(retryText) as T;
     } catch (retryErr) {

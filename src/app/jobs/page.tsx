@@ -747,6 +747,8 @@ function ExpandedJobDetail({
   onSetPreviewResume,
   onReanalyze,
   isReanalyzing,
+  onDeleteJob,
+  isDeletingJob,
 }: {
   job: Job;
   match: MatchResult | undefined;
@@ -764,6 +766,8 @@ function ExpandedJobDetail({
   onSetPreviewResume: (resumeId: string, job: Job) => void;
   onReanalyze: (job: Job, model: string) => void;
   isReanalyzing: boolean;
+  onDeleteJob: (job: Job) => void;
+  isDeletingJob: boolean;
 }) {
   const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
   const seenIds = new Set<string>();
@@ -871,9 +875,21 @@ function ExpandedJobDetail({
               </span>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mt-1 -mr-2" onClick={() => onSetExpandedJob(null)}>
-            <ChevronUp className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-0.5 shrink-0 -mt-1 -mr-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+              onClick={() => onDeleteJob(job)}
+              disabled={isDeletingJob}
+              title="Delete job"
+            >
+              {isDeletingJob ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onSetExpandedJob(null)}>
+              <ChevronUp className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Required skills strip */}
@@ -1206,6 +1222,7 @@ export default function JobsPage() {
   const [chatJob, setChatJob] = useState<Job | null>(null);
   const [versionSavedForJob, setVersionSavedForJob] = useState<string | null>(null);
   const [togglingApplied, setTogglingApplied] = useState<string | null>(null);
+  const [deletingJob, setDeletingJob] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [autoApplyTips, setAutoApplyTips] = useState(false);
   const [sortField, setSortField] = useState<SortField>("createdAt");
@@ -1429,6 +1446,27 @@ export default function JobsPage() {
       toast.error(`Re-analyze failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setRetryingJobs((prev) => ({ ...prev, [job.id]: false }));
+    }
+  }
+
+  async function handleDeleteJob(job: Job) {
+    if (!confirm(`Delete "${job.title}" at ${job.company}?`)) return;
+    setDeletingJob(job.id);
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [job.id] }),
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      if (expandedJob === job.id) setExpandedJob(null);
+      if (chatJob?.id === job.id) setChatOpen(false);
+      toast.success("Job deleted");
+      await fetchJobs(page);
+    } catch (err) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDeletingJob(null);
     }
   }
 
@@ -2110,8 +2148,20 @@ export default function JobsPage() {
                       </div>
                     </div>
 
-                    {/* Right side: applied toggle + chat button + chevron */}
+                    {/* Right side: delete + applied toggle + chat button + chevron */}
                     <div className="flex items-center gap-1 shrink-0">
+                      {(!isAnalyzing || isFailed) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteJob(job); }}
+                          disabled={deletingJob === job.id}
+                          title="Delete job"
+                        >
+                          {deletingJob === job.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </Button>
+                      )}
                       {!isAnalyzing && (
                         <Button
                           variant="ghost"
@@ -2198,6 +2248,8 @@ export default function JobsPage() {
                           onSetPreviewResume={openResumePreview}
                           onReanalyze={handleReanalyze}
                           isReanalyzing={!!retryingJobs[job.id]}
+                          onDeleteJob={handleDeleteJob}
+                          isDeletingJob={deletingJob === job.id}
                         />
                       )}
                     </div>
@@ -2395,22 +2447,44 @@ export default function JobsPage() {
                       {/* Actions */}
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         {isFailed ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1 text-xs h-7 text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800"
-                            onClick={() => handleReanalyze(job)}
-                            disabled={retryingJobs[job.id]}
-                          >
-                            {retryingJobs[job.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-                            Retry
-                          </Button>
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                              onClick={() => handleDeleteJob(job)}
+                              disabled={deletingJob === job.id}
+                              title="Delete job"
+                            >
+                              {deletingJob === job.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-xs h-7 text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800"
+                              onClick={() => handleReanalyze(job)}
+                              disabled={retryingJobs[job.id]}
+                            >
+                              {retryingJobs[job.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                              Retry
+                            </Button>
+                          </div>
                         ) : isAnalyzing ? (
                           <span className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
                             <Loader2 className="w-3 h-3 animate-spin" />
                           </span>
                         ) : (
                           <div className="flex items-center gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 sm:h-7 sm:w-7 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                              onClick={() => handleDeleteJob(job)}
+                              disabled={deletingJob === job.id}
+                              title="Delete job"
+                            >
+                              {deletingJob === job.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </Button>
                             {hasProfile && (
                               <Button
                                 variant={chatOpen && chatJob?.id === job.id ? "default" : "ghost"}
@@ -2497,6 +2571,8 @@ export default function JobsPage() {
                               onSetPreviewResume={openResumePreview}
                               onReanalyze={handleReanalyze}
                               isReanalyzing={!!retryingJobs[job.id]}
+                              onDeleteJob={handleDeleteJob}
+                              isDeletingJob={deletingJob === job.id}
                             />
                           </TableCell>
                         </TableRow>
