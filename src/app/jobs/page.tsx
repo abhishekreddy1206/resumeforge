@@ -70,6 +70,9 @@ import {
   CheckCircle2,
   Circle,
   Search,
+  Copy,
+  Check,
+  FileEdit,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
@@ -92,6 +95,7 @@ interface Job {
   aiModel?: string;
   applied: boolean;
   appliedAt?: string;
+  coverLetter?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string; createdAt: string }>;
   profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
@@ -727,6 +731,143 @@ function MatchPanel({
   );
 }
 
+interface CoverLetterData {
+  opening: string;
+  bodyParagraphs: Array<{ topic: string; content: string }>;
+  closing: string;
+}
+
+function CoverLetterSection({
+  job,
+  onGenerate,
+  isGenerating,
+}: {
+  job: Job;
+  onGenerate: (jobId: string) => void;
+  isGenerating: boolean;
+}) {
+  const [copied, setCopied] = React.useState(false);
+
+  const coverLetter: CoverLetterData | null = React.useMemo(() => {
+    if (!job.coverLetter) return null;
+    try {
+      return JSON.parse(job.coverLetter);
+    } catch {
+      return null;
+    }
+  }, [job.coverLetter]);
+
+  function copyToClipboard() {
+    if (!coverLetter) return;
+    const text = [
+      coverLetter.opening,
+      ...coverLetter.bodyParagraphs.map((p) => p.content),
+      coverLetter.closing,
+    ].join("\n\n");
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="px-6 mt-5">
+      <div className="section-divider mb-4" />
+      <div className="flex items-center justify-between mb-3">
+        <p
+          className="text-muted-foreground flex items-center gap-1.5"
+          style={{
+            fontFamily: "var(--font-dm-mono)",
+            fontSize: "0.6rem",
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+          }}
+        >
+          <FileEdit className="w-3 h-3" />
+          Cover Letter
+        </p>
+        <div className="flex items-center gap-1.5">
+          {coverLetter && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-xs h-7 px-2"
+              onClick={copyToClipboard}
+            >
+              {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          )}
+          <Button
+            variant={coverLetter ? "outline" : "default"}
+            size="sm"
+            className="gap-1.5 rounded-sm text-xs"
+            onClick={() => onGenerate(job.id)}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : coverLetter ? (
+              <RefreshCw className="w-3 h-3" />
+            ) : (
+              <Sparkles className="w-3 h-3" />
+            )}
+            {isGenerating ? "Generating..." : coverLetter ? "Regenerate" : "Generate"}
+          </Button>
+        </div>
+      </div>
+
+      {isGenerating && !coverLetter && (
+        <div className="anim-fade-up">
+          <div className="flex items-center gap-2 mb-1.5">
+            <p
+              className="text-primary"
+              style={{
+                fontFamily: "var(--font-dm-mono)",
+                fontSize: "0.55rem",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+              }}
+            >
+              Writing cover letter with AI
+              <span className="inline-flex ml-1 gap-px">
+                <span className="anim-dot-1">.</span>
+                <span className="anim-dot-2">.</span>
+                <span className="anim-dot-3">.</span>
+              </span>
+            </p>
+          </div>
+          <div className="h-0.5 bg-border/30 rounded-full overflow-hidden max-w-xs">
+            <div className="h-full w-2/5 bg-primary/50 rounded-full anim-progress-bar" />
+          </div>
+        </div>
+      )}
+
+      {coverLetter && (
+        <div className="rounded-sm border border-border/40 bg-muted/10 p-5 space-y-4 text-sm leading-relaxed text-foreground/90">
+          <p>{coverLetter.opening}</p>
+          {coverLetter.bodyParagraphs.map((para, i) => (
+            <div key={i}>
+              <p
+                className="text-muted-foreground mb-1"
+                style={{
+                  fontFamily: "var(--font-dm-mono)",
+                  fontSize: "0.5rem",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {para.topic}
+              </p>
+              <p>{para.content}</p>
+            </div>
+          ))}
+          <p>{coverLetter.closing}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type SortField = "title" | "company" | "atsScore" | "resumes" | "createdAt";
 type SortDir = "asc" | "desc";
 
@@ -749,6 +890,8 @@ function ExpandedJobDetail({
   isReanalyzing,
   onDeleteJob,
   isDeletingJob,
+  onGenerateCoverLetter,
+  isGeneratingCoverLetter,
 }: {
   job: Job;
   match: MatchResult | undefined;
@@ -768,6 +911,8 @@ function ExpandedJobDetail({
   isReanalyzing: boolean;
   onDeleteJob: (job: Job) => void;
   isDeletingJob: boolean;
+  onGenerateCoverLetter: (jobId: string) => void;
+  isGeneratingCoverLetter: boolean;
 }) {
   const generatingFormat = generatingFor?.startsWith(job.id + ":") ? generatingFor.split(":")[1] : null;
   const seenIds = new Set<string>();
@@ -1150,6 +1295,13 @@ function ExpandedJobDetail({
         )}
       </div>
 
+      {/* Cover Letter */}
+      <CoverLetterSection
+        job={job}
+        onGenerate={onGenerateCoverLetter}
+        isGenerating={isGeneratingCoverLetter}
+      />
+
       {/* PDF Versions — all versions as scrollable thumbnails */}
       {allResumes.filter((r) => r.format === "pdf").length > 0 && (
         <div className="px-6 mt-2 pb-6">
@@ -1223,6 +1375,7 @@ export default function JobsPage() {
   const [versionSavedForJob, setVersionSavedForJob] = useState<string | null>(null);
   const [togglingApplied, setTogglingApplied] = useState<string | null>(null);
   const [deletingJob, setDeletingJob] = useState<string | null>(null);
+  const [generatingCoverLetter, setGeneratingCoverLetter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [autoApplyTips, setAutoApplyTips] = useState(false);
   const [sortField, setSortField] = useState<SortField>("createdAt");
@@ -1467,6 +1620,27 @@ export default function JobsPage() {
       toast.error(`Delete failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setDeletingJob(null);
+    }
+  }
+
+  async function handleGenerateCoverLetter(jobId: string) {
+    setGeneratingCoverLetter(jobId);
+    try {
+      const res = await fetch("/api/coverletter/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
+      }
+      toast.success("Cover letter generated");
+      await fetchJobs(page);
+    } catch (err) {
+      toast.error(`Cover letter failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setGeneratingCoverLetter(null);
     }
   }
 
@@ -2250,6 +2424,8 @@ export default function JobsPage() {
                           isReanalyzing={!!retryingJobs[job.id]}
                           onDeleteJob={handleDeleteJob}
                           isDeletingJob={deletingJob === job.id}
+                          onGenerateCoverLetter={handleGenerateCoverLetter}
+                          isGeneratingCoverLetter={generatingCoverLetter === job.id}
                         />
                       )}
                     </div>
@@ -2573,6 +2749,8 @@ export default function JobsPage() {
                               isReanalyzing={!!retryingJobs[job.id]}
                               onDeleteJob={handleDeleteJob}
                               isDeletingJob={deletingJob === job.id}
+                          onGenerateCoverLetter={handleGenerateCoverLetter}
+                          isGeneratingCoverLetter={generatingCoverLetter === job.id}
                             />
                           </TableCell>
                         </TableRow>

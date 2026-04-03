@@ -53,3 +53,12 @@ export interface ResumeData {
     linkedinUrl?: string;
   }>;
 }
+
+export interface CoverLetterData {
+  opening: string;
+  bodyParagraphs: Array<{
+    topic: string;
+    content: string;
+  }>;
+  closing: string;
+}

@@ -282,7 +282,7 @@ export function compactProfile(profile: Record<string, any>): Record<string, any
   return strip(profile);
 }
 
-export const AI_FINGERPRINT_BANNED = `Avoid: delve,tapestry,multifaceted,pivotal,synergy,paradigm,holistic,leverage(v),utilize,facilitate,foster,robust,comprehensive,cutting-edge,innovative,dynamic,proactive,results-driven,seasoned,"proven track record","passionate about","at the intersection of". No gerund-analysis endings. Vary sentence length. Max 2 em-dashes per section.`;
+export const AI_FINGERPRINT_BANNED = `Avoid: delve,tapestry,multifaceted,pivotal,synergy,paradigm,holistic,leverage(v),utilize,facilitate,foster,robust,comprehensive,cutting-edge,innovative,dynamic,proactive,results-driven,seasoned,deeply,keen,honed,landscape,realm,spearheaded,orchestrated,"proven track record","passionate about","at the intersection of","I bring","uniquely positioned","aligns perfectly","I thrive". No gerund-analysis endings. Vary sentence length. NEVER use em dashes (—) or double hyphens (--). Use commas, periods, semicolons, or parentheses instead.`;
 
 export const PROFILE_SCHEMA_RULES = `Preserve data shape exactly. bullets/skills are string[]. category∈{language,framework,tool,database,cloud,soft}. publications:{title,publisher,date,url,doi,description}. certifications:{name,issuer,date,expiryDate,credentialId,url}. recommendations:{recommenderName,recommenderTitle,relationship,text,linkedinUrl}.`;
 

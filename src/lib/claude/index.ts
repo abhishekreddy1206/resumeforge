@@ -29,4 +29,5 @@ export type { GapAggregation, AggregatedGap, LeverageScore } from "./skills/gap-
 export type { DiscoveryResult, DiscoveryQuestion } from "./skills/experience-discoverer";
 export { parseCertifications } from "./skills/certification-parser";
 export { parseRecommendations } from "./skills/recommendation-parser";
+export { generateCoverLetter } from "./skills/cover-letter-writer";
 export { compactProfile } from "./client";
