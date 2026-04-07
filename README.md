@@ -23,6 +23,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Top Matches** — Dedicated view of jobs where your profile scores above 75%, ranked by compatibility.
 - **Cross-Job Gap Analysis** — Aggregate gaps and leverage scores across all matched jobs to identify which skills to develop for maximum impact.
 - **Experience Discovery** — AI generates targeted questions based on your matched job gaps to surface forgotten or underrepresented experiences in your profile.
+- **Cover Letter Generation** — AI writes a tailored, structured cover letter for each job, grounded in your profile and the job description.
+- **Interview Prep** — AI generates STAR+R interview stories mapped to key job requirements, plus role-specific interview tips.
 - **Multiple Formats** — Export as PDF (styled with react-pdf) or DOCX (ATS-safe formatting with tab stops, no tables).
 - **Token Usage Analytics** — Track AI call costs, token counts, and per-skill breakdowns across the full optimization history.
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
@@ -105,6 +107,10 @@ src/
 │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
 │       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
 │       ├── resume/                 # Resume generation + download + critique
+│       ├── coverletter/
+│       │   └── generate/           # Generate AI cover letter for a job
+│       ├── interview-prep/
+│       │   └── generate/           # Generate STAR+R interview stories for a job
 │       ├── skills/
 │       │   ├── route.ts            # Skills listing
 │       │   └── chat/               # Conversational skills editor (POST + apply)
@@ -129,7 +135,9 @@ src/
 │   │       ├── experience-discoverer.ts # Generate discovery questions from job gaps
 │   │       ├── gap-aggregator.ts  # Aggregate cross-job gaps and leverage scores
 │   │       ├── certification-parser.ts # AI parse of certification text
-│   │       └── recommendation-parser.ts # AI parse of recommendation text
+│   │       ├── recommendation-parser.ts # AI parse of recommendation text
+│   │       ├── cover-letter-writer.ts  # Generate tailored cover letter
+│   │       └── interview-prep.ts       # Generate STAR+R interview stories
 │   ├── parsers/
 │   │   ├── pdf.ts                 # PDF text extraction
 │   │   ├── docx.ts                # DOCX text extraction
@@ -208,7 +216,7 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, applied status with timestamp, AI model selection |
+| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, AI model selection |
 | `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
