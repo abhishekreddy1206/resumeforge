@@ -59,6 +59,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     skills: safeJsonParse(job.skills, []),
     requirements: safeJsonParse(job.requirements, []),
     atsKeywords: safeJsonParse(job.atsKeywords, {}),
+    terminologyMap: safeJsonParse(job.terminologyMap, []),
     seniority: job.seniority,
   };
 

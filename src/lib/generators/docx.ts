@@ -145,6 +145,24 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     );
   }
 
+  // ── Core Competencies ──
+  if (data.coreCompetencies && data.coreCompetencies.length > 0) {
+    children.push(sectionHeading("Core Competencies"));
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: data.coreCompetencies.join("  •  "),
+            size: 19, // 9.5pt
+            color: COLORS.secondary,
+            font: "Calibri",
+          }),
+        ],
+        spacing: { after: 60 },
+      })
+    );
+  }
+
   // ── Experience ──
   if (data.experiences && data.experiences.length > 0) {
     children.push(sectionHeading("Experience"));

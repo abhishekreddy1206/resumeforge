@@ -9,6 +9,7 @@ export interface ResumeData {
   twitter?: string;
   pinterest?: string;
   summary?: string;
+  coreCompetencies?: string[];
   experiences?: Array<{
     company: string;
     title: string;

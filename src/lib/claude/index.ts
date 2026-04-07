@@ -30,4 +30,6 @@ export type { DiscoveryResult, DiscoveryQuestion } from "./skills/experience-dis
 export { parseCertifications } from "./skills/certification-parser";
 export { parseRecommendations } from "./skills/recommendation-parser";
 export { generateCoverLetter } from "./skills/cover-letter-writer";
+export { generateInterviewPrep } from "./skills/interview-prep";
+export type { InterviewPrep, InterviewStory } from "./skills/interview-prep";
 export { compactProfile } from "./client";

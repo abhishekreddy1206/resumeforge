@@ -129,8 +129,9 @@ model Job {
   aiModel      String   @default("sonnet") // AI model for this job's pipeline (sonnet|haiku|opus)
   applied      Boolean  @default(false)
   appliedAt    DateTime?
-  coverLetter  String?  // JSON — cached generated cover letter (CoverLetterData)
-  createdAt    DateTime @default(now())
+  coverLetter    String?  // JSON — cached generated cover letter (CoverLetterData)
+  interviewPrep  String?  // JSON — cached STAR+R interview prep (InterviewPrep)
+  createdAt      DateTime @default(now())
 
   resumes         Resume[]
   profileVersions ProfileVersion[]

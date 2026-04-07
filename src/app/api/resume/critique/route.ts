@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       company: job.company,
       description: job.description,
       skills: job.skills ? JSON.parse(job.skills) : [],
+      terminologyMap: job.terminologyMap ? JSON.parse(job.terminologyMap) : [],
     };
 
     let resume: ResumeData;

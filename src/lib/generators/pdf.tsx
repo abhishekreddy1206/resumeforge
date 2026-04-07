@@ -389,6 +389,16 @@ function ResumeDocument({ data }: { data: ResumeData }) {
           </View>
         )}
 
+        {/* Core Competencies */}
+        {data.coreCompetencies && data.coreCompetencies.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeading title="Core Competencies" />
+            <Text style={{ fontSize: 9, lineHeight: 1.5, color: COLORS.secondary }}>
+              {data.coreCompetencies.join("  •  ")}
+            </Text>
+          </View>
+        )}
+
         {/* Experience */}
         {data.experiences && data.experiences.length > 0 && (
           <View style={styles.section}>

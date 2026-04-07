@@ -40,11 +40,41 @@ ATS KEYWORD STRATEGY:
 - Target >=70% verbatim match rate using exact JD terms, not synonyms
 - Reframe transferable experience using JD vocabulary; skills section ordering should reflect the JD
 
+TERMINOLOGY BRIDGING:
+The job analysis includes a terminologyMap that bridges JD terms to common resume synonyms.
+When the candidate's profile uses a synonym, ALWAYS rewrite to use the JD's exact term.
+Examples:
+- JD says "RAG pipelines", profile says "LLM workflows with retrieval" → write "RAG pipeline design"
+- JD says "stakeholder management", profile says "collaborated with teams" → write "stakeholder management across engineering and product"
+- JD says "CI/CD", profile says "automated deployments" → write "CI/CD pipeline automation"
+Use these bridges aggressively while staying truthful to real experience.
+
+ARCHETYPE-ADAPTIVE FRAMING:
+The job analysis includes a roleArchetype field. Adapt your framing:
+- backend-engineer: emphasize system design, APIs, scalability, performance
+- frontend-engineer: emphasize user experience, performance, accessibility, design systems
+- fullstack-engineer: emphasize end-to-end delivery, versatility across stack
+- platform-engineer: emphasize scale, reliability, automation, cost optimization, infrastructure
+- ml-engineer: emphasize model performance, data pipelines, experimentation, production ML
+- data-engineer: emphasize data pipelines, ETL, data quality, warehousing, scale
+- engineering-manager: emphasize team growth, process improvement, cross-functional delivery
+- technical-pm: emphasize customer impact, technical communication, stakeholder alignment
+- solutions-architect: emphasize system design, customer engagement, technical strategy
+- security-engineer: emphasize threat modeling, compliance, secure architecture
+Reorder experience bullets and project selection to match the archetype's priorities.
+If roleArchetype is missing, infer it from the job title and requirements.
+
 AI FINGERPRINT AVOIDANCE:
 ${AI_FINGERPRINT_BANNED}
 
 SUMMARY SECTION:
 3-4 sentences max. Lead with years of experience + domain expertise. Weave in 3-4 key JD keywords naturally. Do NOT name the specific company or state you are applying for a specific role — keep the summary professional and broadly applicable so it reads like a confident self-description, not a cover letter.
+
+CORE COMPETENCIES SECTION:
+Generate 6-8 keyword phrases drawn directly from JD requirements that the candidate genuinely possesses.
+These appear as a compact grid right after the Summary for the "6-second recruiter scan."
+Use exact JD terminology. Only include competencies the candidate can back up with real experience.
+Example: ["Distributed Systems", "Kubernetes & Docker", "CI/CD Pipelines", "Python", "System Design", "Performance Optimization"]
 
 SKILLS SECTION:
 Group by category (Languages, Frameworks, Tools, Databases, Cloud). List JD-required skills first. Remove irrelevant skills.
@@ -70,6 +100,7 @@ Return ONLY valid JSON:
   "twitter": "string",
   "pinterest": "string",
   "summary": "string",
+  "coreCompetencies": ["string (6-8 JD keyword phrases for quick-scan grid)"],
   "experiences": [{"company":"string","title":"string (FLIPPED format)","startDate":"YYYY-MM","endDate":"YYYY-MM|Present","bullets":"string[]"}],
   "educations": [{"school":"string","degree":"string","field":"string","endDate":"YYYY","gpa":"string"}],
   "projects": [{"name":"string","description":"string","url":"string"}],

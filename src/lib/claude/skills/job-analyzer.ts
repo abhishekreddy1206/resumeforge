@@ -26,6 +26,7 @@ interface JobAnalysis {
   requirements: RequirementMapping[];
   atsKeywords: ATSKeywords;
   terminologyMap: TerminologyMapping[];
+  roleArchetype: string;
   seniority: string;
   sponsorship: "available" | "unavailable" | "unspecified";
   sponsorshipNote?: string;
@@ -61,6 +62,20 @@ Only map terms where there are meaningful alternative phrasings — skip generic
 Example: {"jdTerm": "Kubernetes", "resumeSynonyms": ["K8s", "container orchestration", "Kubernetes clusters"]}
 Example: {"jdTerm": "CI/CD pipelines", "resumeSynonyms": ["continuous integration", "build automation", "deployment pipelines", "GitHub Actions"]}
 
+ROLE ARCHETYPE CLASSIFICATION:
+Classify the role into one primary archetype:
+- "backend-engineer" — core services, APIs, distributed systems
+- "frontend-engineer" — UI/UX, web apps, component systems
+- "fullstack-engineer" — end-to-end feature development
+- "platform-engineer" — infrastructure, DevOps, SRE, cloud
+- "ml-engineer" — ML/AI systems, model training, MLOps
+- "data-engineer" — data pipelines, ETL, warehousing
+- "engineering-manager" — people management, technical leadership
+- "technical-pm" — product management with technical depth
+- "solutions-architect" — customer-facing technical design
+- "security-engineer" — security, compliance, threat modeling
+- "other" — if none fits clearly
+
 SPONSORSHIP / WORK AUTHORIZATION:
 Check the entire JD for visa sponsorship or work authorization language. Classify as:
 - "unavailable": explicitly states no sponsorship or requires citizenship/Green Card/permanent residency
@@ -86,6 +101,7 @@ Return ONLY valid JSON:
   ],
   "atsKeywords": {"technical":"string[]","domain":"string[]","tools":"string[]","softSkills":"string[]"},
   "terminologyMap": [{"jdTerm":"string","resumeSynonyms":["string"]}],
+  "roleArchetype": "backend-engineer|frontend-engineer|fullstack-engineer|platform-engineer|ml-engineer|data-engineer|engineering-manager|technical-pm|solutions-architect|security-engineer|other",
   "seniority": "junior|mid|senior|staff|principal",
   "sponsorship": "available|unavailable|unspecified",
   "sponsorshipNote": "string (only if available or unavailable)",
