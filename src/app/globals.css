@@ -445,10 +445,3 @@
 .dark .nav-accent {
   background: linear-gradient(to right, oklch(0.670 0.148 44) 0%, oklch(0.670 0.148 44 / 0.3) 50%, oklch(0.670 0.148 44 / 0) 100%);
 }
-
-/* ─── PWA standalone mode ─── */
-@media (display-mode: standalone) {
-  body {
-    overscroll-behavior: none;
-  }
-}
