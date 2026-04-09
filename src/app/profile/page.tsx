@@ -45,6 +45,12 @@ import {
   Quote,
   ArrowRight,
   Loader2,
+  ClipboardList,
+  Shield,
+  DollarSign,
+  MapPin,
+  Clock,
+  Save,
 } from "lucide-react";
 
 // ── Interfaces ──
@@ -131,6 +137,27 @@ interface Profile {
   skills: Skill[];
   publications: Publication[];
   certifications: Certification[];
+}
+
+interface ApplicationProfile {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  workAuthorized?: boolean | null;
+  sponsorshipNeeded?: boolean | null;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  willingToRelocate?: string | null;
+  noticePeriod?: string | null;
+  preferredWorkMode?: string | null;
+  earliestStartDate?: string | null;
+  gender?: string | null;
+  race?: string | null;
+  veteranStatus?: string | null;
+  disabilityStatus?: string | null;
+  heardAboutDefault?: string | null;
+  over18?: boolean;
+  customDefaults?: string | null;
 }
 
 interface EnhanceSuggestion {
@@ -357,6 +384,11 @@ export default function ProfilePage() {
   const [acceptedSuggestions, setAcceptedSuggestions] = useState<Set<number>>(new Set());
   const [applyingEnhance, setApplyingEnhance] = useState(false);
 
+  // Application Settings
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+  const [savingAppProfile, setSavingAppProfile] = useState(false);
+  const [appForm, setAppForm] = useState<Partial<ApplicationProfile>>({});
+
   const enhancePanelRef = useRef<HTMLDivElement>(null);
   const leftColRef = useScrollReveal<HTMLDivElement>([profile]);
   const rightColRef = useScrollReveal<HTMLDivElement>([profile]);
@@ -369,9 +401,39 @@ export default function ProfilePage() {
     setLoading(false);
   }, []);
 
+  const fetchAppProfile = useCallback(async () => {
+    const res = await fetch("/api/application-profile");
+    if (res.ok) {
+      setAppForm(await res.json());
+    }
+  }, []);
+
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    fetchAppProfile();
+  }, [fetchProfile, fetchAppProfile]);
+
+  async function handleSaveAppProfile() {
+    setSavingAppProfile(true);
+    try {
+      const res = await fetch("/api/application-profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...appForm,
+          salaryMin: appForm.salaryMin ? Number(appForm.salaryMin) : null,
+          salaryMax: appForm.salaryMax ? Number(appForm.salaryMax) : null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setAppForm(await res.json());
+      toast.success("Application settings saved!");
+    } catch {
+      toast.error("Failed to save application settings");
+    } finally {
+      setSavingAppProfile(false);
+    }
+  }
 
   // ── Handlers ──
 
@@ -1318,6 +1380,294 @@ export default function ProfilePage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* ── Application Settings ── */}
+            <Card className="shadow-sm anim-fade-up-2">
+              <CardContent className="pt-5">
+                <button
+                  onClick={() => setAppSettingsOpen(!appSettingsOpen)}
+                  className="w-full flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-md bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                      <ClipboardList className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="text-sm font-semibold">Application Settings</h3>
+                      <p className="text-muted-foreground" style={{ ...monoStyle, fontSize: "0.55rem" }}>
+                        Auto-fill defaults
+                      </p>
+                    </div>
+                  </div>
+                  {appSettingsOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                </button>
+
+                {appSettingsOpen && (
+                  <div className="mt-4 space-y-4">
+                    {/* Name */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">First Name</Label>
+                        <Input
+                          value={appForm.firstName || ""}
+                          onChange={(e) => setAppForm({ ...appForm, firstName: e.target.value })}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Last Name</Label>
+                        <Input
+                          value={appForm.lastName || ""}
+                          onChange={(e) => setAppForm({ ...appForm, lastName: e.target.value })}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Work Authorization */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Shield className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-xs font-medium">Work Authorization</span>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={appForm.workAuthorized === true}
+                            onChange={(e) => setAppForm({ ...appForm, workAuthorized: e.target.checked })}
+                            className="rounded border-border"
+                          />
+                          Authorized to work in the US
+                        </label>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={appForm.sponsorshipNeeded === true}
+                            onChange={(e) => setAppForm({ ...appForm, sponsorshipNeeded: e.target.checked })}
+                            className="rounded border-border"
+                          />
+                          Requires sponsorship
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Salary */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <DollarSign className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-xs font-medium">Salary Range (USD/yr)</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="number"
+                          placeholder="Min"
+                          value={appForm.salaryMin || ""}
+                          onChange={(e) => setAppForm({ ...appForm, salaryMin: e.target.value ? Number(e.target.value) : null })}
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          type="number"
+                          placeholder="Max"
+                          value={appForm.salaryMax || ""}
+                          onChange={(e) => setAppForm({ ...appForm, salaryMax: e.target.value ? Number(e.target.value) : null })}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preferences */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <MapPin className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-xs font-medium">Preferences</span>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Work Mode</Label>
+                          <select
+                            value={appForm.preferredWorkMode || ""}
+                            onChange={(e) => setAppForm({ ...appForm, preferredWorkMode: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="remote">Remote</option>
+                            <option value="hybrid">Hybrid</option>
+                            <option value="onsite">On-site</option>
+                            <option value="any">Any</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Willing to Relocate</Label>
+                          <select
+                            value={appForm.willingToRelocate || ""}
+                            onChange={(e) => setAppForm({ ...appForm, willingToRelocate: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="depends">Depends</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Notice Period */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Clock className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-xs font-medium">Availability</span>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Notice Period</Label>
+                          <select
+                            value={appForm.noticePeriod || ""}
+                            onChange={(e) => setAppForm({ ...appForm, noticePeriod: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="immediately">Immediately</option>
+                            <option value="2 weeks">2 weeks</option>
+                            <option value="1 month">1 month</option>
+                            <option value="2 months">2 months</option>
+                            <option value="3 months">3 months</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Earliest Start Date</Label>
+                          <Input
+                            type="date"
+                            value={appForm.earliestStartDate || ""}
+                            onChange={(e) => setAppForm({ ...appForm, earliestStartDate: e.target.value || null })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* EEO */}
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
+                        EEO responses are voluntary and never sent to AI. They are only used for form auto-fill.
+                      </p>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Gender</Label>
+                          <select
+                            value={appForm.gender || ""}
+                            onChange={(e) => setAppForm({ ...appForm, gender: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="non_binary">Non-binary</option>
+                            <option value="prefer_not_to_say">Prefer not to say</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Veteran Status</Label>
+                          <select
+                            value={appForm.veteranStatus || ""}
+                            onChange={(e) => setAppForm({ ...appForm, veteranStatus: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="prefer_not_to_say">Prefer not to say</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Disability Status</Label>
+                          <select
+                            value={appForm.disabilityStatus || ""}
+                            onChange={(e) => setAppForm({ ...appForm, disabilityStatus: e.target.value || null })}
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                          >
+                            <option value="">Not set</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="prefer_not_to_say">Prefer not to say</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Defaults */}
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">How did you hear about us? (default)</Label>
+                      <Input
+                        value={appForm.heardAboutDefault || ""}
+                        onChange={(e) => setAppForm({ ...appForm, heardAboutDefault: e.target.value || null })}
+                        placeholder="e.g., LinkedIn, Company website"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={appForm.over18 !== false}
+                        onChange={(e) => setAppForm({ ...appForm, over18: e.target.checked })}
+                        className="rounded border-border"
+                      />
+                      I am over 18 years of age
+                    </label>
+
+                    <Button
+                      onClick={handleSaveAppProfile}
+                      disabled={savingAppProfile}
+                      size="sm"
+                      className="w-full gap-1.5"
+                    >
+                      {savingAppProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Save Application Settings
+                    </Button>
+
+                    {/* Pinned Custom Defaults */}
+                    {(() => {
+                      const pinned = (() => {
+                        if (!appForm.customDefaults) return [];
+                        try { return JSON.parse(appForm.customDefaults) as Array<{ question: string; answer: string }>; } catch { return []; }
+                      })();
+                      if (pinned.length === 0) return null;
+                      return (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <p className="text-[10px] text-muted-foreground mb-2 font-medium uppercase tracking-wider">
+                            Pinned Answers ({pinned.length})
+                          </p>
+                          <div className="space-y-2">
+                            {pinned.map((p, i) => (
+                              <div key={i} className="p-2 rounded border border-border/50 bg-background">
+                                <p className="text-[11px] font-medium text-foreground mb-0.5 leading-snug">{p.question}</p>
+                                <p className="text-[10px] text-muted-foreground leading-relaxed">{p.answer}</p>
+                                <button
+                                  onClick={async () => {
+                                    await fetch("/api/applications/pin", {
+                                      method: "DELETE",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ question: p.question }),
+                                    });
+                                    fetchAppProfile();
+                                    toast.success("Answer unpinned");
+                                  }}
+                                  className="text-[9px] text-red-500 hover:text-red-700 mt-1"
+                                >
+                                  Unpin
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* ── AI Enhance Panel ── */}
             {(suggestions.length > 0 || enhancing) && (

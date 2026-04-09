@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ResumeForge Auto-Fill</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">RF</div>
+        <span class="brand-name">ResumeForge</span>
+      </div>
+      <button id="settings-toggle" class="icon-btn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Settings panel -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <label class="field-label">API URL</label>
+      <input type="text" id="api-url" class="input" placeholder="http://localhost:3000">
+      <button id="save-settings" class="btn btn-sm">Save</button>
+    </div>
+
+    <!-- Connection status -->
+    <div id="status-bar" class="status-bar">
+      <span id="status-dot" class="status-dot"></span>
+      <span id="status-text">Checking connection...</span>
+    </div>
+
+    <!-- Job selector -->
+    <div id="job-section" class="section">
+      <label class="field-label">Select Job</label>
+      <select id="job-select" class="input">
+        <option value="">Loading jobs...</option>
+      </select>
+      <div id="no-resume-warning" class="warning hidden">
+        Generate a resume for this job first before auto-filling.
+      </div>
+    </div>
+
+    <!-- Fill button -->
+    <div class="section">
+      <button id="fill-btn" class="btn btn-primary" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+        </svg>
+        Fill Form
+      </button>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="results hidden">
+      <div class="result-row">
+        <span class="result-label">Fields filled</span>
+        <span id="filled-count" class="result-value">0</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">AI answers</span>
+        <span id="ai-count" class="result-value">0</span>
+      </div>
+      <p class="review-note">Review highlighted fields before submitting.</p>
+    </div>
+
+    <!-- Loading state -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Filling form...</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

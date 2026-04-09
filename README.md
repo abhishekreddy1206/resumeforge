@@ -28,6 +28,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Multiple Formats** — Export as PDF (styled with react-pdf) or DOCX (ATS-safe formatting with tab stops, no tables).
 - **Token Usage Analytics** — Track AI call costs, token counts, and per-skill breakdowns across the full optimization history.
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
+- **Application Auto-Fill** — Configure work authorization, salary preferences, EEO data, and other defaults in Application Settings; use the Chrome extension to auto-fill ATS forms (Greenhouse, Lever, Workday, and more) with your profile data.
+- **Screening Question Answers** — AI generates answers for job application screening questions, grounded in your real profile data; answers are cached per job.
 
 ## Tech Stack
 
@@ -74,88 +76,102 @@ AI features run through the **Claude Code CLI** (`claude -p`) as a subprocess. T
 ## Project Structure
 
 ```
-src/
-├── app/
-│   ├── page.tsx                    # Dashboard
-│   ├── profile/page.tsx            # Upload resume, enrich profile, chat editor
-│   ├── jobs/page.tsx               # Add/view job descriptions, match scoring, job chat
-│   ├── skills/page.tsx             # Skills dashboard
-│   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility
-│   ├── generate/page.tsx           # Generate tailored resumes
-│   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
-│   └── api/
-│       ├── profile/
-│       │   ├── route.ts            # Profile CRUD
-│       │   ├── upload/             # Resume file upload + parse
-│       │   ├── enrich/             # Enrich from GitHub/StackOverflow/LinkedIn
-│       │   ├── enhance/            # AI enhancement suggestions from version history
-│       │   ├── refresh/            # Re-parse profile from stored resume
-│       │   ├── chat/               # Conversational profile editor (POST + apply)
-│       │   │   └── discover/       # AI experience discovery questions from job gaps
-│       │   ├── publications/       # Publications CRUD
-│       │   │   └── fetch/          # Scrape + AI-summarize a publication from URL
-│       │   ├── certifications/     # Certifications CRUD
-│       │   │   └── parse/          # AI parse of certification text
-│       │   ├── recommendations/    # Recommendations CRUD
-│       │   │   └── parse/          # AI parse of recommendation text
-│       │   └── versions/           # Profile version CRUD (GET/POST, GET/DELETE by id)
-│       ├── jobs/
-│       │   ├── route.ts            # Job CRUD + analysis
-│       │   ├── match/              # Profile-to-job compatibility scoring
-│       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
-│       │   ├── applied/            # Toggle job application status (applied/not applied)
-│       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
-│       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
-│       ├── resume/                 # Resume generation + download + critique
-│       ├── coverletter/
-│       │   └── generate/           # Generate AI cover letter for a job
-│       ├── interview-prep/
-│       │   └── generate/           # Generate STAR+R interview stories for a job
-│       ├── skills/
-│       │   ├── route.ts            # Skills listing
-│       │   └── chat/               # Conversational skills editor (POST + apply)
-│       ├── analytics/              # Token usage and cost analytics
-│       └── chats/                  # Chat session CRUD (list/get/delete by id)
-├── lib/
-│   ├── claude/                     # AI modules
-│   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
-│   │   ├── index.ts               # Re-exports all AI modules
-│   │   └── skills/
-│   │       ├── resume-parser.ts   # Parse resume text → structured data
-│   │       ├── job-analyzer.ts    # Analyze job description → requirements
-│   │       ├── resume-writer.ts   # Generate ATS-optimized tailored resume
-│   │       ├── resume-critic.ts   # Critique resume against job description
-│   │       ├── profile-enricher.ts # Merge external source data into profile
-│   │       ├── profile-editor.ts  # Conversational profile editing via chat
-│   │       ├── profile-enhancer.ts # AI suggestions from optimization history
-│   │       ├── profile-matcher.ts # Score profile-job compatibility
-│   │       ├── resume-advisor.ts  # Per-job resume improvement advice
-│   │       ├── resume-tip-applier.ts # Apply AI-suggested tips to profile data
-│   │       ├── skills-editor.ts   # Conversational skills editing via chat
-│   │       ├── experience-discoverer.ts # Generate discovery questions from job gaps
-│   │       ├── gap-aggregator.ts  # Aggregate cross-job gaps and leverage scores
-│   │       ├── certification-parser.ts # AI parse of certification text
-│   │       ├── recommendation-parser.ts # AI parse of recommendation text
-│   │       ├── cover-letter-writer.ts  # Generate tailored cover letter
-│   │       └── interview-prep.ts       # Generate STAR+R interview stories
-│   ├── parsers/
-│   │   ├── pdf.ts                 # PDF text extraction
-│   │   ├── docx.ts                # DOCX text extraction
-│   │   └── web.ts                 # Job URL scraping, GitHub API, StackOverflow API
-│   ├── generators/
-│   │   ├── pdf.tsx                # Styled PDF resume generation
-│   │   └── docx.ts               # ATS-safe DOCX resume generation
-│   └── db.ts                      # Prisma client singleton
-├── components/
-│   ├── nav-links.tsx              # App navigation
-│   ├── profile-chat-panel.tsx     # Conversational profile editor UI
-│   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
-│   ├── skills-chat-panel.tsx      # Conversational skills editor UI
-│   ├── diff-view.tsx              # Side-by-side diff view for profile changes
-│   ├── theme-provider.tsx         # Dark/light theme context
-│   ├── theme-toggle.tsx           # Theme switcher button
-│   └── ui/                        # shadcn/ui components
-└── generated/prisma/               # Prisma generated client
+resumeforge/
+├── extension/                      # Chrome extension (Manifest V3)
+│   ├── manifest.json              # Extension manifest (permissions, content script targets)
+│   ├── background.js              # Service worker
+│   ├── content.js                 # Content script — detects and fills ATS form fields
+│   ├── field-map.js               # ATS-specific field mapping definitions
+│   ├── popup.html / popup.js / popup.css  # Extension popup UI
+│   └── icons/                     # Extension icons
+└── src/
+    ├── app/
+    │   ├── page.tsx                    # Dashboard
+    │   ├── profile/page.tsx            # Upload resume, enrich profile, chat editor, application settings
+    │   ├── jobs/page.tsx               # Add/view job descriptions, match scoring, job chat
+    │   ├── skills/page.tsx             # Skills dashboard
+    │   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility
+    │   ├── generate/page.tsx           # Generate tailored resumes
+    │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
+    │   └── api/
+    │       ├── profile/
+    │       │   ├── route.ts            # Profile CRUD
+    │       │   ├── upload/             # Resume file upload + parse
+    │       │   ├── enrich/             # Enrich from GitHub/StackOverflow/LinkedIn
+    │       │   ├── enhance/            # AI enhancement suggestions from version history
+    │       │   ├── refresh/            # Re-parse profile from stored resume
+    │       │   ├── chat/               # Conversational profile editor (POST + apply)
+    │       │   │   └── discover/       # AI experience discovery questions from job gaps
+    │       │   ├── publications/       # Publications CRUD
+    │       │   │   └── fetch/          # Scrape + AI-summarize a publication from URL
+    │       │   ├── certifications/     # Certifications CRUD
+    │       │   │   └── parse/          # AI parse of certification text
+    │       │   ├── recommendations/    # Recommendations CRUD
+    │       │   │   └── parse/          # AI parse of recommendation text
+    │       │   └── versions/           # Profile version CRUD (GET/POST, GET/DELETE by id)
+    │       ├── application-profile/    # Application settings CRUD (work auth, salary, EEO, preferences)
+    │       ├── applications/
+    │       │   ├── prefill/            # Merge all data for auto-fill payload
+    │       │   ├── answer/             # AI-generated screening question answer (cached per job)
+    │       │   └── answers/            # List cached screening question answers for a job
+    │       ├── jobs/
+    │       │   ├── route.ts            # Job CRUD + analysis
+    │       │   ├── match/              # Profile-to-job compatibility scoring
+    │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
+    │       │   ├── applied/            # Toggle job application status (applied/not applied)
+    │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
+    │       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
+    │       ├── resume/                 # Resume generation + download + critique
+    │       ├── coverletter/
+    │       │   └── generate/           # Generate AI cover letter for a job
+    │       ├── interview-prep/
+    │       │   └── generate/           # Generate STAR+R interview stories for a job
+    │       ├── skills/
+    │       │   ├── route.ts            # Skills listing
+    │       │   └── chat/               # Conversational skills editor (POST + apply)
+    │       ├── analytics/              # Token usage and cost analytics
+    │       └── chats/                  # Chat session CRUD (list/get/delete by id)
+    ├── lib/
+    │   ├── claude/                     # AI modules
+    │   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
+    │   │   ├── index.ts               # Re-exports all AI modules
+    │   │   └── skills/
+    │   │       ├── resume-parser.ts   # Parse resume text → structured data
+    │   │       ├── job-analyzer.ts    # Analyze job description → requirements
+    │   │       ├── resume-writer.ts   # Generate ATS-optimized tailored resume
+    │   │       ├── resume-critic.ts   # Critique resume against job description
+    │   │       ├── profile-enricher.ts # Merge external source data into profile
+    │   │       ├── profile-editor.ts  # Conversational profile editing via chat
+    │   │       ├── profile-enhancer.ts # AI suggestions from optimization history
+    │   │       ├── profile-matcher.ts # Score profile-job compatibility
+    │   │       ├── resume-advisor.ts  # Per-job resume improvement advice
+    │   │       ├── resume-tip-applier.ts # Apply AI-suggested tips to profile data
+    │   │       ├── skills-editor.ts   # Conversational skills editing via chat
+    │   │       ├── experience-discoverer.ts # Generate discovery questions from job gaps
+    │   │       ├── gap-aggregator.ts  # Aggregate cross-job gaps and leverage scores
+    │   │       ├── certification-parser.ts # AI parse of certification text
+    │   │       ├── recommendation-parser.ts # AI parse of recommendation text
+    │   │       ├── cover-letter-writer.ts  # Generate tailored cover letter
+    │   │       ├── interview-prep.ts       # Generate STAR+R interview stories
+    │   │       └── form-answerer.ts        # Generate answers for screening questions
+    │   ├── parsers/
+    │   │   ├── pdf.ts                 # PDF text extraction
+    │   │   ├── docx.ts                # DOCX text extraction
+    │   │   └── web.ts                 # Job URL scraping, GitHub API, StackOverflow API
+    │   ├── generators/
+    │   │   ├── pdf.tsx                # Styled PDF resume generation
+    │   │   └── docx.ts               # ATS-safe DOCX resume generation
+    │   └── db.ts                      # Prisma client singleton
+    ├── components/
+    │   ├── nav-links.tsx              # App navigation
+    │   ├── profile-chat-panel.tsx     # Conversational profile editor UI
+    │   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
+    │   ├── skills-chat-panel.tsx      # Conversational skills editor UI
+    │   ├── diff-view.tsx              # Side-by-side diff view for profile changes
+    │   ├── theme-provider.tsx         # Dark/light theme context
+    │   ├── theme-toggle.tsx           # Theme switcher button
+    │   └── ui/                        # shadcn/ui components
+    └── generated/prisma/               # Prisma generated client
 ```
 
 ## Adding a New AI Module
@@ -221,6 +237,8 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
 | `Resume` | Generated resume record with file path, format, and optional profile version link |
+| `ApplicationProfile` | 1:1 with Profile; stores work authorization, salary range, relocation preference, notice period, preferred work mode, earliest start date, EEO fields (voluntary), and other auto-fill defaults |
+| `ApplicationAnswer` | Per-job cached screening question answer with source tracking (`auto`, `ai`, `manual`); unique on job + question |
 
 ## Workflow
 
@@ -234,3 +252,4 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
 9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
 10. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
+11. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI

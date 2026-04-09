@@ -32,4 +32,5 @@ export { parseRecommendations } from "./skills/recommendation-parser";
 export { generateCoverLetter } from "./skills/cover-letter-writer";
 export { generateInterviewPrep } from "./skills/interview-prep";
 export type { InterviewPrep, InterviewStory } from "./skills/interview-prep";
+export { generateFormAnswer } from "./skills/form-answerer";
 export { compactProfile } from "./client";

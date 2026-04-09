@@ -33,8 +33,9 @@ model Profile {
   skills      Skill[]
   publications    Publication[]
   certifications  Certification[]
-  resumes          Resume[]
-  profileVersions  ProfileVersion[]
+  resumes              Resume[]
+  profileVersions      ProfileVersion[]
+  applicationProfile   ApplicationProfile?
 }
 
 model Experience {
@@ -133,9 +134,10 @@ model Job {
   interviewPrep  String?  // JSON — cached STAR+R interview prep (InterviewPrep)
   createdAt      DateTime @default(now())
 
-  resumes         Resume[]
-  profileVersions ProfileVersion[]
-  chatSessions    ChatSession[]
+  resumes              Resume[]
+  profileVersions      ProfileVersion[]
+  chatSessions         ChatSession[]
+  applicationAnswers   ApplicationAnswer[]
 }
 
 model ProfileVersion {
@@ -190,4 +192,53 @@ model TokenUsage {
   costUsd                  Float
   durationMs               Int
   createdAt                DateTime @default(now())
+}
+
+model ApplicationProfile {
+  id                String   @id @default(cuid())
+  profileId         String   @unique
+  profile           Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Name split (computed from Profile.name, editable)
+  firstName         String?
+  lastName          String?
+
+  // Work authorization
+  workAuthorized    Boolean?
+  sponsorshipNeeded Boolean?
+
+  // Preferences
+  salaryMin         Int?
+  salaryMax         Int?
+  willingToRelocate String?  // "yes" | "no" | "depends"
+  noticePeriod      String?  // "immediately" | "2 weeks" | "1 month" | etc.
+  preferredWorkMode String?  // "remote" | "hybrid" | "onsite" | "any"
+  earliestStartDate String?  // ISO date or "immediately"
+
+  // EEO (voluntary, never sent to AI)
+  gender            String?  // "male" | "female" | "non_binary" | "prefer_not_to_say"
+  race              String?  // EEOC category or "prefer_not_to_say"
+  veteranStatus     String?  // "yes" | "no" | "prefer_not_to_say"
+  disabilityStatus  String?  // "yes" | "no" | "prefer_not_to_say"
+
+  // Defaults
+  heardAboutDefault String?
+  over18            Boolean  @default(true)
+  customDefaults    String?  // JSON array of {question, answer} — pinned reusable answers
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ApplicationAnswer {
+  id        String   @id @default(cuid())
+  jobId     String
+  question  String
+  answer    String
+  source    String   @default("auto") // "auto" | "ai" | "manual"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, question])
 }
