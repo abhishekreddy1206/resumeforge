@@ -35,7 +35,8 @@ async function handleMessage(msg) {
   switch (msg.type) {
     case "GET_JOBS": {
       const res = await apiFetch("/api/jobs");
-      const jobs = await res.json();
+      const data = await res.json();
+      const jobs = data.jobs || data;
       // Filter to jobs that have at least one generated resume
       return jobs.filter((j) => j._count?.resumes > 0 || j.resumes?.length > 0);
     }
@@ -49,13 +50,17 @@ async function handleMessage(msg) {
     }
 
     case "ANSWER_QUESTION": {
+      const payload = {
+        jobId: msg.jobId,
+        question: msg.question,
+        characterLimit: msg.characterLimit,
+      };
+      if (msg.options && msg.options.length > 0) {
+        payload.options = msg.options;
+      }
       const res = await apiFetch("/api/applications/answer", {
         method: "POST",
-        body: JSON.stringify({
-          jobId: msg.jobId,
-          question: msg.question,
-          characterLimit: msg.characterLimit,
-        }),
+        body: JSON.stringify(payload),
       });
       return res.json();
     }

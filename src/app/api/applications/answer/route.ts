@@ -24,9 +24,48 @@ function normalizeQuestion(q: string): string {
     .trim();
 }
 
+/**
+ * Fuzzy-match an answer against available dropdown options.
+ * Returns the best matching option text, or the original answer if no match.
+ */
+function matchAnswerToOption(answer: string, options: string[]): string {
+  if (!options.length) return answer;
+  const lower = answer.toLowerCase().trim();
+
+  // Exact match (case-insensitive)
+  const exact = options.find((o) => o.toLowerCase().trim() === lower);
+  if (exact) return exact;
+
+  // Contains match — option contains answer or answer contains option
+  const contains = options.find((o) => {
+    const ol = o.toLowerCase().trim();
+    return ol.includes(lower) || lower.includes(ol);
+  });
+  if (contains) return contains;
+
+  // Boolean mapping: true/yes/1 → first yes-like option, false/no/0 → first no-like option
+  const yesValues = ["true", "yes", "1", "y"];
+  const noValues = ["false", "no", "0", "n"];
+  if (yesValues.includes(lower)) {
+    const yesOption = options.find((o) => yesValues.includes(o.toLowerCase().trim()));
+    if (yesOption) return yesOption;
+  }
+  if (noValues.includes(lower)) {
+    const noOption = options.find((o) => noValues.includes(o.toLowerCase().trim()));
+    if (noOption) return noOption;
+  }
+
+  // Starts-with match
+  const startsWith = options.find((o) => o.toLowerCase().trim().startsWith(lower));
+  if (startsWith) return startsWith;
+
+  return answer;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { jobId, question, characterLimit } = await request.json();
+    const { jobId, question, characterLimit, options: rawOptions } = await request.json();
+    const options: string[] = Array.isArray(rawOptions) ? rawOptions.filter((o: unknown) => typeof o === "string" && o.trim()) : [];
 
     if (!jobId || typeof jobId !== "string") {
       return NextResponse.json({ error: "jobId is required" }, { status: 400 });
@@ -40,7 +79,8 @@ export async function POST(request: NextRequest) {
       where: { jobId_question: { jobId, question } },
     });
     if (cached) {
-      return NextResponse.json({ answer: cached.answer, source: cached.source });
+      const answer = options.length ? matchAnswerToOption(cached.answer, options) : cached.answer;
+      return NextResponse.json({ answer, source: cached.source });
     }
 
     // ── Tier 2: Check pinned custom defaults ──
@@ -54,11 +94,12 @@ export async function POST(request: NextRequest) {
         const normalized = normalizeQuestion(question);
         const pinned = defaults.find((d) => normalizeQuestion(d.question) === normalized);
         if (pinned) {
+          const answer = options.length ? matchAnswerToOption(pinned.answer, options) : pinned.answer;
           // Cache for this job too
           await prisma.applicationAnswer.create({
-            data: { jobId, question, answer: pinned.answer, source: "pinned" },
+            data: { jobId, question, answer, source: "pinned" },
           });
-          return NextResponse.json({ answer: pinned.answer, source: "pinned" });
+          return NextResponse.json({ answer, source: "pinned" });
         }
       }
     }
@@ -73,11 +114,12 @@ export async function POST(request: NextRequest) {
       (a) => normalizeQuestion(a.question) === normalized
     );
     if (crossJobMatch) {
+      const answer = options.length ? matchAnswerToOption(crossJobMatch.answer, options) : crossJobMatch.answer;
       // Cache for this job
       await prisma.applicationAnswer.create({
-        data: { jobId, question, answer: crossJobMatch.answer, source: "reused" },
+        data: { jobId, question, answer, source: "reused" },
       });
-      return NextResponse.json({ answer: crossJobMatch.answer, source: "reused" });
+      return NextResponse.json({ answer, source: "reused" });
     }
 
     // ── Tier 4: Generate via AI ──
@@ -122,17 +164,19 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    const finalAnswer = options.length ? matchAnswerToOption(result.answer, options) : result.answer;
+
     // Cache the answer
     await prisma.applicationAnswer.create({
       data: {
         jobId,
         question,
-        answer: result.answer,
+        answer: finalAnswer,
         source: "ai",
       },
     });
 
-    return NextResponse.json({ answer: result.answer, source: "ai" });
+    return NextResponse.json({ answer: finalAnswer, source: "ai" });
   } catch (error) {
     console.error("Form answer generation error:", error);
     return NextResponse.json(
