@@ -338,26 +338,26 @@
     if (value == null) return false;
     const options = [...el.querySelectorAll("option")].filter((o) => o.value !== "");
     const match = fuzzyMatchOption(options, value);
-    if (match) {
-      // Use native setter for React compatibility
-      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-      if (setter) setter.call(el, match.value);
-      else el.value = match.value;
+    if (!match) return false;
 
-      await new Promise((r) => setTimeout(r, 0));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+    // Tier 1: Native setter + events
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    if (setter) setter.call(el, match.value);
+    else el.value = match.value;
+    await new Promise((r) => setTimeout(r, 0));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
 
-      // Verify selection stuck
-      await new Promise((r) => setTimeout(r, 50));
-      if (el.value !== match.value) {
-        if (setter) setter.call(el, match.value);
-        else el.value = match.value;
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      return true;
-    }
-    return false;
+    await new Promise((r) => setTimeout(r, 80));
+    if (el.value === match.value) return true;
+
+    // Tier 2: Set selected property directly on the option element
+    match.selected = true;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await new Promise((r) => setTimeout(r, 80));
+    return el.value === match.value;
   }
 
   async function fillCombobox(el, value) {
@@ -370,7 +370,6 @@
         const linked = document.getElementById(controlsId);
         if (linked) return linked;
       }
-      // Fallback: find any visible listbox/menu near the element
       for (const candidate of document.querySelectorAll(
         '[role="listbox"], [role="menu"], ul[class*="dropdown"], ul[class*="option"], [class*="listbox"], [class*="select-menu"], [class*="dropdown-menu"]'
       )) {
@@ -380,22 +379,18 @@
     }
 
     function matchOption(opts) {
-      // Pass 1: exact match
       let match = opts.find((o) => normalizeText(o.textContent) === strValue);
       if (match) return match;
-      // Pass 2: starts with (either direction)
       match = opts.find((o) => {
         const t = normalizeText(o.textContent);
         return t.startsWith(strValue) || strValue.startsWith(t);
       });
       if (match) return match;
-      // Pass 3: contains (either direction)
       match = opts.find((o) => {
         const t = normalizeText(o.textContent);
         return t.includes(strValue) || strValue.includes(t);
       });
       if (match) return match;
-      // Pass 4: boolean matching
       const boolMap = { yes: true, true: true, no: false, false: false };
       if (strValue in boolMap) {
         const isYes = boolMap[strValue];
@@ -405,7 +400,6 @@
         });
         if (match) return match;
       }
-      // Pass 5: first word match
       const firstWord = strValue.split(/[\s,]+/)[0];
       if (firstWord && firstWord.length >= 2) {
         match = opts.find((o) => normalizeText(o.textContent).split(/[\s,]+/)[0] === firstWord);
@@ -413,13 +407,28 @@
       return match || null;
     }
 
-    // Step 1: Focus and open the dropdown
+    function clickOption(match) {
+      match.scrollIntoView?.({ block: "nearest" });
+      match.dispatchEvent(new Event("mousedown", { bubbles: true }));
+      match.click();
+      match.dispatchEvent(new Event("mouseup", { bubbles: true }));
+      setTimeout(() => {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+      }, 50);
+    }
+
+    // Step 1: Focus and open
     el.focus();
     el.dispatchEvent(new Event("focus", { bubbles: true }));
     el.click();
     el.dispatchEvent(new Event("mousedown", { bubbles: true }));
+    if (hints.comboboxOpenKey) {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: hints.comboboxOpenKey, bubbles: true }));
+    }
 
-    // Step 2: Type the value to trigger search/filter
+    // Step 2: Type the value to filter options
     if (el.tagName === "INPUT" || el.getAttribute("contenteditable")) {
       const proto = HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
@@ -428,64 +437,65 @@
       el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
     }
 
-    // Step 3: Poll for listbox with adaptive timing
+    // Step 3: Poll for listbox with platform-aware timing
+    const pollDelay = hints.pollDelay;
     return new Promise((resolve) => {
       let attempts = 0;
       const maxAttempts = 12;
-      const delays = [100, 100, 150, 200, 200, 250, 250, 300, 300, 300, 300, 300];
 
       const trySelect = () => {
         const listbox = findListbox();
-
         if (listbox) {
           const opts = [...listbox.querySelectorAll(
             '[role="option"], [role="menuitem"], li, [class*="option"], [data-value]'
           )].filter((o) => isVisible(o));
 
           const match = matchOption(opts);
-
           if (match) {
-            // Click the option with proper event sequence
-            match.dispatchEvent(new Event("mousedown", { bubbles: true }));
-            match.click();
-            match.dispatchEvent(new Event("mouseup", { bubbles: true }));
-
-            // Dispatch events on the original input after selection
+            clickOption(match);
             setTimeout(() => {
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-              el.dispatchEvent(new Event("blur", { bubbles: true }));
-            }, 50);
-
-            // Verify click registered after a delay
-            setTimeout(() => {
-              // Check if dropdown closed (good sign) or value changed
               const listboxNow = findListbox();
               const closed = !listboxNow || !isVisible(listboxNow);
-              if (!closed && match) {
-                // Retry click once
-                match.click();
-              }
+              if (!closed) match.click();
               resolve(true);
             }, 150);
           } else {
-            // No match found — close dropdown
             el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
             el.dispatchEvent(new Event("blur", { bubbles: true }));
-            resolve(false);
+            if (el.tagName === "INPUT" && el.value !== String(value)) {
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+              if (setter) setter.call(el, String(value));
+              else el.value = String(value);
+              el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              resolve(true);
+            } else {
+              resolve(false);
+            }
           }
           return;
         }
 
         if (attempts < maxAttempts) {
-          setTimeout(trySelect, delays[attempts] || 300);
+          const delay = pollDelay + (attempts * 50);
+          setTimeout(trySelect, delay);
           attempts++;
         } else {
-          resolve(false);
+          if (el.tagName === "INPUT") {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+            if (setter) setter.call(el, String(value));
+            else el.value = String(value);
+            el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            el.dispatchEvent(new Event("blur", { bubbles: true }));
+            resolve(true);
+          } else {
+            resolve(false);
+          }
         }
       };
 
-      setTimeout(trySelect, 100);
+      setTimeout(trySelect, pollDelay);
     });
   }
 
