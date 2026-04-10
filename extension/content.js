@@ -771,32 +771,41 @@
 
   // ── Submission Detection ──
 
-  const CONFIRM_URL_RE = /thank|confirm|success|submitted|complete|application.?received/i;
+  // Only match URLs that clearly indicate a completed submission
+  const CONFIRM_URL_RE = /(?:application.?|submit.?|apply.?)(?:submitted|success|complete|confirm|received)|thank.?you.?for.?(?:applying|your.?application)/i;
   const CONFIRM_TEXT_RE = /application\s+(has\s+been\s+)?submitted|thank you for (applying|your application)|we('ve| have) received your application|successfully submitted|your application has been received/i;
 
+  let submissionDetectionSetUp = false;
+  let submissionAttempted = false;
+
   function setupSubmissionDetection(jobId) {
-    if (hasMarkedApplied) return;
+    if (hasMarkedApplied || submissionDetectionSetUp) return;
+    submissionDetectionSetUp = true;
+
+    function collectObservations() {
+      const observations = [];
+      for (const [, data] of observedFields) {
+        const finalValue = getCurrentValue(data.element);
+        if (!finalValue || !data.question) continue;
+        observations.push({
+          question: data.question,
+          answer: finalValue,
+          fieldType: data.fieldType,
+          options: data.options || [],
+          wasAutoFilled: data.filledValue !== null,
+          wasUserCorrected: data.userChanged,
+          originalFillValue: data.filledValue,
+        });
+      }
+      return observations;
+    }
 
     async function markApplied() {
       if (hasMarkedApplied || !jobId) return;
       hasMarkedApplied = true;
       try {
         await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
-        // Collect final field observations for learning
-        const observations = [];
-        for (const [, data] of observedFields) {
-          const finalValue = getCurrentValue(data.element);
-          if (!finalValue || !data.question) continue;
-          observations.push({
-            question: data.question,
-            answer: finalValue,
-            fieldType: data.fieldType,
-            options: data.options || [],
-            wasAutoFilled: data.filledValue !== null,
-            wasUserCorrected: data.userChanged,
-            originalFillValue: data.filledValue,
-          });
-        }
+        const observations = collectObservations();
         if (observations.length > 0) {
           await chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations });
         }
@@ -806,11 +815,19 @@
     function checkConfirmation() {
       if (hasMarkedApplied) return false;
       if (CONFIRM_URL_RE.test(location.href)) return true;
+      // Only check body text if a submit was actually attempted
+      if (!submissionAttempted) return false;
       const bodyText = document.body?.innerText || "";
       return bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
     }
 
-    // Method 1: DOM mutation observer (watches for confirmation text)
+    function onSubmitAttempt() {
+      submissionAttempted = true;
+      setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
+      setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
+    }
+
+    // Method 1: DOM mutation observer (watches for confirmation after URL change or submit)
     const domObserver = new MutationObserver(() => {
       if (hasMarkedApplied) { domObserver.disconnect(); return; }
       if (checkConfirmation()) {
@@ -828,52 +845,28 @@
     ];
     const submitButtons = document.querySelectorAll(submitSelectors.join(", "));
     for (const btn of submitButtons) {
-      btn.addEventListener("click", () => {
-        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
-        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
-      }, { once: true });
+      btn.addEventListener("click", onSubmitAttempt, { once: true });
     }
     // Also match buttons by text content
     for (const btn of document.querySelectorAll("button, a[role='button']")) {
       const text = btn.textContent?.trim().toLowerCase() || "";
       if (/^(submit|apply|send)\b/.test(text)) {
-        btn.addEventListener("click", () => {
-          setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
-          setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
-        }, { once: true });
+        btn.addEventListener("click", onSubmitAttempt, { once: true });
       }
     }
 
     // Method 3: Form submit event listeners
     for (const form of document.querySelectorAll("form")) {
-      form.addEventListener("submit", () => {
-        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
-        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
-      }, { once: true });
+      form.addEventListener("submit", onSubmitAttempt, { once: true });
     }
 
-    // Method 4: beforeunload — page is navigating away after we filled a form
+    // Method 4: beforeunload — save observations for learning, but do NOT mark as applied
     window.addEventListener("beforeunload", () => {
-      if (!hasMarkedApplied && observedFields.size > 0) {
-        chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId }).catch(() => {});
-        const observations = [];
-        for (const [, data] of observedFields) {
-          const finalValue = getCurrentValue(data.element);
-          if (!finalValue || !data.question) continue;
-          observations.push({
-            question: data.question,
-            answer: finalValue,
-            fieldType: data.fieldType,
-            options: data.options || [],
-            wasAutoFilled: data.filledValue !== null,
-            wasUserCorrected: data.userChanged,
-            originalFillValue: data.filledValue,
-          });
-        }
+      if (observedFields.size > 0) {
+        const observations = collectObservations();
         if (observations.length > 0) {
           chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations }).catch(() => {});
         }
-        hasMarkedApplied = true;
       }
     });
   }
@@ -930,6 +923,8 @@
         processedRadioGroups.clear();
         observedFields.clear();
         hasMarkedApplied = false;
+        submissionDetectionSetUp = false;
+        submissionAttempted = false;
         if (multiPageObserver) {
           multiPageObserver.disconnect();
           multiPageObserver = null;
