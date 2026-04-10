@@ -251,6 +251,7 @@
     el.dispatchEvent(new Event("focus", { bubbles: true }));
     if (setter) setter.call(el, strValue);
     else el.value = strValue;
+    invalidateReactTracker(el);
     await new Promise((r) => setTimeout(r, 0));
     el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: strValue }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -274,6 +275,7 @@
       el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
       await new Promise((r) => setTimeout(r, 5));
     }
+    invalidateReactTracker(el);
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
 
@@ -286,6 +288,7 @@
     if (setter) setter.call(el, "");
     else el.value = "";
     document.execCommand("insertText", false, strValue);
+    invalidateReactTracker(el);
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
 
@@ -295,6 +298,11 @@
 
   function normalizeText(s) {
     return String(s).toLowerCase().replace(/\s+/g, " ").trim();
+  }
+
+  function invalidateReactTracker(el) {
+    const tracker = el._valueTracker;
+    if (tracker) tracker.setValue("");
   }
 
   function fuzzyMatchOption(options, value) {
@@ -346,6 +354,7 @@
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
     if (setter) setter.call(el, match.value);
     else el.value = match.value;
+    invalidateReactTracker(el);
     await new Promise((r) => setTimeout(r, 0));
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -355,6 +364,7 @@
 
     // Tier 2: Set selected property directly on the option element
     match.selected = true;
+    invalidateReactTracker(el);
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("input", { bubbles: true }));
 
