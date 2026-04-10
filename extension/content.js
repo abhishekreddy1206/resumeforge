@@ -17,7 +17,40 @@
   let isRunning = false;
   let currentJobId = null;
   let hasMarkedApplied = false;
-  const sessionAnswers = []; // Track AI answers for auto-pinning on submit
+  const observedFields = new Map(); // fieldKey -> observation data for learning
+
+  function getCurrentValue(el) {
+    const type = detectFieldType(el);
+    if (type === "checkbox") {
+      if (el.tagName === "INPUT") return el.checked ? "Yes" : "No";
+      return el.getAttribute("aria-checked") === "true" ? "Yes" : "No";
+    }
+    if (type === "radio") {
+      const name = el.name;
+      if (!name) return null;
+      const checked = document.querySelector(`input[name="${CSS.escape(name)}"]:checked`);
+      return checked ? (getLabelText(checked) || checked.value) : null;
+    }
+    if (type === "select") {
+      const selected = el.options?.[el.selectedIndex];
+      return selected ? selected.textContent.trim() : null;
+    }
+    return el.value || el.textContent?.trim() || null;
+  }
+
+  function setupFieldObservers() {
+    for (const [, data] of observedFields) {
+      const el = data.element;
+      const handler = () => {
+        const newValue = getCurrentValue(el);
+        if (newValue && newValue !== data.filledValue) {
+          data.userChanged = true;
+        }
+      };
+      el.addEventListener("change", handler);
+      el.addEventListener("input", handler);
+    }
+  }
 
   // ── Platform Hints ──
   const PLATFORM_HINTS = {
@@ -541,59 +574,25 @@
     }
   }
 
-  // ── Highlight & Pin ──
+  // ── Highlight ──
 
-  function highlightField(el, type, question, answer) {
-    const color = type === "ai" ? "#f59e0b" : (type === "reused" || type === "pinned") ? "#8b5cf6" : "#22c55e";
-    el.style.borderLeft = `3px solid ${color}`;
-    el.style.transition = "border-left 0.3s ease";
-
-    if ((type === "ai" || type === "reused") && question && answer) {
-      // Find a safe container that won't overlap with adjacent form elements
-      const container = el.closest(
-        '.field, .form-group, .form-field, [class*="field-wrapper"], [class*="question"], [class*="form-item"], .application-question'
-      ) || el.parentElement;
-
-      if (!container) return;
-
-      const pinBtn = document.createElement("div");
-      pinBtn.className = "rf-pin-btn";
-      pinBtn.innerHTML = '\u{1F4CC} <span>Pin for future</span>';
-      pinBtn.style.cssText = [
-        "display:inline-flex", "align-items:center", "gap:4px",
-        "font-size:10px", "color:#6366f1", "background:#f5f3ff",
-        "border:1px solid #ddd6fe", "border-radius:12px",
-        "padding:2px 10px 2px 6px", "margin-top:6px",
-        "cursor:pointer", "font-family:-apple-system,BlinkMacSystemFont,sans-serif",
-        "box-shadow:0 1px 2px rgba(0,0,0,0.05)",
-        "transition:all 0.15s", "user-select:none",
-        "clear:both", "float:none",
-      ].join(";");
-
-      pinBtn.addEventListener("mouseenter", () => { pinBtn.style.background = "#ede9fe"; });
-      pinBtn.addEventListener("mouseleave", () => { pinBtn.style.background = "#f5f3ff"; });
-
-      pinBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        pinBtn.style.pointerEvents = "none";
-        pinBtn.innerHTML = "\u23F3 Pinning...";
-        const result = await chrome.runtime.sendMessage({ type: "PIN_ANSWER", question, answer });
-        if (result.pinned) {
-          pinBtn.innerHTML = "\u2705 Pinned!";
-          pinBtn.style.color = "#22c55e";
-          pinBtn.style.borderColor = "#bbf7d0";
-          pinBtn.style.background = "#f0fdf4";
-          setTimeout(() => { pinBtn.style.opacity = "0"; setTimeout(() => pinBtn.remove(), 300); }, 1500);
-        } else {
-          pinBtn.innerHTML = "\u274C Failed";
-          pinBtn.style.pointerEvents = "auto";
-        }
-      });
-
-      // Append after the field's container, not inline next to the input
-      container.appendChild(pinBtn);
+  function highlightField(el, type) {
+    let color, style;
+    if (type === "needs-input") {
+      color = "#f59e0b";
+      style = "dashed";
+    } else if (type === "ai") {
+      color = "#f59e0b";
+      style = "solid";
+    } else if (type === "reused" || type === "learned") {
+      color = "#8b5cf6";
+      style = "solid";
+    } else {
+      color = "#22c55e";
+      style = "solid";
     }
+    el.style.borderLeft = `3px ${style} ${color}`;
+    el.style.transition = "border-left 0.3s ease";
   }
 
   // ── Path Resolution ──
@@ -666,6 +665,17 @@
         if (fieldKey) filledFields.add(fieldKey);
         if (detectedType === "radio" && el.name) processedRadioGroups.add(el.name);
         highlightField(el, "standard");
+        // Track for observation
+        const obsKey = fieldKey || getLabelText(el) || String(filledCount);
+        observedFields.set(obsKey, {
+          element: el,
+          question: getLabelText(el) || identifiers,
+          filledValue: getCurrentValue(el),
+          fieldType: detectedType,
+          options: el.__rfOptions || extractOptions(el),
+          source: "standard",
+          userChanged: false,
+        });
       } else if (el.hasAttribute("required") || el.getAttribute("aria-required") === "true") {
         // Unmatched required field — screening question candidate
         const label = getLabelText(el);
@@ -706,12 +716,23 @@
             const filled = await smartFill(sq.element, resp.answer);
             if (filled) {
               filledFields.add(fieldKey);
-              highlightField(sq.element, resp.source || "ai", sq.question, resp.answer);
+              highlightField(sq.element, resp.source || "ai");
               filledCount++;
-              // Track AI answers for auto-pinning on submit
-              if (resp.source === "ai") {
-                sessionAnswers.push({ question: sq.question, answer: resp.answer });
-              }
+            }
+            // Track for observation — both filled and unfilled
+            const detectedType = detectFieldType(sq.element);
+            observedFields.set(fieldKey, {
+              element: sq.element,
+              question: sq.question,
+              filledValue: filled ? getCurrentValue(sq.element) : null,
+              fieldType: detectedType,
+              options: sq.element.__rfOptions || sq.options,
+              source: filled ? (resp.source || "ai") : null,
+              userChanged: false,
+            });
+            // Highlight unfilled fields as needing user attention
+            if (!filled) {
+              highlightField(sq.element, "needs-input");
             }
           }
         }
@@ -729,6 +750,8 @@
 
     // Set up multi-page observer (once per session)
     if (!multiPageObserver) setupMultiPageObserver();
+    // Set up field observers for learning
+    setupFieldObservers();
 
     return { filledCount, screeningQuestions: screeningQuestions.length };
   }
@@ -746,11 +769,23 @@
       hasMarkedApplied = true;
       try {
         await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
-        if (sessionAnswers.length > 0) {
-          await chrome.runtime.sendMessage({
-            type: "AUTO_PIN_ANSWERS",
-            answers: sessionAnswers,
+        // Collect final field observations for learning
+        const observations = [];
+        for (const [, data] of observedFields) {
+          const finalValue = getCurrentValue(data.element);
+          if (!finalValue || !data.question) continue;
+          observations.push({
+            question: data.question,
+            answer: finalValue,
+            fieldType: data.fieldType,
+            options: data.options || [],
+            wasAutoFilled: data.filledValue !== null,
+            wasUserCorrected: data.userChanged,
+            originalFillValue: data.filledValue,
           });
+        }
+        if (observations.length > 0) {
+          await chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations });
         }
       } catch { /* silent */ }
     }
@@ -806,9 +841,25 @@
 
     // Method 4: beforeunload — page is navigating away after we filled a form
     window.addEventListener("beforeunload", () => {
-      if (!hasMarkedApplied && sessionAnswers.length > 0) {
+      if (!hasMarkedApplied && observedFields.size > 0) {
         chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId }).catch(() => {});
-        chrome.runtime.sendMessage({ type: "AUTO_PIN_ANSWERS", answers: sessionAnswers }).catch(() => {});
+        const observations = [];
+        for (const [, data] of observedFields) {
+          const finalValue = getCurrentValue(data.element);
+          if (!finalValue || !data.question) continue;
+          observations.push({
+            question: data.question,
+            answer: finalValue,
+            fieldType: data.fieldType,
+            options: data.options || [],
+            wasAutoFilled: data.filledValue !== null,
+            wasUserCorrected: data.userChanged,
+            originalFillValue: data.filledValue,
+          });
+        }
+        if (observations.length > 0) {
+          chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations }).catch(() => {});
+        }
         hasMarkedApplied = true;
       }
     });
@@ -864,7 +915,7 @@
       if (msg.jobId !== currentJobId) {
         filledFields.clear();
         processedRadioGroups.clear();
-        sessionAnswers.length = 0;
+        observedFields.clear();
         hasMarkedApplied = false;
         if (multiPageObserver) {
           multiPageObserver.disconnect();

@@ -201,22 +201,6 @@ async function handleMessage(msg) {
       return { apiUrl: await getApiUrl() };
     }
 
-    case "PIN_ANSWER": {
-      const res = await apiFetch("/api/applications/pin", {
-        method: "POST",
-        body: JSON.stringify({ question: msg.question, answer: msg.answer }),
-      });
-      return res.json();
-    }
-
-    case "UNPIN_ANSWER": {
-      const res = await apiFetch("/api/applications/pin", {
-        method: "DELETE",
-        body: JSON.stringify({ question: msg.question }),
-      });
-      return res.json();
-    }
-
     case "INJECT_SCRIPTS": {
       await chrome.scripting.executeScript({
         target: { tabId: msg.tabId },
@@ -233,19 +217,12 @@ async function handleMessage(msg) {
       return res.json();
     }
 
-    case "AUTO_PIN_ANSWERS": {
-      // Auto-pin AI answers on form submission — pin in parallel, ignore individual failures
-      const answers = msg.answers || [];
-      const results = await Promise.allSettled(
-        answers.map(({ question, answer }) =>
-          apiFetch("/api/applications/pin", {
-            method: "POST",
-            body: JSON.stringify({ question, answer }),
-          })
-        )
-      );
-      const pinned = results.filter((r) => r.status === "fulfilled").length;
-      return { pinned, total: answers.length };
+    case "LEARN_ANSWERS": {
+      const res = await apiFetch("/api/applications/learn", {
+        method: "POST",
+        body: JSON.stringify({ observations: msg.observations }),
+      });
+      return res.json();
     }
 
     case "SET_API_URL": {
