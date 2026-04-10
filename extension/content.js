@@ -418,6 +418,8 @@
           const opts = [...listbox.querySelectorAll(
             '[role="option"], [role="menuitem"], li, [class*="option"], [data-value]'
           )].filter((o) => isVisible(o));
+          // Capture options for observation system
+          el.__rfOptions = opts.map((o) => o.textContent.trim()).filter(Boolean);
 
           const match = matchOption(opts);
           if (match) {
@@ -429,18 +431,16 @@
               resolve(true);
             }, 150);
           } else {
+            // No match found — close dropdown, clear typed text, leave for user
             el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
             el.dispatchEvent(new Event("blur", { bubbles: true }));
-            if (el.tagName === "INPUT" && el.value !== String(value)) {
+            if (el.tagName === "INPUT") {
               const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-              if (setter) setter.call(el, String(value));
-              else el.value = String(value);
-              el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-              resolve(true);
-            } else {
-              resolve(false);
+              if (setter) setter.call(el, "");
+              else el.value = "";
+              el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContent" }));
             }
+            resolve(false);
           }
           return;
         }
@@ -450,17 +450,14 @@
           setTimeout(trySelect, delay);
           attempts++;
         } else {
+          // Polls exhausted, no listbox found — leave empty for user
           if (el.tagName === "INPUT") {
             const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-            if (setter) setter.call(el, String(value));
-            else el.value = String(value);
-            el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            el.dispatchEvent(new Event("blur", { bubbles: true }));
-            resolve(true);
-          } else {
-            resolve(false);
+            if (setter) setter.call(el, "");
+            else el.value = "";
+            el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContent" }));
           }
+          resolve(false);
         }
       };
 
