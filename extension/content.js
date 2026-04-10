@@ -723,8 +723,15 @@
       }
     }
 
+    // Cache for multi-page re-fill
+    cachedPrefillData = prefillData;
+    cachedJobId = jobId;
+
     // Set up submission detection after filling
     if (filledCount > 0) setupSubmissionDetection(jobId);
+
+    // Set up multi-page observer (once per session)
+    if (!multiPageObserver) setupMultiPageObserver();
 
     return { filledCount, screeningQuestions: screeningQuestions.length };
   }
@@ -784,10 +791,67 @@
     }
   }
 
+  // ── Multi-Page Auto-Fill ──
+
+  function setupMultiPageObserver() {
+    if (multiPageObserver) return;
+
+    let debounceTimer = null;
+    let lastFillTime = 0;
+
+    function onFormChange() {
+      if (isRunning || !cachedPrefillData || !cachedJobId) return;
+      if (Date.now() - lastFillTime < 1000) return;
+
+      const allInputs = deepQueryAll(document,
+        "input, select, textarea, [contenteditable], [role='combobox'], [role='listbox'], [role='checkbox'], [role='radio']"
+      );
+      let newFieldCount = 0;
+      for (const el of allInputs) {
+        if (!isInteractable(el)) continue;
+        const key = el.name || el.id || el.getAttribute("data-automation-id") || "";
+        if (key && filledFields.has(key)) continue;
+        newFieldCount++;
+      }
+
+      if (newFieldCount < 3) return;
+
+      lastFillTime = Date.now();
+      processedRadioGroups.clear();
+
+      isRunning = true;
+      fillPage(cachedPrefillData, cachedJobId)
+        .then(() => { isRunning = false; })
+        .catch(() => { isRunning = false; });
+    }
+
+    multiPageObserver = new MutationObserver(() => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(onFormChange, 500);
+    });
+
+    multiPageObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
   // ── Message Handler ──
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "FILL_FORM" && !isRunning) {
+      // Reset state if switching to a different job
+      if (msg.jobId !== currentJobId) {
+        filledFields.clear();
+        processedRadioGroups.clear();
+        sessionAnswers.length = 0;
+        hasMarkedApplied = false;
+        if (multiPageObserver) {
+          multiPageObserver.disconnect();
+          multiPageObserver = null;
+        }
+      } else {
+        // Same job re-fill: only clear radio groups to retry failed ones
+        processedRadioGroups.clear();
+      }
+
       isRunning = true;
       fillPage(msg.prefillData, msg.jobId)
         .then((result) => { isRunning = false; sendResponse(result); })
@@ -803,6 +867,18 @@
   // ── SPA Navigation Support ──
   let lastUrl = location.href;
   new MutationObserver(() => {
-    if (location.href !== lastUrl) lastUrl = location.href;
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      // URL changed in SPA — trigger multi-page check after render
+      if (cachedPrefillData && cachedJobId && !isRunning) {
+        setTimeout(() => {
+          processedRadioGroups.clear();
+          isRunning = true;
+          fillPage(cachedPrefillData, cachedJobId)
+            .then(() => { isRunning = false; })
+            .catch(() => { isRunning = false; });
+        }, 1000);
+      }
+    }
   }).observe(document.body, { childList: true, subtree: true });
 })();
