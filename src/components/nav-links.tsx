@@ -8,6 +8,7 @@ import {
   Sparkles,
   History,
   Trophy,
+  BookOpen,
 } from "lucide-react";
 
 const navLinks = [
@@ -16,6 +17,7 @@ const navLinks = [
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/skills", label: "Skills", icon: Sparkles },
   { href: "/top-matches", label: "Top Matches", icon: Trophy },
+  { href: "/learn", label: "Learn", icon: BookOpen },
   { href: "/versions", label: "Versions", icon: History },
 ];
 
