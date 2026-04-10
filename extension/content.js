@@ -167,15 +167,15 @@
 
   // ── Extract options from a select or combobox ──
 
-  async function extractOptions(el) {
+  function extractOptions(el) {
     const type = detectFieldType(el);
     if (type === "select") {
       return [...el.querySelectorAll("option")]
         .map((o) => o.textContent.trim())
-        .filter((t) => t && t !== "" && !/^(?:select|choose|pick|--)/i.test(t));
+        .filter((t) => t && !/^(?:select|choose|pick|--)/i.test(t));
     }
 
-    // For combobox: try linked listbox first
+    // For combobox: try linked listbox
     const controls = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
     if (controls) {
       const listbox = document.getElementById(controls);
@@ -198,41 +198,10 @@
       }
     }
 
-    // Try opening the dropdown briefly to extract options
-    try {
-      el.focus();
-      el.click();
-      el.dispatchEvent(new Event("mousedown", { bubbles: true }));
-
-      // Wait for dropdown to render
-      await new Promise((r) => setTimeout(r, 300));
-
-      // Search for the listbox that appeared
-      let listbox = null;
-      const controlsNow = el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || "";
-      if (controlsNow) listbox = document.getElementById(controlsNow);
-      if (!listbox) {
-        for (const candidate of document.querySelectorAll(
-          '[role="listbox"], [role="menu"], ul[class*="dropdown"], [class*="listbox"], [class*="select-menu"]'
-        )) {
-          if (isVisible(candidate)) { listbox = candidate; break; }
-        }
-      }
-
-      const opts = listbox
-        ? [...listbox.querySelectorAll('[role="option"], [role="menuitem"], li, [data-value]')]
-            .map((o) => o.textContent.trim())
-            .filter(Boolean)
-        : [];
-
-      // Close the dropdown
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      el.blur();
-
-      return opts;
-    } catch {
-      return [];
-    }
+    // For comboboxes with no pre-rendered options: return empty.
+    // The AI will generate a free-text answer, and fillCombobox() will
+    // handle opening + matching at fill time.
+    return [];
   }
 
   // ── Fill Functions ──
@@ -706,7 +675,7 @@
         if (label && label.length > 2) {
           // For dropdowns: include available options so the API can match against them
           const options = (detectedType === "select" || detectedType === "combobox")
-            ? await extractOptions(el)
+            ? extractOptions(el)
             : [];
           screeningQuestions.push({ element: el, question: label, options });
         }
