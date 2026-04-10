@@ -3,6 +3,29 @@ import { prisma } from "@/lib/db";
 import { generateFormAnswer } from "@/lib/claude";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
+function calculateTotalYears(
+  experiences: Array<{ startDate: string; endDate: string | null; current: boolean }>
+): number {
+  if (experiences.length === 0) return 0;
+  const dates = experiences.map((e) => {
+    const start = new Date(e.startDate).getTime();
+    const end = e.current || !e.endDate ? Date.now() : new Date(e.endDate).getTime();
+    return { start, end };
+  });
+  dates.sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const d of dates) {
+    const last = merged[merged.length - 1];
+    if (last && d.start <= last.end) {
+      last.end = Math.max(last.end, d.end);
+    } else {
+      merged.push({ ...d });
+    }
+  }
+  const totalMs = merged.reduce((sum, r) => sum + (r.end - r.start), 0);
+  return Math.round(totalMs / (1000 * 60 * 60 * 24 * 365.25));
+}
+
 function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
   if (typeof value !== "string") return value ?? fallback;
   try {
@@ -90,16 +113,26 @@ export async function POST(request: NextRequest) {
         where: { profileId: profile.id },
       });
       if (appProfile?.customDefaults) {
-        const defaults = safeJsonParse(appProfile.customDefaults, []) as Array<{ question: string; answer: string }>;
+        const defaults = safeJsonParse(appProfile.customDefaults, []) as Array<Record<string, unknown>>;
         const normalized = normalizeQuestion(question);
-        const pinned = defaults.find((d) => normalizeQuestion(d.question) === normalized);
+        const pinned = defaults.find((d) => normalizeQuestion(String(d.question || "")) === normalized);
         if (pinned) {
-          const answer = options.length ? matchAnswerToOption(pinned.answer, options) : pinned.answer;
-          // Cache for this job too
-          await prisma.applicationAnswer.create({
-            data: { jobId, question, answer, source: "pinned" },
-          });
-          return NextResponse.json({ answer, source: "pinned" });
+          // Support both old { question, answer } and new { question, answers[], activeIndex } shapes
+          let activeText: string | null = null;
+          if ("answers" in pinned && Array.isArray(pinned.answers)) {
+            const idx = typeof pinned.activeIndex === "number" ? pinned.activeIndex : 0;
+            const entry = (pinned.answers as Array<{ text: string }>)[idx];
+            activeText = entry?.text ?? null;
+          } else if (typeof pinned.answer === "string") {
+            activeText = pinned.answer;
+          }
+          if (activeText) {
+            const answer = options.length ? matchAnswerToOption(activeText, options) : activeText;
+            await prisma.applicationAnswer.create({
+              data: { jobId, question, answer, source: "pinned" },
+            });
+            return NextResponse.json({ answer, source: "pinned" });
+          }
         }
       }
     }
@@ -122,12 +155,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ answer, source: "reused" });
     }
 
-    // ── Tier 4: Generate via AI ──
+    // ── Tier 3.5: Profile data lookup (exact values) ──
     const [job, fullProfile] = await Promise.all([
       prisma.job.findUnique({ where: { id: jobId } }),
       prisma.profile.findFirst({
         include: {
-          experiences: true,
+          experiences: { orderBy: { startDate: "desc" } },
           educations: true,
           projects: true,
           skills: true,
@@ -144,6 +177,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No profile found" }, { status: 404 });
     }
 
+    const currentExp = fullProfile.experiences.find((e) => e.current) || fullProfile.experiences[0];
+    const profileLookups: Array<{ pattern: RegExp; value: string | null }> = [
+      { pattern: /linkedin/i, value: fullProfile.linkedin },
+      { pattern: /github/i, value: fullProfile.github },
+      { pattern: /website|portfolio/i, value: fullProfile.website },
+      { pattern: /twitter/i, value: fullProfile.twitter },
+      { pattern: /phone|mobile|cell/i, value: fullProfile.phone },
+      { pattern: /e-?mail/i, value: fullProfile.email },
+      { pattern: /city|location/i, value: fullProfile.location },
+      { pattern: /years?.{0,3}(?:of.?)?experience/i, value: String(calculateTotalYears(fullProfile.experiences)) },
+      { pattern: /current.{0,3}(?:title|position|role)/i, value: currentExp?.title ?? null },
+      { pattern: /current.{0,3}(?:company|employer)/i, value: currentExp?.company ?? null },
+    ];
+
+    for (const lookup of profileLookups) {
+      if (lookup.pattern.test(question) && lookup.value) {
+        const answer = options.length ? matchAnswerToOption(lookup.value, options) : lookup.value;
+        await prisma.applicationAnswer.create({
+          data: { jobId, question, answer, source: "profile" },
+        });
+        return NextResponse.json({ answer, source: "profile" });
+      }
+    }
+
+    // ── Tier 4: Generate via AI ──
     const profileData = serializeProfile(fullProfile);
     const jobAnalysis = {
       title: job.title,

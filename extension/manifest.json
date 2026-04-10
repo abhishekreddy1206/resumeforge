@@ -3,7 +3,7 @@
   "name": "ResumeForge Auto-Fill",
   "version": "1.0.0",
   "description": "Auto-fill job application forms with your ResumeForge profile data",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["http://localhost:3000/*"],
   "background": {
     "service_worker": "background.js"

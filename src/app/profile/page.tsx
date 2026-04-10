@@ -348,6 +348,166 @@ function RecommendationForm({ initial, onSave, onCancel }: {
   );
 }
 
+// ── Pinned Answers Card ──
+
+type PinnedAnswer = { text: string; label?: string };
+type PinnedQuestionEntry = { question: string; answers: PinnedAnswer[]; activeIndex: number };
+
+function PinnedQuestionCard({ entry, onApi }: {
+  entry: PinnedQuestionEntry;
+  onApi: (method: string, body: Record<string, unknown>) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [addingNew, setAddingNew] = useState(false);
+  const [newText, setNewText] = useState("");
+
+  const activeAnswer = entry.answers[entry.activeIndex]?.text || entry.answers[0]?.text || "";
+
+  return (
+    <div className="p-2 rounded border border-border/50 bg-background">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-medium text-foreground mb-0.5 leading-snug">{entry.question}</p>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">{activeAnswer}</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {entry.answers.length > 1 && (
+            <Badge variant="secondary" className="text-[8px] px-1 py-0">{entry.answers.length}</Badge>
+          )}
+          <button onClick={() => setExpanded(!expanded)} className="p-0.5 text-muted-foreground hover:text-foreground">
+            {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-2 pt-2 border-t border-border/30 space-y-1.5">
+          {entry.answers.map((ans, ai) => (
+            <div key={ai} className={`p-1.5 rounded text-[10px] ${ai === entry.activeIndex ? "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800" : "bg-muted/30 border border-border/30"}`}>
+              {editIdx === ai ? (
+                <div className="space-y-1">
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    className="w-full text-[10px] p-1 rounded border border-border bg-background resize-none"
+                    rows={3}
+                    autoFocus
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      onClick={async () => {
+                        await onApi("PATCH", { question: entry.question, answerIndex: ai, text: editText });
+                        setEditIdx(null);
+                        toast.success("Answer updated");
+                      }}
+                      className="text-[9px] text-green-600 hover:text-green-700 flex items-center gap-0.5"
+                    >
+                      <Check className="w-2.5 h-2.5" /> Save
+                    </button>
+                    <button onClick={() => setEditIdx(null)} className="text-[9px] text-muted-foreground hover:text-foreground">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-1">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      {ai === entry.activeIndex && (
+                        <span className="text-[8px] text-green-600 font-medium">Active</span>
+                      )}
+                      {ans.label && <span className="text-[8px] text-muted-foreground">{ans.label}</span>}
+                    </div>
+                    <p className="text-muted-foreground leading-relaxed">{ans.text}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {ai !== entry.activeIndex && (
+                      <button
+                        onClick={async () => {
+                          await onApi("PATCH", { question: entry.question, answerIndex: ai, setActive: true });
+                          toast.success("Set as active");
+                        }}
+                        className="p-0.5 text-muted-foreground hover:text-green-600" title="Set active"
+                      >
+                        <Check className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setEditIdx(ai); setEditText(ans.text); }}
+                      className="p-0.5 text-muted-foreground hover:text-foreground" title="Edit"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await onApi("DELETE", { question: entry.question, answerIndex: ai });
+                        toast.success("Alternative removed");
+                      }}
+                      className="p-0.5 text-muted-foreground hover:text-red-500" title="Delete"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {addingNew ? (
+            <div className="space-y-1">
+              <textarea
+                value={newText}
+                onChange={(e) => setNewText(e.target.value)}
+                placeholder="Type an alternative answer..."
+                className="w-full text-[10px] p-1 rounded border border-border bg-background resize-none"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex gap-1">
+                <button
+                  onClick={async () => {
+                    if (!newText.trim()) return;
+                    await onApi("POST", { question: entry.question, answer: newText.trim() });
+                    setNewText("");
+                    setAddingNew(false);
+                    toast.success("Alternative added");
+                  }}
+                  className="text-[9px] text-green-600 hover:text-green-700 flex items-center gap-0.5"
+                >
+                  <Check className="w-2.5 h-2.5" /> Add
+                </button>
+                <button onClick={() => { setAddingNew(false); setNewText(""); }} className="text-[9px] text-muted-foreground hover:text-foreground">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={() => setAddingNew(true)}
+                className="text-[9px] text-primary hover:text-primary/80 flex items-center gap-0.5"
+              >
+                <Plus className="w-2.5 h-2.5" /> Add Alternative
+              </button>
+              <button
+                onClick={async () => {
+                  await onApi("DELETE", { question: entry.question });
+                  toast.success("Answer unpinned");
+                }}
+                className="text-[9px] text-red-500 hover:text-red-700"
+              >
+                Unpin All
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──
 
 export default function ProfilePage() {
@@ -1629,36 +1789,35 @@ export default function ProfilePage() {
 
                     {/* Pinned Custom Defaults */}
                     {(() => {
-                      const pinned = (() => {
+                      type PinnedAnswer = { text: string; label?: string };
+                      type PinnedQuestion = { question: string; answers: PinnedAnswer[]; activeIndex: number };
+                      const pinned: PinnedQuestion[] = (() => {
                         if (!appForm.customDefaults) return [];
-                        try { return JSON.parse(appForm.customDefaults) as Array<{ question: string; answer: string }>; } catch { return []; }
+                        try {
+                          const raw = JSON.parse(appForm.customDefaults) as Array<Record<string, unknown>>;
+                          return raw.map((entry) => {
+                            if ("answers" in entry && Array.isArray(entry.answers)) return entry as unknown as PinnedQuestion;
+                            return { question: String(entry.question || ""), answers: [{ text: String(entry.answer || "") }], activeIndex: 0 };
+                          });
+                        } catch { return []; }
                       })();
                       if (pinned.length === 0) return null;
+
+                      const pinApi = async (method: string, body: Record<string, unknown>) => {
+                        await fetch("/api/applications/pin", {
+                          method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+                        });
+                        fetchAppProfile();
+                      };
+
                       return (
                         <div className="mt-3 pt-3 border-t border-border/50">
                           <p className="text-[10px] text-muted-foreground mb-2 font-medium uppercase tracking-wider">
                             Pinned Answers ({pinned.length})
                           </p>
                           <div className="space-y-2">
-                            {pinned.map((p, i) => (
-                              <div key={i} className="p-2 rounded border border-border/50 bg-background">
-                                <p className="text-[11px] font-medium text-foreground mb-0.5 leading-snug">{p.question}</p>
-                                <p className="text-[10px] text-muted-foreground leading-relaxed">{p.answer}</p>
-                                <button
-                                  onClick={async () => {
-                                    await fetch("/api/applications/pin", {
-                                      method: "DELETE",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ question: p.question }),
-                                    });
-                                    fetchAppProfile();
-                                    toast.success("Answer unpinned");
-                                  }}
-                                  className="text-[9px] text-red-500 hover:text-red-700 mt-1"
-                                >
-                                  Unpin
-                                </button>
-                              </div>
+                            {pinned.map((p, qi) => (
+                              <PinnedQuestionCard key={qi} entry={p} onApi={pinApi} />
                             ))}
                           </div>
                         </div>

@@ -5,6 +5,75 @@
 
 const DEFAULT_API_URL = "http://localhost:3000";
 
+function safeHostname(url) {
+  try { return new URL(url).hostname.toLowerCase(); } catch { return ""; }
+}
+
+/**
+ * Extract company slug from common ATS URL patterns.
+ * e.g. "job-boards.greenhouse.io/discord/jobs/123" → "discord"
+ *      "jobs.ashbyhq.com/ramp/abc-123" → "ramp"
+ *      "salesforce.wd12.myworkdayjobs.com/..." → "salesforce"
+ *      "jobs.lever.co/company/..." → "company"
+ */
+function extractCompanySlug(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    const path = u.pathname.toLowerCase();
+
+    // Greenhouse: job-boards.greenhouse.io/{company}/... or boards.greenhouse.io/{company}/...
+    // Also handles embed URLs: greenhouse.io/embed/job_app?for={company}
+    if (host.includes("greenhouse.io")) {
+      const forParam = u.searchParams.get("for");
+      if (forParam) return forParam.toLowerCase();
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg && seg !== "embed") return seg;
+    }
+    // Ashby: jobs.ashbyhq.com/{company}/...
+    if (host.includes("ashbyhq.com")) {
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg) return decodeURIComponent(seg).toLowerCase().replace(/\s+/g, "");
+    }
+    // Lever: jobs.lever.co/{company}/...
+    if (host.includes("lever.co")) {
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg) return seg;
+    }
+    // Workday: {company}.wd{N}.myworkdayjobs.com/...
+    if (host.includes("myworkdayjobs.com") || host.includes("workday.com")) {
+      const match = host.match(/^([^.]+)\./);
+      if (match) return match[1];
+    }
+    // iCIMS: careers-{company}.icims.com/...
+    if (host.includes("icims.com")) {
+      const match = host.match(/^careers-?([^.]+)\./);
+      if (match) return match[1];
+    }
+    // SmartRecruiters: jobs.smartrecruiters.com/{company}/...
+    if (host.includes("smartrecruiters.com")) {
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg) return seg;
+    }
+    // Jobvite: jobs.jobvite.com/{company}/...
+    if (host.includes("jobvite.com")) {
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg) return seg;
+    }
+    // Generic: subdomain as company
+    const parts = host.split(".");
+    if (parts.length > 2) return parts[0];
+    return null;
+  } catch { return null; }
+}
+
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    return (u.origin + u.pathname).replace(/\/+$/, "");
+  } catch { return url.replace(/\/+$/, ""); }
+}
+
 async function getApiUrl() {
   const result = await chrome.storage.sync.get("apiUrl");
   return result.apiUrl || DEFAULT_API_URL;
@@ -34,11 +103,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function handleMessage(msg) {
   switch (msg.type) {
     case "GET_JOBS": {
-      const res = await apiFetch("/api/jobs");
+      const res = await apiFetch("/api/jobs?hasResumes=true&excludeApplied=true&pageSize=50");
       const data = await res.json();
       const jobs = data.jobs || data;
-      // Filter to jobs that have at least one generated resume
-      return jobs.filter((j) => j._count?.resumes > 0 || j.resumes?.length > 0);
+
+      // Score jobs by relevance to the current page URL
+      const pageUrl = (msg.pageUrl || "").toLowerCase();
+      if (pageUrl) {
+        const pageHost = safeHostname(pageUrl);
+        const pageSlug = extractCompanySlug(pageUrl);
+
+        for (const job of jobs) {
+          const jobUrl = (job.url || "").toLowerCase();
+          job._relevance = 0;
+          if (!jobUrl) continue;
+
+          // Exact URL match (ignore query params / trailing slashes)
+          if (normalizeUrl(jobUrl) === normalizeUrl(pageUrl)) {
+            job._relevance = 100;
+            continue;
+          }
+          // Same ATS host + same company slug
+          const jobHost = safeHostname(jobUrl);
+          const jobSlug = extractCompanySlug(jobUrl);
+          if (pageHost === jobHost && pageSlug && jobSlug && pageSlug === jobSlug) {
+            job._relevance = 80;
+            continue;
+          }
+          // Same ATS host only
+          if (pageHost === jobHost) {
+            job._relevance = 50;
+            continue;
+          }
+          // Company name appears in page URL
+          if (job.company && pageUrl.includes(job.company.toLowerCase().replace(/\s+/g, ""))) {
+            job._relevance = 40;
+          }
+        }
+
+        jobs.sort((a, b) => (b._relevance || 0) - (a._relevance || 0));
+      }
+
+      return jobs;
     }
 
     case "GET_PREFILL": {
@@ -99,6 +205,14 @@ async function handleMessage(msg) {
       const res = await apiFetch("/api/applications/pin", {
         method: "DELETE",
         body: JSON.stringify({ question: msg.question }),
+      });
+      return res.json();
+    }
+
+    case "MARK_APPLIED": {
+      const res = await apiFetch("/api/jobs/applied", {
+        method: "PATCH",
+        body: JSON.stringify({ jobId: msg.jobId, applied: true }),
       });
       return res.json();
     }

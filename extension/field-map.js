@@ -33,11 +33,11 @@ const FIELD_MAP = {
     workdayId: "addressSection_city",
   },
   "personal.linkedin": {
-    keywords: [/linkedin/i, /linked.?in/i],
+    keywords: [/linkedin/i, /linked.?in/i, /linked\s+in/i],
     workdayId: "linkedinQuestion",
   },
   "personal.github": {
-    keywords: [/github/i, /git.?hub/i],
+    keywords: [/github/i, /git.?hub/i, /code.?repo/i],
   },
   "personal.website": {
     keywords: [/website/i, /portfolio/i, /personal.?url/i, /homepage/i],
@@ -66,7 +66,7 @@ const FIELD_MAP = {
     workdayId: "currentCompany",
   },
   "experience.totalYears": {
-    keywords: [/years?.?of.?experience/i, /total.?experience/i, /how.?many.?years/i],
+    keywords: [/years?.?of.?experience/i, /total.?experience/i, /how.?many.?years/i, /experience$/i],
   },
 
   // Education

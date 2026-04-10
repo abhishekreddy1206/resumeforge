@@ -11,6 +11,8 @@
   const filledFields = new Set();
   const processedRadioGroups = new Set();
   let isRunning = false;
+  let currentJobId = null;
+  let hasMarkedApplied = false;
 
   // ── Visibility & State ──
 
@@ -413,6 +415,7 @@
   // ── Main Fill Logic ──
 
   async function fillPage(prefillData, jobId) {
+    currentJobId = jobId;
     const inputs = deepQueryAll(document,
       "input, select, textarea, [contenteditable], [role='combobox'], [role='listbox'], [role='checkbox'], [role='radio']"
     );
@@ -515,7 +518,58 @@
       }
     }
 
+    // Set up submission detection after filling
+    if (filledCount > 0) setupSubmissionDetection(jobId);
+
     return { filledCount, screeningQuestions: screeningQuestions.length };
+  }
+
+  // ── Submission Detection ──
+
+  const CONFIRM_URL_RE = /thank|confirm|success|submitted|complete|application.?received/i;
+  const CONFIRM_TEXT_RE = /application\s+(has\s+been\s+)?submitted|thank you for (applying|your application)|we('ve| have) received your application|successfully submitted|your application has been received/i;
+
+  function setupSubmissionDetection(jobId) {
+    if (hasMarkedApplied) return;
+
+    async function markApplied() {
+      if (hasMarkedApplied || !jobId) return;
+      hasMarkedApplied = true;
+      try {
+        await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
+      } catch { /* silent */ }
+    }
+
+    // Watch for DOM content changes indicating confirmation
+    const domObserver = new MutationObserver(() => {
+      if (hasMarkedApplied) { domObserver.disconnect(); return; }
+      // Check URL first
+      if (CONFIRM_URL_RE.test(location.href)) {
+        domObserver.disconnect();
+        markApplied();
+        return;
+      }
+      // Check page text — only scan new nodes to avoid false positives
+      const bodyText = document.body?.innerText || "";
+      if (bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText)) {
+        domObserver.disconnect();
+        markApplied();
+      }
+    });
+    domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    // Also listen for form submit events
+    const forms = document.querySelectorAll("form");
+    for (const form of forms) {
+      form.addEventListener("submit", () => {
+        // Delay slightly to allow the page to navigate/update
+        setTimeout(() => {
+          if (CONFIRM_URL_RE.test(location.href) || CONFIRM_TEXT_RE.test(document.body?.innerText || "")) {
+            markApplied();
+          }
+        }, 2000);
+      }, { once: true });
+    }
   }
 
   // ── Message Handler ──
