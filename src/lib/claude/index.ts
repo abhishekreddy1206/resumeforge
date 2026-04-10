@@ -34,3 +34,7 @@ export { generateInterviewPrep } from "./skills/interview-prep";
 export type { InterviewPrep, InterviewStory } from "./skills/interview-prep";
 export { generateFormAnswer } from "./skills/form-answerer";
 export { compactProfile } from "./client";
+export { generateGuide, refineGuide } from "./skills/guide-generator";
+export type { GuideContent, GuideSection, RefineResult } from "./skills/guide-generator";
+export { recommendGuides } from "./skills/guide-recommender";
+export type { GuideRecommendation } from "./skills/guide-recommender";
