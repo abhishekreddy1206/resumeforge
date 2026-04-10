@@ -120,34 +120,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ answer, source: cached.source });
     }
 
-    // ── Tier 2: Check pinned custom defaults ──
-    const profile = await prisma.profile.findFirst();
-    if (profile) {
-      const appProfile = await prisma.applicationProfile.findUnique({
-        where: { profileId: profile.id },
-      });
-      if (appProfile?.customDefaults) {
-        const defaults = safeJsonParse(appProfile.customDefaults, []) as Array<Record<string, unknown>>;
-        const normalized = normalizeQuestion(question);
-        const pinned = defaults.find((d) => normalizeQuestion(String(d.question || "")) === normalized);
-        if (pinned) {
-          // Support both old { question, answer } and new { question, answers[], activeIndex } shapes
-          let activeText: string | null = null;
-          if ("answers" in pinned && Array.isArray(pinned.answers)) {
-            const idx = typeof pinned.activeIndex === "number" ? pinned.activeIndex : 0;
-            const entry = (pinned.answers as Array<{ text: string }>)[idx];
-            activeText = entry?.text ?? null;
-          } else if (typeof pinned.answer === "string") {
-            activeText = pinned.answer;
-          }
-          if (activeText) {
-            const answer = options.length ? matchAnswerToOption(activeText, options) : activeText;
-            await prisma.applicationAnswer.create({
-              data: { jobId, question, answer, source: "pinned" },
-            });
-            return NextResponse.json({ answer, source: "pinned" });
-          }
-        }
+    // ── Tier 2: Check learned answers ──
+    const normalized = normalizeQuestion(question);
+    const learnedAnswers = await prisma.learnedAnswer.findMany({
+      where: { normalizedQ: normalized },
+      orderBy: [{ confidence: "desc" }, { lastUsedAt: "desc" }],
+      take: 1,
+    });
+    if (learnedAnswers.length > 0) {
+      const best = learnedAnswers[0];
+      let answer: string | null = best.answer;
+      if (options.length > 0) {
+        const matched = matchAnswerToOption(answer, options);
+        const isRealMatch = options.some((o) => o.toLowerCase().trim() === matched.toLowerCase().trim());
+        if (!isRealMatch) answer = null;
+        else answer = matched;
+      }
+      if (answer) {
+        await prisma.applicationAnswer.create({
+          data: { jobId, question, answer, source: "learned" },
+        });
+        return NextResponse.json({ answer, source: "learned" });
       }
     }
 
@@ -156,7 +149,6 @@ export async function POST(request: NextRequest) {
       where: { NOT: { jobId } },
       select: { question: true, answer: true, source: true },
     });
-    const normalized = normalizeQuestion(question);
     const crossJobMatch = allAnswers.find(
       (a) => normalizeQuestion(a.question) === normalized
     );

@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
       job,
       fullProfile,
       allCrossJobAnswers,
+      allLearnedAnswers,
     ] = await Promise.all([
       prisma.applicationAnswer.findMany({
         where: { jobId },
@@ -140,6 +141,9 @@ export async function POST(request: NextRequest) {
         where: { NOT: { jobId } },
         select: { question: true, answer: true, source: true },
       }),
+      prisma.learnedAnswer.findMany({
+        orderBy: [{ confidence: "desc" }, { lastUsedAt: "desc" }],
+      }),
     ]);
 
     if (!job) {
@@ -152,9 +156,12 @@ export async function POST(request: NextRequest) {
     // Pre-compute shared data
     const cachedMap = new Map(cachedAnswers.map((a) => [normalizeQuestion(a.question), a]));
 
-    const pinnedDefaults: Array<Record<string, unknown>> = safeJsonParse(
-      fullProfile.applicationProfile?.customDefaults, []
-    ) as Array<Record<string, unknown>>;
+    const learnedMap = new Map<string, typeof allLearnedAnswers>();
+    for (const la of allLearnedAnswers) {
+      const list = learnedMap.get(la.normalizedQ) || [];
+      list.push(la);
+      learnedMap.set(la.normalizedQ, list);
+    }
 
     const currentExp = fullProfile.experiences.find((e) => e.current) || fullProfile.experiences[0];
     const appProfile = fullProfile.applicationProfile;
@@ -212,24 +219,23 @@ export async function POST(request: NextRequest) {
         resolved = true;
       }
 
-      // Tier 2: Pinned custom defaults
+      // Tier 2: Learned answers
       if (!resolved) {
-        const pinned = pinnedDefaults.find((d) => normalizeQuestion(String(d.question || "")) === norm);
-        if (pinned) {
-          let activeText: string | null = null;
-          if ("answers" in pinned && Array.isArray(pinned.answers)) {
-            const idx = typeof pinned.activeIndex === "number" ? pinned.activeIndex : 0;
-            const entry = (pinned.answers as Array<{ text: string }>)[idx];
-            activeText = entry?.text ?? null;
-          } else if (typeof pinned.answer === "string") {
-            activeText = pinned.answer;
+        const learned = learnedMap.get(norm);
+        if (learned && learned.length > 0) {
+          const best = learned[0];
+          let answer: string | null = best.answer;
+          if (opts.length > 0) {
+            const matched = matchAnswerToOption(answer, opts);
+            const isRealMatch = opts.some((o) => o.toLowerCase().trim() === matched.toLowerCase().trim());
+            if (!isRealMatch) answer = null;
+            else answer = matched;
           }
-          if (activeText) {
-            const answer = opts.length ? matchAnswerToOption(activeText, opts) : activeText;
+          if (answer) {
             await prisma.applicationAnswer.create({
-              data: { jobId, question: q, answer, source: "pinned" },
+              data: { jobId, question: q, answer, source: "learned" },
             });
-            results[i] = { answer, source: "pinned" };
+            results[i] = { answer, source: "learned" };
             resolved = true;
           }
         }
