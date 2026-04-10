@@ -242,3 +242,21 @@ model ApplicationAnswer {
 
   @@unique([jobId, question])
 }
+
+model LearnedAnswer {
+  id          String   @id @default(cuid())
+  normalizedQ String
+  originalQ   String
+  fieldType   String   @default("text")
+  answer      String
+  options     String?
+  confidence  Int      @default(50)
+  source      String   @default("observed")
+  useCount    Int      @default(1)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([normalizedQ, answer])
+  @@index([normalizedQ])
+}
