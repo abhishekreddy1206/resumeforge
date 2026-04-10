@@ -55,32 +55,46 @@ function matchAnswerToOption(answer: string, options: string[]): string {
   if (!options.length) return answer;
   const lower = answer.toLowerCase().trim();
 
-  // Exact match (case-insensitive)
+  // Pass 1: exact match
   const exact = options.find((o) => o.toLowerCase().trim() === lower);
   if (exact) return exact;
 
-  // Contains match — option contains answer or answer contains option
-  const contains = options.find((o) => {
-    const ol = o.toLowerCase().trim();
-    return ol.includes(lower) || lower.includes(ol);
-  });
-  if (contains) return contains;
+  // Pass 2: starts-with (either direction, min 3 chars to avoid false matches)
+  if (lower.length >= 3) {
+    const startsWith = options.find((o) => {
+      const ol = o.toLowerCase().trim();
+      return ol.startsWith(lower) || lower.startsWith(ol);
+    });
+    if (startsWith) return startsWith;
+  }
 
-  // Boolean mapping: true/yes/1 → first yes-like option, false/no/0 → first no-like option
+  // Pass 3: contains — only if the shorter string is >50% of the longer (avoids false positives)
+  const containsMatch = options.find((o) => {
+    const ol = o.toLowerCase().trim();
+    if (ol.includes(lower) && lower.length > ol.length * 0.5) return true;
+    if (lower.includes(ol) && ol.length > lower.length * 0.5) return true;
+    return false;
+  });
+  if (containsMatch) return containsMatch;
+
+  // Pass 4: word-boundary boolean matching
   const yesValues = ["true", "yes", "1", "y"];
   const noValues = ["false", "no", "0", "n"];
   if (yesValues.includes(lower)) {
-    const yesOption = options.find((o) => yesValues.includes(o.toLowerCase().trim()));
+    const yesOption = options.find((o) => /^yes\b/i.test(o.trim()));
     if (yesOption) return yesOption;
   }
   if (noValues.includes(lower)) {
-    const noOption = options.find((o) => noValues.includes(o.toLowerCase().trim()));
+    const noOption = options.find((o) => /^no\b/i.test(o.trim()));
     if (noOption) return noOption;
   }
 
-  // Starts-with match
-  const startsWith = options.find((o) => o.toLowerCase().trim().startsWith(lower));
-  if (startsWith) return startsWith;
+  // Pass 5: first significant word match (min 3 chars)
+  const firstWord = lower.split(/[\s,]+/)[0];
+  if (firstWord && firstWord.length >= 3) {
+    const wordMatch = options.find((o) => o.toLowerCase().trim().split(/[\s,]+/)[0] === firstWord);
+    if (wordMatch) return wordMatch;
+  }
 
   return answer;
 }
@@ -201,6 +215,8 @@ export async function POST(request: NextRequest) {
       { pattern: /remote|hybrid|on.?site|work.?(?:mode|arrangement|preference|style)/i, value: ap?.preferredWorkMode ?? null },
       { pattern: /over.?18|at.?least.?18|18.?years|legal.?age|are.?you.?18/i, value: ap?.over18 != null ? (ap.over18 ? "Yes" : "No") : null },
       { pattern: /how.?did.?you.?(?:hear|find|learn)|hear.?about|referral.?source|where.?did.?you.?find/i, value: ap?.heardAboutDefault ?? null },
+      { pattern: /visa.?status|immigration.?status/i, value: ap?.sponsorshipNeeded != null ? (ap.sponsorshipNeeded ? "Requires sponsorship" : "No sponsorship needed") : null },
+      { pattern: /country/i, value: fullProfile.location ? fullProfile.location.split(",").pop()?.trim() || null : null },
     ];
 
     for (const lookup of profileLookups) {
