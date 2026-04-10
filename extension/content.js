@@ -40,6 +40,7 @@
 
   function setupFieldObservers() {
     for (const [, data] of observedFields) {
+      if (data._observing) continue; // avoid duplicate listeners on re-fill
       const el = data.element;
       const handler = () => {
         const newValue = getCurrentValue(el);
@@ -49,6 +50,7 @@
       };
       el.addEventListener("change", handler);
       el.addEventListener("input", handler);
+      data._observing = true;
     }
   }
 
@@ -724,8 +726,9 @@
             const fieldKey = sq.element.name || sq.element.id || sq.question;
             if (filledFields.has(fieldKey)) continue;
             const filled = await smartFill(sq.element, resp.answer);
+            // Always mark as attempted so multi-page observer doesn't re-trigger
+            filledFields.add(fieldKey);
             if (filled) {
-              filledFields.add(fieldKey);
               highlightField(sq.element, resp.source || "ai");
               filledCount++;
             }
