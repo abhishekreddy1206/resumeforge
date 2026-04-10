@@ -105,6 +105,25 @@ const FIELD_MAP = {
     keywords: [/over.?18/i, /at.?least.?18/i, /18.?years/i, /legal.?age/i, /are.?you.?18/i],
   },
 
+  // Additional personal
+  "personal.pronouns": {
+    keywords: [/pronoun/i, /preferred.?pronoun/i],
+  },
+
+  // Additional preferences
+  "preferences.salaryMax": {
+    keywords: [/salary.?max/i, /maximum.?salary/i, /salary.?upper/i, /salary.?ceiling/i],
+  },
+  "preferences.willingToRelocate": {
+    keywords: [/relocat/i, /willing.?to.?move/i],
+  },
+  "preferences.noticePeriod": {
+    keywords: [/notice.?period/i, /notice.?required/i, /start.?date/i, /when.?can.?you.?start/i, /earliest.?start/i, /availability/i],
+  },
+  "preferences.preferredWorkMode": {
+    keywords: [/work.?mode/i, /work.?arrangement/i, /remote.?or.?on.?site/i, /hybrid/i, /work.?preference/i],
+  },
+
   // Documents
   "documents.resume": {
     keywords: [/resume/i, /cv$/i, /curriculum.?vitae/i],
@@ -126,3 +145,6 @@ for (const [fieldPath, config] of Object.entries(FIELD_MAP)) {
     WORKDAY_ID_MAP[config.workdayId] = fieldPath;
   }
 }
+// Additional Workday automation IDs not tied to FIELD_MAP entries
+WORKDAY_ID_MAP["addressSection_addressLine1"] = "personal.location";
+WORKDAY_ID_MAP["sourceSection_sourcePrompt"] = "defaults.heardAbout";
