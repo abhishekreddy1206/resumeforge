@@ -155,6 +155,14 @@ async function handleMessage(msg) {
       return res.json();
     }
 
+    case "ANSWER_QUESTIONS": {
+      const res = await apiFetch("/api/applications/answers", {
+        method: "POST",
+        body: JSON.stringify({ jobId: msg.jobId, questions: msg.questions }),
+      });
+      return res.json();
+    }
+
     case "ANSWER_QUESTION": {
       const payload = {
         jobId: msg.jobId,
@@ -209,12 +217,35 @@ async function handleMessage(msg) {
       return res.json();
     }
 
+    case "INJECT_SCRIPTS": {
+      await chrome.scripting.executeScript({
+        target: { tabId: msg.tabId },
+        files: ["field-map.js", "content.js"],
+      });
+      return { injected: true };
+    }
+
     case "MARK_APPLIED": {
       const res = await apiFetch("/api/jobs/applied", {
         method: "PATCH",
         body: JSON.stringify({ jobId: msg.jobId, applied: true }),
       });
       return res.json();
+    }
+
+    case "AUTO_PIN_ANSWERS": {
+      // Auto-pin AI answers on form submission — pin in parallel, ignore individual failures
+      const answers = msg.answers || [];
+      const results = await Promise.allSettled(
+        answers.map(({ question, answer }) =>
+          apiFetch("/api/applications/pin", {
+            method: "POST",
+            body: JSON.stringify({ question, answer }),
+          })
+        )
+      );
+      const pinned = results.filter((r) => r.status === "fulfilled").length;
+      return { pinned, total: answers.length };
     }
 
     case "SET_API_URL": {

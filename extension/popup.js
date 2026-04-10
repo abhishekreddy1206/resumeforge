@@ -161,12 +161,9 @@ async function sendToContentScript(tabId, message) {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch {
-    // Content script not loaded on this tab — inject and retry
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["field-map.js", "content.js"],
-    });
-    await new Promise((r) => setTimeout(r, 100));
+    // Content script not loaded on this tab — ask background to inject, then retry
+    await chrome.runtime.sendMessage({ type: "INJECT_SCRIPTS", tabId });
+    await new Promise((r) => setTimeout(r, 150));
     return chrome.tabs.sendMessage(tabId, message);
   }
 }

@@ -8,11 +8,16 @@
  */
 
 (() => {
+  // Prevent duplicate execution on re-injection
+  if (window.__resumeforgeLoaded) return;
+  window.__resumeforgeLoaded = true;
+
   const filledFields = new Set();
   const processedRadioGroups = new Set();
   let isRunning = false;
   let currentJobId = null;
   let hasMarkedApplied = false;
+  const sessionAnswers = []; // Track AI answers for auto-pinning on submit
 
   // ── Visibility & State ──
 
@@ -132,86 +137,176 @@
 
   // ── Extract options from a select or combobox ──
 
-  function extractOptions(el) {
+  async function extractOptions(el) {
     const type = detectFieldType(el);
     if (type === "select") {
       return [...el.querySelectorAll("option")]
         .map((o) => o.textContent.trim())
-        .filter((t) => t && t !== "" && t !== "Select" && t !== "Select..." && t !== "-- Select --");
+        .filter((t) => t && t !== "" && !/^(?:select|choose|pick|--)/i.test(t));
     }
-    // For combobox: try to find linked listbox options
+
+    // For combobox: try linked listbox first
     const controls = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
     if (controls) {
       const listbox = document.getElementById(controls);
       if (listbox) {
-        return [...listbox.querySelectorAll('[role="option"], li')]
+        const opts = [...listbox.querySelectorAll('[role="option"], [role="menuitem"], li, [data-value]')]
           .map((o) => o.textContent.trim())
+          .filter(Boolean);
+        if (opts.length > 0) return opts;
+      }
+    }
+
+    // Check for datalist
+    const listAttr = el.getAttribute("list");
+    if (listAttr) {
+      const datalist = document.getElementById(listAttr);
+      if (datalist) {
+        return [...datalist.querySelectorAll("option")]
+          .map((o) => o.value || o.textContent.trim())
           .filter(Boolean);
       }
     }
-    return [];
+
+    // Try opening the dropdown briefly to extract options
+    try {
+      el.focus();
+      el.click();
+      el.dispatchEvent(new Event("mousedown", { bubbles: true }));
+
+      // Wait for dropdown to render
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Search for the listbox that appeared
+      let listbox = null;
+      const controlsNow = el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || "";
+      if (controlsNow) listbox = document.getElementById(controlsNow);
+      if (!listbox) {
+        for (const candidate of document.querySelectorAll(
+          '[role="listbox"], [role="menu"], ul[class*="dropdown"], [class*="listbox"], [class*="select-menu"]'
+        )) {
+          if (isVisible(candidate)) { listbox = candidate; break; }
+        }
+      }
+
+      const opts = listbox
+        ? [...listbox.querySelectorAll('[role="option"], [role="menuitem"], li, [data-value]')]
+            .map((o) => o.textContent.trim())
+            .filter(Boolean)
+        : [];
+
+      // Close the dropdown
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      el.blur();
+
+      return opts;
+    } catch {
+      return [];
+    }
   }
 
   // ── Fill Functions ──
 
-  function fillTextInput(el, value) {
+  async function fillTextInput(el, value) {
     if (value == null || (value === "" && !el.value)) return false;
     const strValue = String(value);
 
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+
+    // Focus first — React attaches listeners on focus
+    el.focus();
+    el.dispatchEvent(new Event("focus", { bubbles: true }));
+
+    // Set value via native setter to bypass framework wrappers
     if (setter) setter.call(el, strValue);
     else el.value = strValue;
 
-    el.dispatchEvent(new Event("focus", { bubbles: true }));
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    // Micro-delay for React/Vue to process the value change before events
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Use InputEvent (not Event) — React 16+ synthetic event system requires it
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: strValue }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "a" }));
-    el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "a" }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
+
+    // Verify the fill stuck after a short delay (framework re-renders)
+    await new Promise((r) => setTimeout(r, 50));
+    if (el.value !== strValue) {
+      // Retry: set again and re-dispatch
+      if (setter) setter.call(el, strValue);
+      else el.value = strValue;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: strValue }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
     return true;
+  }
+
+  function normalizeText(s) {
+    return String(s).toLowerCase().replace(/\s+/g, " ").trim();
   }
 
   function fuzzyMatchOption(options, value) {
     if (!value) return null;
-    const v = String(value).toLowerCase().trim();
+    const v = normalizeText(value);
 
     // Boolean mapping
     const boolMap = { true: "yes", false: "no" };
     const vNorm = boolMap[v] || v;
 
-    // Pass 1: exact match
-    let match = options.find((o) => o.textContent.trim().toLowerCase() === vNorm || o.value?.toLowerCase() === vNorm);
+    // Pass 1: exact match (text or value)
+    let match = options.find((o) => normalizeText(o.textContent) === vNorm || normalizeText(o.value || "") === vNorm);
     if (match) return match;
 
     // Pass 2: starts with
-    match = options.find((o) => o.textContent.trim().toLowerCase().startsWith(vNorm));
+    match = options.find((o) => normalizeText(o.textContent).startsWith(vNorm) || vNorm.startsWith(normalizeText(o.textContent)));
     if (match) return match;
 
-    // Pass 3: contains
+    // Pass 3: contains (either direction)
     match = options.find((o) => {
-      const text = o.textContent.trim().toLowerCase();
+      const text = normalizeText(o.textContent);
       return text.includes(vNorm) || vNorm.includes(text);
     });
     if (match) return match;
 
-    // Pass 4: boolean yes/no matching
+    // Pass 4: boolean yes/no matching — match options that START with yes/no
     if (vNorm === "yes" || vNorm === "true" || value === true) {
       match = options.find((o) => /^yes\b/i.test(o.textContent.trim()) || o.value === "Yes" || o.value === "true" || o.value === "1");
     } else if (vNorm === "no" || vNorm === "false" || value === false) {
       match = options.find((o) => /^no\b/i.test(o.textContent.trim()) || o.value === "No" || o.value === "false" || o.value === "0");
     }
+    if (match) return match;
+
+    // Pass 5: first significant word match (e.g., "Yes" matches "Yes, I am authorized...")
+    const firstWord = vNorm.split(/[\s,]+/)[0];
+    if (firstWord && firstWord.length >= 2) {
+      match = options.find((o) => normalizeText(o.textContent).split(/[\s,]+/)[0] === firstWord);
+    }
     return match || null;
   }
 
-  function fillNativeSelect(el, value) {
+  async function fillNativeSelect(el, value) {
     if (value == null) return false;
     const options = [...el.querySelectorAll("option")].filter((o) => o.value !== "");
     const match = fuzzyMatchOption(options, value);
     if (match) {
-      el.value = match.value;
+      // Use native setter for React compatibility
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+      if (setter) setter.call(el, match.value);
+      else el.value = match.value;
+
+      await new Promise((r) => setTimeout(r, 0));
       el.dispatchEvent(new Event("change", { bubbles: true }));
       el.dispatchEvent(new Event("input", { bubbles: true }));
+
+      // Verify selection stuck
+      await new Promise((r) => setTimeout(r, 50));
+      if (el.value !== match.value) {
+        if (setter) setter.call(el, match.value);
+        else el.value = match.value;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       return true;
     }
     return false;
@@ -219,59 +314,130 @@
 
   async function fillCombobox(el, value) {
     if (value == null) return false;
-    const strValue = String(value).toLowerCase().trim();
+    const strValue = normalizeText(value);
 
-    // Focus and open
+    function findListbox() {
+      const controlsId = el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || "";
+      if (controlsId) {
+        const linked = document.getElementById(controlsId);
+        if (linked) return linked;
+      }
+      // Fallback: find any visible listbox/menu near the element
+      for (const candidate of document.querySelectorAll(
+        '[role="listbox"], [role="menu"], ul[class*="dropdown"], ul[class*="option"], [class*="listbox"], [class*="select-menu"], [class*="dropdown-menu"]'
+      )) {
+        if (isVisible(candidate)) return candidate;
+      }
+      return null;
+    }
+
+    function matchOption(opts) {
+      // Pass 1: exact match
+      let match = opts.find((o) => normalizeText(o.textContent) === strValue);
+      if (match) return match;
+      // Pass 2: starts with (either direction)
+      match = opts.find((o) => {
+        const t = normalizeText(o.textContent);
+        return t.startsWith(strValue) || strValue.startsWith(t);
+      });
+      if (match) return match;
+      // Pass 3: contains (either direction)
+      match = opts.find((o) => {
+        const t = normalizeText(o.textContent);
+        return t.includes(strValue) || strValue.includes(t);
+      });
+      if (match) return match;
+      // Pass 4: boolean matching
+      const boolMap = { yes: true, true: true, no: false, false: false };
+      if (strValue in boolMap) {
+        const isYes = boolMap[strValue];
+        match = opts.find((o) => {
+          const t = normalizeText(o.textContent);
+          return isYes ? /^yes\b/.test(t) : /^no\b/.test(t);
+        });
+        if (match) return match;
+      }
+      // Pass 5: first word match
+      const firstWord = strValue.split(/[\s,]+/)[0];
+      if (firstWord && firstWord.length >= 2) {
+        match = opts.find((o) => normalizeText(o.textContent).split(/[\s,]+/)[0] === firstWord);
+      }
+      return match || null;
+    }
+
+    // Step 1: Focus and open the dropdown
     el.focus();
+    el.dispatchEvent(new Event("focus", { bubbles: true }));
     el.click();
     el.dispatchEvent(new Event("mousedown", { bubbles: true }));
 
-    // For inputs: type the value to filter
-    if (el.tagName === "INPUT") {
-      fillTextInput(el, value);
+    // Step 2: Type the value to trigger search/filter
+    if (el.tagName === "INPUT" || el.getAttribute("contenteditable")) {
+      const proto = HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) setter.call(el, String(value));
+      else el.value = String(value);
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(value) }));
     }
 
-    // Poll for options to appear
+    // Step 3: Poll for listbox with adaptive timing
     return new Promise((resolve) => {
       let attempts = 0;
+      const maxAttempts = 12;
+      const delays = [100, 100, 150, 200, 200, 250, 250, 300, 300, 300, 300, 300];
 
       const trySelect = () => {
-        attempts++;
-
-        // Find the listbox: via aria-controls, or any visible listbox in DOM
-        const controlsId = el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || "";
-        let listbox = controlsId ? document.getElementById(controlsId) : null;
-
-        if (!listbox) {
-          for (const candidate of document.querySelectorAll('[role="listbox"], [role="menu"], ul[class*="dropdown"], ul[class*="option"], [class*="listbox"]')) {
-            if (isVisible(candidate)) { listbox = candidate; break; }
-          }
-        }
+        const listbox = findListbox();
 
         if (listbox) {
-          const opts = [...listbox.querySelectorAll('[role="option"], li, [class*="option"]')];
-          // Try exact, then contains
-          let match = opts.find((o) => o.textContent.trim().toLowerCase() === strValue);
-          if (!match) match = opts.find((o) => o.textContent.trim().toLowerCase().includes(strValue) || strValue.includes(o.textContent.trim().toLowerCase()));
+          const opts = [...listbox.querySelectorAll(
+            '[role="option"], [role="menuitem"], li, [class*="option"], [data-value]'
+          )].filter((o) => isVisible(o));
+
+          const match = matchOption(opts);
 
           if (match) {
-            match.click();
+            // Click the option with proper event sequence
             match.dispatchEvent(new Event("mousedown", { bubbles: true }));
+            match.click();
             match.dispatchEvent(new Event("mouseup", { bubbles: true }));
-            resolve(true);
+
+            // Dispatch events on the original input after selection
+            setTimeout(() => {
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new Event("blur", { bubbles: true }));
+            }, 50);
+
+            // Verify click registered after a delay
+            setTimeout(() => {
+              // Check if dropdown closed (good sign) or value changed
+              const listboxNow = findListbox();
+              const closed = !listboxNow || !isVisible(listboxNow);
+              if (!closed && match) {
+                // Retry click once
+                match.click();
+              }
+              resolve(true);
+            }, 150);
           } else {
-            // Close dropdown
+            // No match found — close dropdown
             el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            el.dispatchEvent(new Event("blur", { bubbles: true }));
             resolve(false);
           }
           return;
         }
 
-        if (attempts < 15) setTimeout(trySelect, 200);
-        else resolve(false);
+        if (attempts < maxAttempts) {
+          setTimeout(trySelect, delays[attempts] || 300);
+          attempts++;
+        } else {
+          resolve(false);
+        }
       };
 
-      setTimeout(trySelect, 200);
+      setTimeout(trySelect, 100);
     });
   }
 
@@ -479,42 +645,54 @@
       } else if (el.hasAttribute("required") || el.getAttribute("aria-required") === "true") {
         // Unmatched required field — screening question candidate
         const label = getLabelText(el);
-        if (label && label.length > 10) {
+        if (label && label.length > 2) {
           // For dropdowns: include available options so the API can match against them
           const options = (detectedType === "select" || detectedType === "combobox")
-            ? extractOptions(el)
+            ? await extractOptions(el)
             : [];
           screeningQuestions.push({ element: el, question: label, options });
         }
       }
     }
 
-    // ── Handle screening questions via AI/cache/pinned ──
-    for (const sq of screeningQuestions) {
-      const fieldKey = sq.element.name || sq.element.id || sq.question;
-      if (filledFields.has(fieldKey)) continue;
+    // ── Handle screening questions via batch API call ──
+    const filteredSqs = screeningQuestions.filter(
+      (sq) => !filledFields.has(sq.element.name || sq.element.id || sq.question)
+    );
 
+    if (filteredSqs.length > 0) {
       try {
-        const charLimit = sq.element.maxLength > 0 ? sq.element.maxLength : undefined;
-        const response = await chrome.runtime.sendMessage({
-          type: "ANSWER_QUESTION",
+        const answers = await chrome.runtime.sendMessage({
+          type: "ANSWER_QUESTIONS",
           jobId,
-          question: sq.question,
-          characterLimit: charLimit,
-          options: sq.options.length > 0 ? sq.options : undefined,
+          questions: filteredSqs.map((sq) => ({
+            question: sq.question,
+            characterLimit: sq.element.maxLength > 0 ? sq.element.maxLength : undefined,
+            options: sq.options.length > 0 ? sq.options : undefined,
+          })),
         });
 
-        if (response.answer) {
-          // Use smartFill so dropdowns get proper option selection
-          const filled = await smartFill(sq.element, response.answer);
-          if (filled) {
-            filledFields.add(fieldKey);
-            highlightField(sq.element, response.source || "ai", sq.question, response.answer);
-            filledCount++;
+        if (Array.isArray(answers)) {
+          for (let i = 0; i < answers.length; i++) {
+            const sq = filteredSqs[i];
+            const resp = answers[i];
+            if (!resp?.answer) continue;
+            const fieldKey = sq.element.name || sq.element.id || sq.question;
+            if (filledFields.has(fieldKey)) continue;
+            const filled = await smartFill(sq.element, resp.answer);
+            if (filled) {
+              filledFields.add(fieldKey);
+              highlightField(sq.element, resp.source || "ai", sq.question, resp.answer);
+              filledCount++;
+              // Track AI answers for auto-pinning on submit
+              if (resp.source === "ai") {
+                sessionAnswers.push({ question: sq.question, answer: resp.answer });
+              }
+            }
           }
         }
       } catch {
-        // Skip failed answers
+        // Batch failed — skip screening questions
       }
     }
 
@@ -537,6 +715,13 @@
       hasMarkedApplied = true;
       try {
         await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
+        // Auto-pin AI-generated answers for future applications
+        if (sessionAnswers.length > 0) {
+          await chrome.runtime.sendMessage({
+            type: "AUTO_PIN_ANSWERS",
+            answers: sessionAnswers,
+          });
+        }
       } catch { /* silent */ }
     }
 

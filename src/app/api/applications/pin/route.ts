@@ -86,6 +86,12 @@ export async function POST(request: NextRequest) {
     const existing = defaults.find((d) => normalize(d.question) === norm);
 
     if (existing) {
+      // Skip if this exact answer text is already pinned
+      const normAnswer = answer.toLowerCase().trim();
+      const isDupe = existing.answers.some((a) => a.text.toLowerCase().trim() === normAnswer);
+      if (isDupe) {
+        return NextResponse.json({ pinned: true, duplicate: true, totalDefaults: defaults.length });
+      }
       // Append as new alternative (don't replace)
       existing.answers.push({ text: answer });
     } else {

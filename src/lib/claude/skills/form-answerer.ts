@@ -17,10 +17,15 @@ export async function generateFormAnswer(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   jobAnalysis: Record<string, any>,
   question: string,
-  options?: { characterLimit?: number; model?: string }
+  options?: { characterLimit?: number; model?: string; availableOptions?: string[] }
 ): Promise<FormAnswerResult> {
   const charLimitInstruction = options?.characterLimit
     ? `\nCHARACTER LIMIT: Your answer MUST be ${options.characterLimit} characters or fewer. Count carefully.`
+    : "";
+
+  const hasOptions = options?.availableOptions && options.availableOptions.length > 0;
+  const optionsInstruction = hasOptions
+    ? `\nAVAILABLE OPTIONS (this is a dropdown/select field — you MUST pick one):\n${options!.availableOptions!.map((o, i) => `  ${i + 1}. "${o}"`).join("\n")}\nYour answer MUST be the EXACT text of one of these options. Do not paraphrase, abbreviate, or add anything.`
     : "";
 
   return askJson<FormAnswerResult>(`You are filling out a job application form. Answer the following screening question accurately based on the candidate's real profile.
@@ -32,11 +37,11 @@ TARGET JOB:
 ${JSON.stringify(jobAnalysis)}
 
 QUESTION: "${question}"
-${charLimitInstruction}
+${charLimitInstruction}${optionsInstruction}
 
 RULES:
-- Answer the question directly and concisely
-- For yes/no questions: answer "Yes" or "No" with a brief one-sentence elaboration if helpful
+${hasOptions ? "- This is a dropdown/select field. Your answer MUST be copied verbatim from the AVAILABLE OPTIONS list above." : "- Answer the question directly and concisely"}
+- For yes/no questions: answer "Yes" or "No"${hasOptions ? "" : " with a brief one-sentence elaboration if helpful"}
 - For factual questions (years of experience, specific skills): calculate from the profile data, never guess
 - For behavioral questions ("describe a time..."): draw from real experience entries in the profile, keep to 3-5 sentences
 - For motivation questions ("why this role?"): connect the candidate's background to the job specifics, 2-3 sentences

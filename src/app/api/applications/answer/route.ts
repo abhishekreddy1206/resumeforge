@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
           skills: true,
           publications: true,
           certifications: true,
+          applicationProfile: true,
         },
       }),
     ]);
@@ -178,6 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     const currentExp = fullProfile.experiences.find((e) => e.current) || fullProfile.experiences[0];
+    const ap = fullProfile.applicationProfile;
     const profileLookups: Array<{ pattern: RegExp; value: string | null }> = [
       { pattern: /linkedin/i, value: fullProfile.linkedin },
       { pattern: /github/i, value: fullProfile.github },
@@ -189,6 +191,16 @@ export async function POST(request: NextRequest) {
       { pattern: /years?.{0,3}(?:of.?)?experience/i, value: String(calculateTotalYears(fullProfile.experiences)) },
       { pattern: /current.{0,3}(?:title|position|role)/i, value: currentExp?.title ?? null },
       { pattern: /current.{0,3}(?:company|employer)/i, value: currentExp?.company ?? null },
+      // ApplicationProfile fields
+      { pattern: /authorized.?to.?work|legally.?(?:authorized|eligible)|right.?to.?work|eligible.?to.?work|work.?authorization/i, value: ap?.workAuthorized != null ? (ap.workAuthorized ? "Yes" : "No") : null },
+      { pattern: /sponsor|visa|immigration/i, value: ap?.sponsorshipNeeded != null ? (ap.sponsorshipNeeded ? "Yes" : "No") : null },
+      { pattern: /relocat/i, value: ap?.willingToRelocate ?? null },
+      { pattern: /notice.?period/i, value: ap?.noticePeriod ?? null },
+      { pattern: /(?:when|earliest|soonest).{0,6}(?:can.?you.?)?start|start.?date|availability/i, value: ap?.earliestStartDate ?? null },
+      { pattern: /salary|compensation|pay.?expect/i, value: ap?.salaryMin != null ? (ap.salaryMax ? `$${ap.salaryMin.toLocaleString()} - $${ap.salaryMax.toLocaleString()}` : `$${ap.salaryMin.toLocaleString()}`) : null },
+      { pattern: /remote|hybrid|on.?site|work.?(?:mode|arrangement|preference|style)/i, value: ap?.preferredWorkMode ?? null },
+      { pattern: /over.?18|at.?least.?18|18.?years|legal.?age|are.?you.?18/i, value: ap?.over18 != null ? (ap.over18 ? "Yes" : "No") : null },
+      { pattern: /how.?did.?you.?(?:hear|find|learn)|hear.?about|referral.?source|where.?did.?you.?find/i, value: ap?.heardAboutDefault ?? null },
     ];
 
     for (const lookup of profileLookups) {
@@ -219,6 +231,7 @@ export async function POST(request: NextRequest) {
       {
         characterLimit: characterLimit ? Number(characterLimit) : undefined,
         model: job.aiModel,
+        availableOptions: options.length > 0 ? options : undefined,
       }
     );
 
