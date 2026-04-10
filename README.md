@@ -30,6 +30,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Organized Output** — Resumes saved to `resumes/{company}/{job-title}/` for easy access.
 - **Application Auto-Fill** — Configure work authorization, salary preferences, EEO data, and other defaults in Application Settings; use the Chrome extension to auto-fill ATS forms (Greenhouse, Lever, Workday, and more) with your profile data.
 - **Screening Question Answers** — AI generates answers for job application screening questions, grounded in your real profile data; answers are cached per job.
+- **Learned Answers** — The Chrome extension observes form fills and corrections over time, building a cross-site answer library (`LearnedAnswer`) that improves auto-fill accuracy without manual pinning.
+- **Email Job Scanning** — Connect Gmail via OAuth to automatically scan job alert emails from LinkedIn, Glassdoor, and Indeed; AI extracts job URLs, filters by your location and work mode preference, and imports qualifying jobs in bulk.
 
 ## Tech Stack
 
@@ -44,6 +46,7 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 | PDF Generation | @react-pdf/renderer |
 | DOCX Generation | docx |
 | Web Scraping | cheerio (job URLs), GitHub API, StackOverflow API |
+| Gmail Integration | googleapis (Gmail API OAuth2 for email job scanning) |
 
 ## Quick Start
 
@@ -70,6 +73,9 @@ Open [http://localhost:3000](http://localhost:3000).
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | SQLite path (default: `file:./prisma/dev.db`) |
 | `GITHUB_TOKEN` | No | GitHub personal access token for higher API rate limits |
+| `GMAIL_CLIENT_ID` | No | Google OAuth2 client ID for Gmail email scanning |
+| `GMAIL_CLIENT_SECRET` | No | Google OAuth2 client secret for Gmail email scanning |
+| `GMAIL_REFRESH_TOKEN` | No | Google OAuth2 refresh token for Gmail email scanning |
 
 AI features run through the **Claude Code CLI** (`claude -p`) as a subprocess. The CLI uses your Claude Code subscription directly — no `ANTHROPIC_API_KEY` is needed.
 
@@ -113,14 +119,18 @@ resumeforge/
     │       ├── applications/
     │       │   ├── prefill/            # Merge all data for auto-fill payload
     │       │   ├── answer/             # AI-generated screening question answer (cached per job)
-    │       │   └── answers/            # List cached screening question answers for a job
+    │       │   ├── answers/            # List/batch-resolve cached screening question answers
+    │       │   ├── learn/              # Receive extension observations; upsert LearnedAnswer records
+    │       │   ├── migrate-pins/       # One-time migration: customDefaults → LearnedAnswer
+    │       │   └── pin/                # Pin/unpin/edit reusable screening question answers
     │       ├── jobs/
     │       │   ├── route.ts            # Job CRUD + analysis
     │       │   ├── match/              # Profile-to-job compatibility scoring
     │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
     │       │   ├── applied/            # Toggle job application status (applied/not applied)
     │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
-    │       │   └── chat/               # Per-job resume advisory chat (tips, apply, rescore)
+    │       │   ├── chat/               # Per-job resume advisory chat (tips, apply, rescore)
+    │       │   └── scan-emails/        # Scan Gmail job alerts and import qualifying jobs
     │       ├── resume/                 # Resume generation + download + critique
     │       ├── coverletter/
     │       │   └── generate/           # Generate AI cover letter for a job
@@ -132,6 +142,7 @@ resumeforge/
     │       ├── analytics/              # Token usage and cost analytics
     │       └── chats/                  # Chat session CRUD (list/get/delete by id)
     ├── lib/
+    │   ├── gmail.ts                    # Gmail API client (OAuth2) for email job scanning
     │   ├── claude/                     # AI modules
     │   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
     │   │   ├── index.ts               # Re-exports all AI modules
@@ -232,20 +243,21 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, AI model selection |
+| `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, AI model selection |
 | `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
 | `Resume` | Generated resume record with file path, format, and optional profile version link |
 | `ApplicationProfile` | 1:1 with Profile; stores work authorization, salary range, relocation preference, notice period, preferred work mode, earliest start date, EEO fields (voluntary), and other auto-fill defaults |
-| `ApplicationAnswer` | Per-job cached screening question answer with source tracking (`auto`, `ai`, `manual`); unique on job + question |
+| `ApplicationAnswer` | Per-job cached screening question answer with source tracking (`auto`, `ai`, `manual`, `pinned`, `reused`, `profile`); unique on job + question |
+| `LearnedAnswer` | Cross-site form field answer library built from Chrome extension observations; stores normalized question, answer, field type, confidence score, and use count |
 
 ## Workflow
 
 1. **Upload** — PDF/DOCX parsed to text, Claude structures into Profile (including skills extraction)
 2. **Enrich** (optional) — GitHub API / StackOverflow API / LinkedIn paste, Claude merges into Profile with additional skills
 3. **Chat** (optional) — Describe profile changes in plain English; preview and apply edits conversationally
-4. **Add Job** — URL scraped or text pasted, Claude extracts requirements
+4. **Add Job** — URL scraped or text pasted, Claude extracts requirements; or use Scan Emails to bulk-import jobs from Gmail job alert emails (LinkedIn, Glassdoor, Indeed)
 5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating (results cached on Job)
 6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
 7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
