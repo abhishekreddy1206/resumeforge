@@ -749,7 +749,6 @@
       hasMarkedApplied = true;
       try {
         await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
-        // Auto-pin AI-generated answers for future applications
         if (sessionAnswers.length > 0) {
           await chrome.runtime.sendMessage({
             type: "AUTO_PIN_ANSWERS",
@@ -759,36 +758,63 @@
       } catch { /* silent */ }
     }
 
-    // Watch for DOM content changes indicating confirmation
+    function checkConfirmation() {
+      if (hasMarkedApplied) return false;
+      if (CONFIRM_URL_RE.test(location.href)) return true;
+      const bodyText = document.body?.innerText || "";
+      return bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
+    }
+
+    // Method 1: DOM mutation observer (watches for confirmation text)
     const domObserver = new MutationObserver(() => {
       if (hasMarkedApplied) { domObserver.disconnect(); return; }
-      // Check URL first
-      if (CONFIRM_URL_RE.test(location.href)) {
-        domObserver.disconnect();
-        markApplied();
-        return;
-      }
-      // Check page text — only scan new nodes to avoid false positives
-      const bodyText = document.body?.innerText || "";
-      if (bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText)) {
+      if (checkConfirmation()) {
         domObserver.disconnect();
         markApplied();
       }
     });
     domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-    // Also listen for form submit events
-    const forms = document.querySelectorAll("form");
-    for (const form of forms) {
-      form.addEventListener("submit", () => {
-        // Delay slightly to allow the page to navigate/update
-        setTimeout(() => {
-          if (CONFIRM_URL_RE.test(location.href) || CONFIRM_TEXT_RE.test(document.body?.innerText || "")) {
-            markApplied();
-          }
-        }, 2000);
+    // Method 2: Submit button click listeners
+    const submitSelectors = [
+      'button[type="submit"]', 'input[type="submit"]',
+      'button[class*="submit"]', 'button[class*="apply"]',
+      'button[data-automation-id*="submit"]', 'button[data-automation-id*="apply"]',
+    ];
+    const submitButtons = document.querySelectorAll(submitSelectors.join(", "));
+    for (const btn of submitButtons) {
+      btn.addEventListener("click", () => {
+        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
+        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
       }, { once: true });
     }
+    // Also match buttons by text content
+    for (const btn of document.querySelectorAll("button, a[role='button']")) {
+      const text = btn.textContent?.trim().toLowerCase() || "";
+      if (/^(submit|apply|send)\b/.test(text)) {
+        btn.addEventListener("click", () => {
+          setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
+          setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
+        }, { once: true });
+      }
+    }
+
+    // Method 3: Form submit event listeners
+    for (const form of document.querySelectorAll("form")) {
+      form.addEventListener("submit", () => {
+        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
+        setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
+      }, { once: true });
+    }
+
+    // Method 4: beforeunload — page is navigating away after we filled a form
+    window.addEventListener("beforeunload", () => {
+      if (!hasMarkedApplied && sessionAnswers.length > 0) {
+        chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId }).catch(() => {});
+        chrome.runtime.sendMessage({ type: "AUTO_PIN_ANSWERS", answers: sessionAnswers }).catch(() => {});
+        hasMarkedApplied = true;
+      }
+    });
   }
 
   // ── Multi-Page Auto-Fill ──
