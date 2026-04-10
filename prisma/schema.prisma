@@ -128,6 +128,8 @@ model Job {
   matchResult     String?  // JSON — cached profile match analysis
   matchedAt    DateTime? // when match was last computed (stale if profile.updatedAt > this)
   aiModel      String   @default("sonnet") // AI model for this job's pipeline (sonnet|haiku|opus)
+  source       String?   // e.g., "email-glassdoor", "email-linkedin", "email-indeed", "manual"
+  canonicalUrl String?   // resolved employer ATS URL (from two-hop scraping)
   applied      Boolean  @default(false)
   appliedAt    DateTime?
   coverLetter    String?  // JSON — cached generated cover letter (CoverLetterData)

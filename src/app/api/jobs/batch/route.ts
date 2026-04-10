@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
-import { scrapeJobUrl } from "@/lib/parsers/web";
+import { scrapeJobUrlResolved } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
 import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 
@@ -19,7 +19,7 @@ interface BatchResult {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { urls, aiModel } = await request.json();
+    const { urls, aiModel, source } = await request.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
@@ -38,13 +38,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Load existing job URLs for duplicate detection
+    // Load existing job URLs and canonical URLs for duplicate detection
     const existingUrlJobs = await prisma.job.findMany({
       where: { url: { not: null } },
-      select: { url: true, title: true, company: true },
+      select: { url: true, canonicalUrl: true, title: true, company: true },
     });
     const existingNormalized = new Set(
       existingUrlJobs.map((j) => normalizeJobUrl(j.url || ""))
+    );
+    const existingCanonical = new Set(
+      existingUrlJobs
+        .filter((j) => j.canonicalUrl)
+        .map((j) => normalizeJobUrl(j.canonicalUrl!))
     );
 
     // Filter out duplicates before scraping
@@ -63,8 +68,8 @@ export async function POST(request: NextRequest) {
     // Scrape remaining URLs in parallel (no AI tokens used)
     const scrapeResults = await Promise.allSettled(
       newUrls.map(async (url) => {
-        const text = await scrapeJobUrl(url);
-        return { url, text };
+        const { text, canonicalUrl } = await scrapeJobUrlResolved(url);
+        return { url, text, canonicalUrl };
       })
     );
 
@@ -80,7 +85,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const { url, text } = result.value;
+      const { url, text, canonicalUrl } = result.value;
 
       if (!text || text.trim().length < 50) {
         results.push({
@@ -91,6 +96,16 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Check canonical URL for cross-source duplicates
+      if (canonicalUrl) {
+        const normCanonical = normalizeJobUrl(canonicalUrl);
+        if (existingCanonical.has(normCanonical) || existingNormalized.has(normCanonical)) {
+          results.push({ url, status: "duplicate", error: "Already added (canonical URL match)" });
+          continue;
+        }
+        existingCanonical.add(normCanonical);
+      }
+
       try {
         // Save the job immediately with the raw text
         const job = await prisma.job.create({
@@ -98,6 +113,8 @@ export async function POST(request: NextRequest) {
             title: "Analyzing...",
             company: new URL(url).hostname.replace("www.", "").split(".")[0],
             url,
+            canonicalUrl: canonicalUrl || null,
+            source: source || null,
             description: text,
             skills: null,
             requirements: null,

@@ -55,7 +55,7 @@ Return ONLY valid JSON:
 {
   "answer": "Your direct answer to the question"
 }`, {
-    timeoutMs: 60_000,
+    timeoutMs: 120_000,
     model: options?.model,
     skill: "form-answer",
   });

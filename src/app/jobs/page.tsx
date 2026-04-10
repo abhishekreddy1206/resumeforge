@@ -73,6 +73,7 @@ import {
   Copy,
   Check,
   FileEdit,
+  Mail,
 } from "lucide-react";
 import { JobChatPanel } from "@/components/job-chat-panel";
 import { useScrollReveal } from "@/lib/hooks/use-scroll-reveal";
@@ -1613,6 +1614,7 @@ export default function JobsPage() {
     currentIndex: number;
   } | null>(null);
   const [deletingNoSponsorship, setDeletingNoSponsorship] = useState(false);
+  const [scanningEmails, setScanningEmails] = useState(false);
   const [hideApplied, setHideApplied] = useState(true);
   const [hideNoSponsorship, setHideNoSponsorship] = useState(true);
   const [gapAggregation, setGapAggregation] = useState<{
@@ -1685,6 +1687,39 @@ export default function JobsPage() {
       toast.error(`Delete failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setDeletingNoSponsorship(false);
+    }
+  }
+
+  async function handleScanEmails() {
+    setScanningEmails(true);
+    try {
+      const res = await fetch("/api/jobs/scan-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 7 }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || "Scan failed");
+      }
+      const data = await res.json();
+      if (data.imported > 0) {
+        const parts = [`imported ${data.imported} job${data.imported !== 1 ? "s" : ""}`];
+        if (data.duplicates > 0) parts.push(`${data.duplicates} duplicate${data.duplicates !== 1 ? "s" : ""}`);
+        toast.success(`Scanned ${data.emailsScanned} emails, ${parts.join(", ")} — analyzing in background...`);
+        await fetchJobs(page);
+      } else if (data.emailsScanned === 0) {
+        toast.info("No new job alert emails found");
+      } else {
+        const parts = [`${data.urlsExtracted} URLs found`];
+        if (data.duplicates > 0) parts.push(`${data.duplicates} already imported`);
+        if (data.urlsFiltered < data.urlsExtracted) parts.push(`${data.urlsExtracted - data.urlsFiltered} filtered by location`);
+        toast.info(`Scanned ${data.emailsScanned} emails — ${parts.join(", ")}`);
+      }
+    } catch (err) {
+      toast.error(`Email scan failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setScanningEmails(false);
     }
   }
 
@@ -2396,6 +2431,20 @@ export default function JobsPage() {
                   Delete No Sponsorship
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleScanEmails}
+                disabled={scanningEmails}
+              >
+                {scanningEmails ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Mail className="w-3.5 h-3.5" />
+                )}
+                Scan Emails
+              </Button>
             </div>
           </div>
 

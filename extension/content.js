@@ -13,6 +13,8 @@
   window.__resumeforgeLoaded = true;
 
   const filledFields = new Set();
+  let filledElements = new WeakSet(); // Track actual DOM elements to handle keyless fields
+  let seenElements = new WeakSet(); // Track ALL elements visited by fillPage (filled or not)
   const processedRadioGroups = new Set();
   let isRunning = false;
   let currentJobId = null;
@@ -625,6 +627,8 @@
 
     for (const el of inputs) {
       if (!isInteractable(el)) continue;
+      seenElements.add(el); // Mark as visited so multi-page observer won't count it as new
+      if (filledElements.has(el)) continue;
 
       const fieldKey = el.name || el.id || el.getAttribute("data-automation-id") || "";
       if (filledFields.has(fieldKey) && fieldKey) continue;
@@ -674,6 +678,7 @@
 
       if (matched) {
         filledCount++;
+        filledElements.add(el);
         if (fieldKey) filledFields.add(fieldKey);
         if (detectedType === "radio" && el.name) processedRadioGroups.add(el.name);
         highlightField(el, "standard");
@@ -727,6 +732,7 @@
             if (filledFields.has(fieldKey)) continue;
             const filled = await smartFill(sq.element, resp.answer);
             // Always mark as attempted so multi-page observer doesn't re-trigger
+            filledElements.add(sq.element);
             filledFields.add(fieldKey);
             if (filled) {
               highlightField(sq.element, resp.source || "ai");
@@ -758,6 +764,9 @@
     cachedPrefillData = prefillData;
     cachedJobId = jobId;
 
+    // Persist active job so confirmation detection survives full-page navigations
+    chrome.storage.session.set({ activeJobId: jobId, activeJobOrigin: location.origin });
+
     // Set up submission detection after filling
     if (filledCount > 0) setupSubmissionDetection(jobId);
 
@@ -774,6 +783,28 @@
   // Only match URLs that clearly indicate a completed submission
   const CONFIRM_URL_RE = /(?:application.?|submit.?|apply.?)(?:submitted|success|complete|confirm|received)|thank.?you.?for.?(?:applying|your.?application)/i;
   const CONFIRM_TEXT_RE = /application\s+(has\s+been\s+)?submitted|thank you for (applying|your application)|we('ve| have) received your application|successfully submitted|your application has been received/i;
+
+  // On page load, check if this is a post-submission confirmation page
+  // (handles full-page navigations where in-memory state is lost)
+  chrome.storage.session.get(["activeJobId", "activeJobOrigin"], (data) => {
+    if (!data.activeJobId) return;
+    if (data.activeJobOrigin && data.activeJobOrigin !== location.origin) return;
+
+    function checkAndMark() {
+      if (hasMarkedApplied) return;
+      const urlMatch = CONFIRM_URL_RE.test(location.href);
+      const bodyText = document.body?.innerText || "";
+      const textMatch = bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
+      if (urlMatch || textMatch) {
+        hasMarkedApplied = true;
+        chrome.storage.session.remove(["activeJobId", "activeJobOrigin"]);
+        chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId: data.activeJobId }).catch(() => {});
+      }
+    }
+
+    setTimeout(checkAndMark, 500);
+    setTimeout(checkAndMark, 2000);
+  });
 
   let submissionDetectionSetUp = false;
   let submissionAttempted = false;
@@ -803,6 +834,7 @@
     async function markApplied() {
       if (hasMarkedApplied || !jobId) return;
       hasMarkedApplied = true;
+      chrome.storage.session.remove(["activeJobId", "activeJobOrigin"]);
       try {
         await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
         const observations = collectObservations();
@@ -889,8 +921,7 @@
       let newFieldCount = 0;
       for (const el of allInputs) {
         if (!isInteractable(el)) continue;
-        const key = el.name || el.id || el.getAttribute("data-automation-id") || "";
-        if (key && filledFields.has(key)) continue;
+        if (seenElements.has(el)) continue; // Skip any element already visited by fillPage
         newFieldCount++;
       }
 
@@ -899,10 +930,11 @@
       lastFillTime = Date.now();
       processedRadioGroups.clear();
 
+      if (multiPageObserver) multiPageObserver.disconnect();
       isRunning = true;
       fillPage(cachedPrefillData, cachedJobId)
-        .then(() => { isRunning = false; })
-        .catch(() => { isRunning = false; });
+        .then(() => { isRunning = false; reconnectMultiPageObserver(); })
+        .catch(() => { isRunning = false; reconnectMultiPageObserver(); });
     }
 
     multiPageObserver = new MutationObserver(() => {
@@ -910,7 +942,13 @@
       debounceTimer = setTimeout(onFormChange, 500);
     });
 
-    multiPageObserver.observe(document.body, { childList: true, subtree: true });
+    reconnectMultiPageObserver();
+  }
+
+  function reconnectMultiPageObserver() {
+    if (multiPageObserver) {
+      multiPageObserver.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
   // ── Message Handler ──
@@ -920,6 +958,8 @@
       // Reset state if switching to a different job
       if (msg.jobId !== currentJobId) {
         filledFields.clear();
+        filledElements = new WeakSet();
+        seenElements = new WeakSet();
         processedRadioGroups.clear();
         observedFields.clear();
         hasMarkedApplied = false;
@@ -955,10 +995,11 @@
       if (cachedPrefillData && cachedJobId && !isRunning) {
         setTimeout(() => {
           processedRadioGroups.clear();
+          if (multiPageObserver) multiPageObserver.disconnect();
           isRunning = true;
           fillPage(cachedPrefillData, cachedJobId)
-            .then(() => { isRunning = false; })
-            .catch(() => { isRunning = false; });
+            .then(() => { isRunning = false; reconnectMultiPageObserver(); })
+            .catch(() => { isRunning = false; reconnectMultiPageObserver(); });
         }, 1000);
       }
     }

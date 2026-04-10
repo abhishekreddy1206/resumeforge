@@ -21,6 +21,8 @@ const TRACKING_PARAMS = new Set([
   "mc_eid",
   "ss_source",
   "ss_campaign",
+  "gh_src",
+  "gh_jid",
 ]);
 
 export function normalizeJobUrl(raw: string): string {

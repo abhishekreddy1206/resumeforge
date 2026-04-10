@@ -27,9 +27,18 @@ function validateExternalUrl(url: string): void {
   }
 }
 
-export async function scrapeJobUrl(url: string): Promise<string> {
-  validateExternalUrl(url);
+// --- Shared helpers used by both scrapeJobUrl and scrapeJobUrlResolved ---
 
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+async function fetchWithRedirects(url: string): Promise<{ html: string; finalUrl: string }> {
+  validateExternalUrl(url);
   console.log(`[web-scraper] Fetching URL: ${url}`);
 
   const controller = new AbortController();
@@ -37,13 +46,7 @@ export async function scrapeJobUrl(url: string): Promise<string> {
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
+      headers: BROWSER_HEADERS,
       redirect: "follow",
       signal: controller.signal,
     });
@@ -51,9 +54,9 @@ export async function scrapeJobUrl(url: string): Promise<string> {
     clearTimeout(timeout);
   }
 
-  // Validate the final URL after redirects to prevent SSRF bypass
-  if (response.url && response.url !== url) {
-    validateExternalUrl(response.url);
+  const finalUrl = response.url || url;
+  if (finalUrl !== url) {
+    validateExternalUrl(finalUrl);
   }
 
   if (!response.ok) {
@@ -62,10 +65,13 @@ export async function scrapeJobUrl(url: string): Promise<string> {
 
   const html = await response.text();
   console.log(`[web-scraper] Fetched ${html.length} chars of HTML`);
+  return { html, finalUrl };
+}
 
+function extractJobText(html: string): string {
   const $ = cheerio.load(html);
 
-  // Try JSON-LD structured data first (works for many job boards)
+  // Try JSON-LD structured data first
   const jsonLdText = $('script[type="application/ld+json"]')
     .toArray()
     .map((el) => {
@@ -94,18 +100,16 @@ export async function scrapeJobUrl(url: string): Promise<string> {
     return jsonLdText.slice(0, 15000);
   }
 
-  // Try SPA data injection patterns (Next.js, Nuxt, etc.)
+  // Try SPA data injection patterns
   const spaDataText = $("script")
     .toArray()
     .map((el) => {
       const content = $(el).html() || "";
-      // Next.js __NEXT_DATA__
       const nextMatch = content.match(/__NEXT_DATA__\s*=\s*(\{[\s\S]+\})/);
       if (nextMatch) {
         try {
           const data = JSON.parse(nextMatch[1]);
           const str = JSON.stringify(data);
-          // Heuristic: if the JSON blob mentions job-related fields it's useful
           if (/description|qualifications|responsibilities|jobTitle/i.test(str)) {
             return str.replace(/[{}"\\[\]]/g, " ").replace(/\s+/g, " ").trim();
           }
@@ -125,36 +129,17 @@ export async function scrapeJobUrl(url: string): Promise<string> {
   // Remove noise elements
   $("script, style, nav, footer, iframe, noscript, svg, img, link, meta").remove();
 
-  // Try common job description selectors (ordered by specificity)
+  // Try common job description selectors
   const selectors = [
-    // Lever
-    '[class*="posting-"]',
-    ".posting-page",
-    // Greenhouse
-    "#content",
-    ".job__description",
-    '[class*="job-description"]',
-    '[class*="jobDescription"]',
-    // Ashby
+    '[class*="posting-"]', ".posting-page",
+    "#content", ".job__description", '[class*="job-description"]', '[class*="jobDescription"]',
     '[class*="ashby-job"]',
-    // Workday
     '[data-automation-id="jobPostingDescription"]',
-    // Apple Jobs
-    '[class*="jd-"]',
-    '[data-testid*="job"]',
-    // General
-    '[id*="job-description"]',
-    '[id*="jobDescription"]',
-    '[class*="job-detail"]',
-    '[class*="jobDetail"]',
-    '[class*="job-post"]',
-    '[class*="description"]',
-    // Structural
-    "article",
-    "main",
-    '[role="main"]',
-    ".content",
-    "#main-content",
+    '[class*="jd-"]', '[data-testid*="job"]',
+    '[id*="job-description"]', '[id*="jobDescription"]',
+    '[class*="job-detail"]', '[class*="jobDetail"]',
+    '[class*="job-post"]', '[class*="description"]',
+    "article", "main", '[role="main"]', ".content", "#main-content",
   ];
 
   for (const selector of selectors) {
@@ -168,17 +153,169 @@ export async function scrapeJobUrl(url: string): Promise<string> {
     }
   }
 
-  // Fallback: get body text
+  // Fallback: body text
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
   console.log(`[web-scraper] Falling back to body text (${bodyText.length} chars)`);
+  return bodyText.slice(0, 15000);
+}
 
-  if (bodyText.length < 50) {
+// --- LinkedIn URL rewriting ---
+
+export function rewriteGlassdoorUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes("glassdoor.com")) return url;
+
+    // /partner/jobListing.htm?...&jobListingId=XXXX → /job-listing/XXXX.htm
+    if (parsed.pathname.includes("/partner/jobListing")) {
+      const jobId = parsed.searchParams.get("jobListingId");
+      if (jobId) {
+        return `https://www.glassdoor.com/job-listing/j?jl=${jobId}`;
+      }
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+export function rewriteLinkedInUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes("linkedin.com")) return url;
+
+    // Match /comm/jobs/view/ID or /jobs/view/ID
+    const match = parsed.pathname.match(/\/(?:comm\/)?jobs\/view\/(\d+)/);
+    if (match) {
+      return `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${match[1]}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+// --- Employer URL extraction from aggregator pages ---
+
+const ATS_DOMAINS = [
+  "greenhouse.io",
+  "lever.co",
+  "myworkdayjobs.com",
+  "icims.com",
+  "smartrecruiters.com",
+  "ashbyhq.com",
+  "jobvite.com",
+  "workday.com",
+  "taleo.net",
+  "successfactors.com",
+];
+
+const AGGREGATOR_DOMAINS = ["glassdoor.com", "indeed.com", "linkedin.com"];
+
+const APPLY_TEXT_RE = /apply|apply now|apply on company|apply externally|apply at/i;
+
+export function extractEmployerUrl(html: string, pageUrl: string): string | null {
+  const $ = cheerio.load(html);
+  const pageDomain = new URL(pageUrl).hostname;
+
+  // 1. Check JSON-LD for applyUrl pointing to a different domain
+  for (const el of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const data = JSON.parse($(el).html() || "");
+      const applyUrl = data.applyUrl || data.url;
+      if (applyUrl && typeof applyUrl === "string") {
+        try {
+          const applyHost = new URL(applyUrl).hostname;
+          if (applyHost !== pageDomain && !AGGREGATOR_DOMAINS.some(d => applyHost.includes(d))) {
+            validateExternalUrl(applyUrl);
+            return applyUrl;
+          }
+        } catch { /* invalid URL */ }
+      }
+    } catch { /* not valid JSON */ }
+  }
+
+  // 2. Look for links with apply-related text
+  for (const el of $("a[href]").toArray()) {
+    const text = $(el).text().trim();
+    const href = $(el).attr("href");
+    if (!href || !text) continue;
+    if (!APPLY_TEXT_RE.test(text)) continue;
+
+    try {
+      const resolved = new URL(href, pageUrl).toString();
+      const linkHost = new URL(resolved).hostname;
+      if (linkHost === pageDomain) continue;
+      if (AGGREGATOR_DOMAINS.some(d => linkHost.includes(d))) continue;
+      validateExternalUrl(resolved);
+      return resolved;
+    } catch { /* invalid URL */ }
+  }
+
+  // 3. Look for links pointing to known ATS domains
+  for (const el of $("a[href]").toArray()) {
+    const href = $(el).attr("href");
+    if (!href) continue;
+
+    try {
+      const resolved = new URL(href, pageUrl).toString();
+      const linkHost = new URL(resolved).hostname;
+      if (ATS_DOMAINS.some(d => linkHost.includes(d))) {
+        validateExternalUrl(resolved);
+        return resolved;
+      }
+    } catch { /* invalid URL */ }
+  }
+
+  return null;
+}
+
+// --- Public API ---
+
+export async function scrapeJobUrl(url: string): Promise<string> {
+  const { html } = await fetchWithRedirects(url);
+  const text = extractJobText(html);
+
+  if (text.length < 50) {
     throw new Error(
       "Could not extract job description from URL. The page may require JavaScript to render. Try pasting the job description text directly instead."
     );
   }
 
-  return bodyText.slice(0, 15000);
+  return text;
+}
+
+export async function scrapeJobUrlResolved(url: string): Promise<{ text: string; canonicalUrl?: string }> {
+  // Step 1: Rewrite email tracking URLs to cleaner forms
+  let fetchUrl = rewriteLinkedInUrl(url);
+  fetchUrl = rewriteGlassdoorUrl(fetchUrl);
+
+  // Step 2: Fetch and follow redirects
+  const { html, finalUrl } = await fetchWithRedirects(fetchUrl);
+
+  // Step 3: Check if we landed on an aggregator
+  const isAggregator = AGGREGATOR_DOMAINS.some(d => new URL(finalUrl).hostname.includes(d));
+
+  if (isAggregator) {
+    const employerUrl = extractEmployerUrl(html, finalUrl);
+    if (employerUrl) {
+      console.log(`[web-scraper] Two-hop: resolved to employer URL: ${employerUrl}`);
+      // Hop 2: scrape the employer's ATS page
+      const text = await scrapeJobUrl(employerUrl);
+      return { text, canonicalUrl: employerUrl };
+    }
+  }
+
+  // Fallback: extract from the page we already have
+  const text = extractJobText(html);
+
+  if (text.length < 50) {
+    throw new Error(
+      "Could not extract job description from URL. The page may require JavaScript to render. Try pasting the job description text directly instead."
+    );
+  }
+
+  return { text, canonicalUrl: finalUrl !== url ? finalUrl : undefined };
 }
 
 export async function scrapeArticleUrl(url: string): Promise<{
