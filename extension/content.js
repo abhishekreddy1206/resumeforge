@@ -19,6 +19,36 @@
   let hasMarkedApplied = false;
   const sessionAnswers = []; // Track AI answers for auto-pinning on submit
 
+  // ── Platform Hints ──
+  const PLATFORM_HINTS = {
+    greenhouse: { pollDelay: 150, comboboxOpenKey: "ArrowDown" },
+    workday:    { pollDelay: 250, comboboxOpenKey: "ArrowDown" },
+    lever:      { pollDelay: 100, comboboxOpenKey: null },
+    ashby:      { pollDelay: 150, comboboxOpenKey: "ArrowDown" },
+    icims:      { pollDelay: 200, comboboxOpenKey: null },
+    smartrecruiters: { pollDelay: 150, comboboxOpenKey: "ArrowDown" },
+    jobvite:    { pollDelay: 150, comboboxOpenKey: null },
+    default:    { pollDelay: 150, comboboxOpenKey: "ArrowDown" },
+  };
+
+  function detectPlatform() {
+    const host = location.hostname.toLowerCase();
+    if (host.includes("greenhouse.io")) return "greenhouse";
+    if (host.includes("myworkdayjobs.com") || host.includes("workday.com")) return "workday";
+    if (host.includes("lever.co")) return "lever";
+    if (host.includes("ashbyhq.com")) return "ashby";
+    if (host.includes("icims.com")) return "icims";
+    if (host.includes("smartrecruiters.com")) return "smartrecruiters";
+    if (host.includes("jobvite.com")) return "jobvite";
+    return "default";
+  }
+
+  const platform = detectPlatform();
+  const hints = PLATFORM_HINTS[platform] || PLATFORM_HINTS.default;
+  let cachedPrefillData = null;
+  let cachedJobId = null;
+  let multiPageObserver = null;
+
   // ── Visibility & State ──
 
   function isVisible(el) {
@@ -214,33 +244,51 @@
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 
-    // Focus first — React attaches listeners on focus
+    // ── Tier 1: Native setter + InputEvent ──
     el.focus();
     el.dispatchEvent(new Event("focus", { bubbles: true }));
-
-    // Set value via native setter to bypass framework wrappers
     if (setter) setter.call(el, strValue);
     else el.value = strValue;
-
-    // Micro-delay for React/Vue to process the value change before events
     await new Promise((r) => setTimeout(r, 0));
-
-    // Use InputEvent (not Event) — React 16+ synthetic event system requires it
     el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: strValue }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
 
-    // Verify the fill stuck after a short delay (framework re-renders)
-    await new Promise((r) => setTimeout(r, 50));
-    if (el.value !== strValue) {
-      // Retry: set again and re-dispatch
-      if (setter) setter.call(el, strValue);
-      else el.value = strValue;
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: strValue }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    await new Promise((r) => setTimeout(r, 80));
+    if (el.value === strValue) return true;
 
-    return true;
+    // ── Tier 2: Keystroke simulation ──
+    el.focus();
+    if (setter) setter.call(el, "");
+    else el.value = "";
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContent" }));
+
+    for (const char of strValue) {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: char }));
+      if (setter) setter.call(el, el.value + char);
+      else el.value += char;
+      el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+
+    await new Promise((r) => setTimeout(r, 80));
+    if (el.value === strValue) return true;
+
+    // ── Tier 3: execCommand insertText ──
+    el.focus();
+    el.select?.();
+    if (setter) setter.call(el, "");
+    else el.value = "";
+    document.execCommand("insertText", false, strValue);
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+
+    await new Promise((r) => setTimeout(r, 80));
+    return el.value === strValue || el.value.length > 0;
   }
 
   function normalizeText(s) {
