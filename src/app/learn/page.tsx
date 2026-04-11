@@ -549,18 +549,6 @@ export default function LearnPage() {
         )}
       </section>
 
-      {/* Knowledge Map */}
-      {guides.length >= 3 && (
-        <section className="anim-fade-up-4">
-          <div className="flex items-center justify-between mb-4">
-            <span className="label-mono text-muted-foreground">Knowledge Map</span>
-          </div>
-          <div className="border border-border rounded bg-card p-4">
-            <KnowledgeGraph />
-          </div>
-        </section>
-      )}
-
       {/* AI Recommendations — loads independently from the rest of the page */}
       {recsLoading ? (
         <section>
@@ -604,6 +592,18 @@ export default function LearnPage() {
           </div>
         </section>
       ) : null}
+
+      {/* Knowledge Map */}
+      {guides.length >= 3 && (
+        <section className="anim-fade-up-4">
+          <div className="flex items-center justify-between mb-4">
+            <span className="label-mono text-muted-foreground">Knowledge Map</span>
+          </div>
+          <div className="border border-border rounded bg-card p-4">
+            <KnowledgeGraph />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
