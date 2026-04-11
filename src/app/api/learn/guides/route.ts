@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { generateGuide } from "@/lib/claude";
 import { scrapeArticleUrl } from "@/lib/parsers/web";
 import { parsePdf } from "@/lib/parsers/pdf";
+import { parseDocx } from "@/lib/parsers/docx";
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { topic, sources, difficulty, model } = body as {
       topic: string;
-      sources?: Array<{ type: string; content?: string; url?: string }>;
+      sources?: Array<{ type: string; content?: string; url?: string; filename?: string }>;
       difficulty?: string;
       model?: string;
     };
@@ -82,6 +83,11 @@ export async function POST(request: NextRequest) {
           const text = await parsePdf(buffer);
           sourceTexts.push(text);
           sourcesToSave.push({ type: "pdf", content: text, title: "Uploaded PDF" });
+        } else if (src.type === "docx" && src.content) {
+          const buffer = Buffer.from(src.content, "base64");
+          const text = await parseDocx(buffer);
+          sourceTexts.push(text);
+          sourcesToSave.push({ type: "docx", content: text, title: src.filename || "Uploaded DOCX" });
         }
       }
     }

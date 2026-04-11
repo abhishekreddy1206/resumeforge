@@ -4,6 +4,7 @@ import { refineGuide } from "@/lib/claude";
 import type { GuideContent } from "@/lib/claude";
 import { scrapeArticleUrl } from "@/lib/parsers/web";
 import { parsePdf } from "@/lib/parsers/pdf";
+import { parseDocx } from "@/lib/parsers/docx";
 
 export async function POST(
   request: NextRequest,
@@ -22,7 +23,7 @@ export async function POST(
 
     const body = await request.json();
     const { sources, instructions, model } = body as {
-      sources: Array<{ type: string; content?: string; url?: string }>;
+      sources: Array<{ type: string; content?: string; url?: string; filename?: string }>;
       instructions?: string;
       model?: string;
     };
@@ -47,6 +48,11 @@ export async function POST(
         const text = await parsePdf(buffer);
         newSourceTexts.push(text);
         sourcesToSave.push({ type: "pdf", content: text, title: "Uploaded PDF" });
+      } else if (src.type === "docx" && src.content) {
+        const buffer = Buffer.from(src.content, "base64");
+        const text = await parseDocx(buffer);
+        newSourceTexts.push(text);
+        sourcesToSave.push({ type: "docx", content: text, title: src.filename || "Uploaded DOCX" });
       }
     }
 
