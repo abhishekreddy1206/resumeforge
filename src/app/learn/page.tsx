@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 import { KnowledgeGraph } from "@/components/learn/knowledge-graph";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
@@ -58,6 +58,21 @@ export default function LearnPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const searchLower = search.toLowerCase().trim();
+  const filteredGuides = searchLower
+    ? guides.filter((g) =>
+        g.topic.toLowerCase().includes(searchLower) ||
+        (g.category && g.category.toLowerCase().includes(searchLower))
+      )
+    : guides;
+  const filteredPaths = searchLower
+    ? paths.filter((p) =>
+        p.title.toLowerCase().includes(searchLower) ||
+        (p.description && p.description.toLowerCase().includes(searchLower))
+      )
+    : paths;
 
   const fetchData = () => {
     // Fast: guides + paths (~9ms) — unblocks page immediately
@@ -376,6 +391,30 @@ export default function LearnPage() {
         </div>
       </section>
 
+      {/* Search */}
+      {(guides.length > 0 || paths.length > 0) && (
+        <section className="anim-fade-up-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search guides and paths…"
+              className="w-full bg-background border border-input rounded pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Learning Paths */}
       <section className="anim-fade-up-2">
         <div className="flex items-center justify-between mb-4">
@@ -385,7 +424,7 @@ export default function LearnPage() {
           </button>
         </div>
         <div className="grid md:grid-cols-3 gap-4">
-          {paths.map((path) => (
+          {filteredPaths.map((path) => (
             <a key={path.id} href={`/learn/paths/${path.id}`} className="group bg-card border border-border rounded p-4 card-hover block">
               <div className="flex items-start justify-between mb-1">
                 <div
@@ -441,7 +480,7 @@ export default function LearnPage() {
               </div>
             </div>
           )}
-          {paths.length === 0 && !showNewPath && (
+          {filteredPaths.length === 0 && !showNewPath && !searchLower && (
             <div
               className="border border-dashed border-border rounded p-4 flex items-center justify-center text-muted-foreground cursor-pointer hover:bg-card hover:border-primary/30 transition-all"
               onClick={() => setShowNewPath(true)}
@@ -457,16 +496,26 @@ export default function LearnPage() {
       <section className="anim-fade-up-3">
         <div className="flex items-center justify-between mb-4">
           <span className="label-mono text-muted-foreground">All Guides</span>
-          <span className="label-mono text-muted-foreground/60">{guides.length} total</span>
+          <span className="label-mono text-muted-foreground/60">
+            {searchLower && filteredGuides.length !== guides.length
+              ? `${filteredGuides.length} of ${guides.length}`
+              : `${guides.length} total`}
+          </span>
         </div>
-        {guides.length === 0 ? (
+        {filteredGuides.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-border rounded">
-            <p className="text-sm text-muted-foreground">No guides yet.</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">Create your first guide above or generate one from a recommendation.</p>
+            {searchLower ? (
+              <p className="text-sm text-muted-foreground">No guides match &ldquo;{search}&rdquo;.</p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">No guides yet.</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">Create your first guide above or generate one from a recommendation.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-1">
-            {guides.map((guide, i) => (
+            {filteredGuides.map((guide, i) => (
               <a
                 key={guide.id}
                 href={`/learn/${guide.slug}`}
