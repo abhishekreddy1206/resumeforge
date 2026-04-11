@@ -77,6 +77,49 @@ async function logTokenUsage(skill: string, envelope: CLIEnvelope): Promise<void
   });
 }
 
+/**
+ * Escape literal control characters inside JSON string values.
+ * After the CLI envelope is decoded, the result string may contain
+ * actual newlines/tabs inside what should be JSON strings. These are
+ * invalid JSON and cause parse failures. This function walks the text
+ * character-by-character and escapes control chars only when inside
+ * a JSON string (between unescaped double quotes).
+ */
+function sanitizeJsonStrings(raw: string): string {
+  const out: string[] = [];
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < raw.length) {
+        // Already-escaped sequence — pass through as-is
+        out.push(ch, raw[i + 1]);
+        i++;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+        out.push(ch);
+        continue;
+      }
+      // Escape literal control characters inside strings
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        if (ch === "\n") out.push("\\n");
+        else if (ch === "\r") out.push("\\r");
+        else if (ch === "\t") out.push("\\t");
+        else out.push("\\u" + code.toString(16).padStart(4, "0"));
+        continue;
+      }
+      out.push(ch);
+    } else {
+      if (ch === '"') inString = true;
+      out.push(ch);
+    }
+  }
+  return out.join("");
+}
+
 export function extractJson(text: string): Record<string, unknown> {
   // Try code fences first (most reliable)
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -101,18 +144,35 @@ export function extractJson(text: string): Record<string, unknown> {
     throw new Error("Could not parse JSON from response");
   }
 
+  const raw = jsonMatch[1];
+
+  // First try raw parse (fast path for well-formed JSON)
   try {
-    return JSON.parse(jsonMatch[1]);
-  } catch (firstErr) {
-    // Attempt to repair truncated JSON by closing open strings/braces
-    const repaired = repairJson(jsonMatch[1]);
-    if (repaired) {
-      log.warn("Repaired truncated JSON", {
-        originalLength: jsonMatch[1].length,
-      });
-      return repaired;
+    return JSON.parse(raw);
+  } catch {
+    // Sanitize control characters inside string values, then retry
+    const sanitized = sanitizeJsonStrings(raw);
+    try {
+      return JSON.parse(sanitized);
+    } catch {
+      // Attempt to repair truncated JSON by closing open strings/braces
+      const repaired = repairJson(sanitized);
+      if (repaired) {
+        log.warn("Repaired truncated JSON", {
+          originalLength: raw.length,
+        });
+        return repaired;
+      }
+      // Last resort: try repairing the original (sanitize might have confused things)
+      const repairedRaw = repairJson(raw);
+      if (repairedRaw) {
+        log.warn("Repaired truncated JSON (raw)", {
+          originalLength: raw.length,
+        });
+        return repairedRaw;
+      }
+      throw new Error(`JSON parse failed: ${raw.slice(0, 200)}`);
     }
-    throw firstErr;
   }
 }
 
@@ -122,7 +182,8 @@ export function extractJson(text: string): Record<string, unknown> {
  * Returns parsed object on success, null on failure.
  */
 function repairJson(raw: string): Record<string, unknown> | null {
-  let s = raw.trim();
+  // Sanitize control characters first, then repair structure
+  let s = sanitizeJsonStrings(raw.trim());
 
   // Track nesting with a stack for accurate repair
   const stack: string[] = [];
