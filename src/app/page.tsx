@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
+  TrendingUp,
   User,
   ArrowRight,
 } from "lucide-react";
@@ -83,6 +84,17 @@ interface AnalyticsData {
   resumeCount: number;
 }
 
+interface InsightsMeta {
+  totalJobs: number;
+  realisticJobs: number;
+  threshold: number;
+  avgScore: number;
+  clusterCount: number;
+  gapCount: number;
+  topFinding: string | null;
+  cachedAt: string | null;
+}
+
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
@@ -122,6 +134,7 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiUsageOpen, setAiUsageOpen] = useState(false);
+  const [insightsMeta, setInsightsMeta] = useState<InsightsMeta | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -135,6 +148,13 @@ export default function Dashboard() {
         setAnalytics(a);
       })
       .finally(() => setLoading(false));
+
+    // Load insights meta in background (may be slow on cache miss)
+    fetch("/api/insights")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.meta) setInsightsMeta(d.meta);
+      });
   }, []);
 
   if (loading) {
@@ -308,8 +328,43 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* Profile Versions */}
-      {hasAnalytics && analytics.versions.length > 0 && (
+      {/* Market Insights Card */}
+      {insightsMeta && insightsMeta.realisticJobs >= 2 ? (
+        <a href="/insights" className="block">
+          <section className="bg-card border border-primary/20 rounded-lg p-5 hover:bg-primary/[0.02] transition-colors cursor-pointer">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                <h2 className="text-lg font-semibold">Market Insights</h2>
+              </div>
+              <span className="text-xs text-primary">View all →</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div>
+                <div className="text-xl font-bold">{insightsMeta.realisticJobs}</div>
+                <div className="text-[10px] text-muted-foreground">realistic targets</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold">{insightsMeta.clusterCount}</div>
+                <div className="text-[10px] text-muted-foreground">role profiles</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-red-400">{insightsMeta.gapCount}</div>
+                <div className="text-[10px] text-muted-foreground">key gaps</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-emerald-400">{insightsMeta.avgScore}%</div>
+                <div className="text-[10px] text-muted-foreground">avg match</div>
+              </div>
+            </div>
+            {insightsMeta.topFinding && (
+              <div className="border-l-[3px] border-primary/40 bg-foreground/[0.02] rounded-r px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-primary">Top finding:</strong> {insightsMeta.topFinding}
+              </div>
+            )}
+          </section>
+        </a>
+      ) : hasAnalytics && analytics.versions.length > 0 ? (
         <section>
           <h2 className="text-lg font-semibold mb-3">Profile Versions &amp; Resume History</h2>
           <div className="space-y-2">
@@ -343,7 +398,7 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Two-column footer: Recent Jobs + Skills */}
       {(hasJobs || (profile?.skills && profile.skills.length > 0)) && (
