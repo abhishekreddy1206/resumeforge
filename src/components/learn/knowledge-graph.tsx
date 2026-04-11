@@ -119,6 +119,7 @@ export function KnowledgeGraph() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [loading, setLoading] = useState(true);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [nodes, setNodes] = useState<RenderedNode[]>([]);
   const [links, setLinks] = useState<RenderedLink[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -134,92 +135,90 @@ export function KnowledgeGraph() {
     return () => ro.disconnect();
   }, []);
 
-  // Fetch graph data and run simulation
+  // Fetch graph data once on mount
   useEffect(() => {
     fetch("/api/learn/knowledge-graph")
       .then((r) => (r.ok ? r.json() : { nodes: [], edges: [], paths: [] }))
-      .then((data: GraphData) => {
-        if (!data.nodes || data.nodes.length === 0) {
-          setNodes([]);
-          setLinks([]);
-          setLoading(false);
-          return;
-        }
+      .then((data: GraphData) => setGraphData(data))
+      .catch(() => setGraphData({ nodes: [], edges: [], paths: [] }));
+  }, []);
 
-        // Build sim nodes
-        const simNodes: SimNode[] = data.nodes.map((n) => ({
-          id: n.id,
-          label: n.label,
-          slug: n.slug,
-          status: n.status,
-          pathId: n.pathId,
-        }));
+  // Run simulation when width or graphData changes
+  useEffect(() => {
+    if (!graphData) return;
 
-        // Build sim links (d3-force resolves string IDs)
-        const simLinks: SimLink[] = data.edges.map((e) => ({
-          source: e.source,
-          target: e.target,
-          type: e.type,
-          label: e.label,
-        }));
+    if (!graphData.nodes || graphData.nodes.length === 0) {
+      setNodes([]);
+      setLinks([]);
+      setLoading(false);
+      return;
+    }
 
-        const sim = forceSimulation<SimNode>(simNodes)
-          .force(
-            "link",
-            forceLink<SimNode, SimLink>(simLinks)
-              .id((d) => d.id)
-              .distance(120)
-          )
-          .force("charge", forceManyBody<SimNode>().strength(-200))
-          .force("center", forceCenter(width / 2, HEIGHT / 2))
-          .force("collide", forceCollide<SimNode>(40));
+    // Build sim nodes
+    const simNodes: SimNode[] = graphData.nodes.map((n) => ({
+      id: n.id,
+      label: n.label,
+      slug: n.slug,
+      status: n.status,
+      pathId: n.pathId,
+    }));
 
-        // Run synchronously
-        sim.tick(100);
-        sim.stop();
+    // Build sim links (d3-force resolves string IDs)
+    const simLinks: SimLink[] = graphData.edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      type: e.type,
+      label: e.label,
+    }));
 
-        // Extract positions
-        const renderedNodes: RenderedNode[] = simNodes.map((n) => ({
-          id: n.id,
-          label: n.label,
-          slug: n.slug,
-          status: n.status,
-          pathId: n.pathId,
-          x: n.x ?? width / 2,
-          y: n.y ?? HEIGHT / 2,
-        }));
+    const sim = forceSimulation<SimNode>(simNodes)
+      .force(
+        "link",
+        forceLink<SimNode, SimLink>(simLinks)
+          .id((d) => d.id)
+          .distance(120)
+      )
+      .force("charge", forceManyBody<SimNode>().strength(-200))
+      .force("center", forceCenter(width / 2, HEIGHT / 2))
+      .force("collide", forceCollide<SimNode>(40));
 
-        // After simulation, SimLink source/target are resolved to SimNode objects
-        const nodeById = new Map(renderedNodes.map((n) => [n.id, n]));
-        const renderedLinks: RenderedLink[] = simLinks.map((l) => {
-          const src = l.source as SimNode;
-          const tgt = l.target as SimNode;
-          const srcNode = nodeById.get(src.id ?? (l.source as string));
-          const tgtNode = nodeById.get(tgt.id ?? (l.target as string));
-          return {
-            sourceId: src.id ?? (l.source as string),
-            targetId: tgt.id ?? (l.target as string),
-            type: l.type,
-            label: l.label,
-            x1: srcNode?.x ?? 0,
-            y1: srcNode?.y ?? 0,
-            x2: tgtNode?.x ?? 0,
-            y2: tgtNode?.y ?? 0,
-          };
-        });
+    // Run synchronously
+    sim.tick(100);
+    sim.stop();
 
-        setNodes(renderedNodes);
-        setLinks(renderedLinks);
-        setLoading(false);
-      })
-      .catch(() => {
-        setNodes([]);
-        setLinks([]);
-        setLoading(false);
-      });
-    // Re-run when width changes so layout fills the container
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width]);
+    // Extract positions
+    const renderedNodes: RenderedNode[] = simNodes.map((n) => ({
+      id: n.id,
+      label: n.label,
+      slug: n.slug,
+      status: n.status,
+      pathId: n.pathId,
+      x: n.x ?? width / 2,
+      y: n.y ?? HEIGHT / 2,
+    }));
+
+    const nodeById = new Map(renderedNodes.map((n) => [n.id, n]));
+    const renderedLinks: RenderedLink[] = simLinks.map((l) => {
+      const src = l.source as SimNode;
+      const tgt = l.target as SimNode;
+      const srcNode = nodeById.get(src.id ?? (l.source as string));
+      const tgtNode = nodeById.get(tgt.id ?? (l.target as string));
+      return {
+        sourceId: src.id ?? (l.source as string),
+        targetId: tgt.id ?? (l.target as string),
+        type: l.type,
+        label: l.label,
+        x1: srcNode?.x ?? 0,
+        y1: srcNode?.y ?? 0,
+        x2: tgtNode?.x ?? 0,
+        y2: tgtNode?.y ?? 0,
+      };
+    });
+
+    setNodes(renderedNodes);
+    setLinks(renderedLinks);
+    setLoading(false);
+  }, [width, graphData]);
 
   // Determine which edges connect to hovered node
   const connectedEdgeIndices = hoveredId
