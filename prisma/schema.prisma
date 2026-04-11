@@ -38,6 +38,14 @@ model Profile {
   applicationProfile   ApplicationProfile?
   guides               Guide[]
   learningPaths        LearningPath[]
+
+  // Learn recommendations cache
+  cachedGaps              String?
+  cachedGapsAt            DateTime?
+  gapsCacheFingerprint    String?
+  cachedRecommendations   String?
+  cachedRecommendationsAt DateTime?
+  recsCacheFingerprint    String?
 }
 
 model Experience {
