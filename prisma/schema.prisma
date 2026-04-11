@@ -46,6 +46,11 @@ model Profile {
   cachedRecommendations   String?
   cachedRecommendationsAt DateTime?
   recsCacheFingerprint    String?
+
+  // Insights cache
+  cachedInsights           String?
+  cachedInsightsAt         DateTime?
+  insightsCacheFingerprint String?
 }
 
 model Experience {
