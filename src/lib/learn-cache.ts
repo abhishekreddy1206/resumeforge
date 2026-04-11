@@ -114,9 +114,21 @@ export async function refreshRecommendationsCache(): Promise<GuideRecommendation
   const profile = await prisma.profile.findFirst({ select: { id: true } });
   if (!profile) return [];
 
-  const jobs = await prisma.job.findMany({
+  const allMatchedJobs = await prisma.job.findMany({
     where: { matchResult: { not: null } },
     select: { id: true, title: true, company: true, matchResult: true, matchedAt: true, terminologyMap: true },
+  });
+
+  // Filter to realistic targets (score >= 60) for more targeted recommendations
+  const SCORE_THRESHOLD = 60;
+  const jobs = allMatchedJobs.filter((job) => {
+    try {
+      const mr = JSON.parse(job.matchResult as string);
+      const score = mr?.score ?? mr?.overallScore ?? 0;
+      return score >= SCORE_THRESHOLD;
+    } catch {
+      return false;
+    }
   });
 
   if (jobs.length < 2) return [];
