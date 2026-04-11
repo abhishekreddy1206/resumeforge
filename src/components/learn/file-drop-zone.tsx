@@ -6,7 +6,7 @@ import { Upload } from "lucide-react";
 interface FileResult {
   name: string;
   base64: string;
-  type: string; // "pdf" or "docx"
+  type: "pdf" | "docx";
 }
 
 interface FileDropZoneProps {
@@ -41,17 +41,16 @@ export function FileDropZone({ onFile, accept = ".pdf,.docx", disabled }: FileDr
 
     const reader = new FileReader();
     reader.onload = () => {
-      const arrayBuffer = reader.result as ArrayBuffer;
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
       setSelectedName(null);
       onFile({ name: file.name, base64, type: fileType });
     };
-    reader.readAsArrayBuffer(file);
+    reader.onerror = () => {
+      setSelectedName(null);
+      setError("Failed to read file. Please try again.");
+    };
+    reader.readAsDataURL(file);
   }, [onFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
