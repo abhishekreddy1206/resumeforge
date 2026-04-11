@@ -31,12 +31,15 @@ interface LearningPathItem {
 }
 
 interface SourceItem {
+  id: string;
   type: "url" | "text" | "pdf" | "docx";
   url?: string;
   content?: string;
   filename?: string;
   label: string;
 }
+
+let sourceIdCounter = 0;
 
 export default function LearnPage() {
   const [guides, setGuides] = useState<GuideListItem[]>([]);
@@ -106,10 +109,10 @@ export default function LearnPage() {
     if (!trimmed) return;
     try {
       const hostname = new URL(trimmed).hostname.replace("www.", "");
-      setSources((prev) => [...prev, { type: "url", url: trimmed, label: hostname }]);
+      setSources((prev) => [...prev, { id: String(++sourceIdCounter), type: "url", url: trimmed, label: hostname }]);
       setSourceUrl("");
     } catch {
-      setSources((prev) => [...prev, { type: "url", url: trimmed, label: trimmed.slice(0, 30) }]);
+      setSources((prev) => [...prev, { id: String(++sourceIdCounter), type: "url", url: trimmed, label: trimmed.slice(0, 30) }]);
       setSourceUrl("");
     }
   };
@@ -118,6 +121,7 @@ export default function LearnPage() {
     const trimmed = sourceText.trim();
     if (!trimmed) return;
     setSources((prev) => [...prev, {
+      id: String(++sourceIdCounter),
       type: "text",
       content: trimmed,
       label: trimmed.slice(0, 40) + (trimmed.length > 40 ? "..." : ""),
@@ -127,6 +131,7 @@ export default function LearnPage() {
 
   const addFileSource = (file: { name: string; base64: string; type: string }) => {
     setSources((prev) => [...prev, {
+      id: String(++sourceIdCounter),
       type: file.type as "pdf" | "docx",
       content: file.base64,
       filename: file.name,
@@ -134,8 +139,8 @@ export default function LearnPage() {
     }]);
   };
 
-  const removeSource = (index: number) => {
-    setSources((prev) => prev.filter((_, i) => i !== index));
+  const removeSource = (id: string) => {
+    setSources((prev) => prev.filter((s) => s.id !== id));
   };
 
   const handleCreatePath = async () => {
@@ -352,9 +357,9 @@ export default function LearnPage() {
             {/* Source chips */}
             {sources.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4">
-                {sources.map((s, i) => (
+                {sources.map((s) => (
                   <div
-                    key={i}
+                    key={s.id}
                     className="flex items-center gap-1.5 bg-muted rounded px-2.5 py-1 text-xs anim-fade-up"
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
@@ -363,7 +368,7 @@ export default function LearnPage() {
                      <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
                     <span className="truncate max-w-[200px]">{s.label}</span>
                     <button
-                      onClick={() => removeSource(i)}
+                      onClick={() => removeSource(s.id)}
                       className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
                     >
                       <X className="w-3 h-3" />
