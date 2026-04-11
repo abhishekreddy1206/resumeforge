@@ -14,6 +14,8 @@ export async function GET(
           select: {
             id: true, topic: true, slug: true, completionStatus: true,
             version: true, category: true, updatedAt: true,
+            sectionProgress: true,
+            _count: { select: { sources: true } },
           },
         },
       },
@@ -24,11 +26,16 @@ export async function GET(
     }
 
     const guideOrder = JSON.parse(path.guideOrder) as string[];
+    const mapGuide = (g: (typeof path.guides)[number]) => {
+      const { _count, ...rest } = g;
+      return { ...rest, sourceCount: _count.sources };
+    };
     const orderedGuides = guideOrder
       .map((gid) => path.guides.find((g) => g.id === gid))
-      .filter(Boolean);
+      .filter(Boolean)
+      .map(mapGuide);
     const orderedIds = new Set(guideOrder);
-    const unordered = path.guides.filter((g) => !orderedIds.has(g.id));
+    const unordered = path.guides.filter((g) => !orderedIds.has(g.id)).map(mapGuide);
 
     return NextResponse.json({
       ...path,
