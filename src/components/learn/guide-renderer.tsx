@@ -96,7 +96,7 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
         </div>
 
         {/* References — editorial footnotes */}
-        {content.references.length > 0 && (
+        {content.references?.length > 0 && (
           <div className="mt-16">
             <div className="section-divider mb-6" />
             <div className="label-mono text-muted-foreground mb-4">References</div>

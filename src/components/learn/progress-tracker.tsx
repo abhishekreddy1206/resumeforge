@@ -19,8 +19,8 @@ export function ProgressTracker({ sections, progress, activeSection, onSectionCl
     const p = progress[section.id];
     if (!p) return "not_started";
 
-    const totalQuizzes = section.knowledgeChecks.filter((k) => k.type === "quiz").length;
-    const totalScenarios = section.interviewScenarios.length;
+    const totalQuizzes = (section.knowledgeChecks ?? []).filter((k) => k.type === "quiz").length;
+    const totalScenarios = (section.interviewScenarios ?? []).length;
     const completedQuizzes = p.quizzesCompleted.length;
     const completedScenarios = p.scenariosRevealed.length;
 

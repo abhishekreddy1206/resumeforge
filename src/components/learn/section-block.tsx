@@ -28,7 +28,7 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
 
       {/* Explanation prose — optimized for reading */}
       <div className="mb-8 space-y-4" style={{ maxWidth: "42rem" }}>
-        {section.explanation.split("\n\n").map((block, bi) => {
+        {(section.explanation || "").split("\n\n").map((block, bi) => {
           const trimmed = block.trim();
           if (!trimmed) return null;
           if (trimmed.startsWith("### ")) {
@@ -62,7 +62,7 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
       </div>
 
       {/* Code examples */}
-      {section.codeExamples.length > 0 && (
+      {section.codeExamples?.length > 0 && (
         <div className="space-y-4 mb-8">
           {section.codeExamples.map((ex, i) => (
             <CodeExample key={i} language={ex.language} code={ex.code} caption={ex.caption} />
@@ -71,7 +71,7 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
       )}
 
       {/* Knowledge checks */}
-      {section.knowledgeChecks.length > 0 && (
+      {section.knowledgeChecks?.length > 0 && (
         <div className="space-y-4 mb-8">
           {section.knowledgeChecks.map((check, i) => {
             if (check.type === "quiz") {
@@ -102,7 +102,7 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
       )}
 
       {/* Interview scenarios */}
-      {section.interviewScenarios.length > 0 && (
+      {section.interviewScenarios?.length > 0 && (
         <div className="space-y-4 mb-8">
           {section.interviewScenarios.map((scenario, i) => (
             <InterviewScenario
@@ -117,7 +117,7 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
       )}
 
       {/* Key takeaways — editorial pull-quote */}
-      {section.keyTakeaways.length > 0 && (
+      {section.keyTakeaways?.length > 0 && (
         <div className="border-l-2 border-primary pl-5 py-3 my-8">
           <div className="label-mono text-primary mb-3">Key Takeaways</div>
           <ul className="space-y-2">
