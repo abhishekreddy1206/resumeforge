@@ -44,3 +44,5 @@ export { planCurriculum } from "./skills/curriculum-planner";
 export type { CurriculumPlan, CurriculumTopic } from "./skills/curriculum-planner";
 export { matchGuideToPath } from "./skills/path-matcher";
 export type { PathMatchResult } from "./skills/path-matcher";
+export { inferKnowledgeEdges } from "./skills/knowledge-graph-edges";
+export type { SmartEdge } from "./skills/knowledge-graph-edges";

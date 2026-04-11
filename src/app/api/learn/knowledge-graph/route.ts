@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import type { GapAggregation } from "@/lib/claude/skills/gap-aggregator";
+import { inferKnowledgeEdges } from "@/lib/claude/skills/knowledge-graph-edges";
+
+let edgeCache: { edges: Array<{ sourceGuideId: string; targetGuideId: string; type: "prerequisite" | "topic_similarity"; label: string }>; key: string; timestamp: number } | null = null;
+const EDGE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 export async function GET() {
   try {
     // Step 1: Fetch data in parallel
-    const [guides, paths, guideSources, profile] = await Promise.all([
+    const [guides, paths, guideSources] = await Promise.all([
       prisma.guide.findMany({
         select: {
           id: true,
@@ -29,9 +32,6 @@ export async function GET() {
           guideId: true,
           url: true,
         },
-      }),
-      prisma.profile.findFirst({
-        select: { cachedGaps: true },
       }),
     ]);
 
@@ -63,7 +63,7 @@ export async function GET() {
     const edges: Array<{
       source: string;
       target: string;
-      type: "path_sequence" | "shared_source" | "related_concept";
+      type: "path_sequence" | "shared_source" | "related_concept" | "prerequisite" | "topic_similarity";
       label?: string;
     }> = [];
 
@@ -73,7 +73,7 @@ export async function GET() {
     function addEdge(
       source: string,
       target: string,
-      type: "path_sequence" | "shared_source" | "related_concept",
+      type: "path_sequence" | "shared_source" | "related_concept" | "prerequisite" | "topic_similarity",
       label?: string,
       undirected = false
     ) {
@@ -133,39 +133,39 @@ export async function GET() {
       }
     }
 
-    // Step 3c: Related concept edges from cachedGaps
-    if (profile?.cachedGaps) {
-      let gapData: GapAggregation | null = null;
-      try {
-        gapData = JSON.parse(profile.cachedGaps) as GapAggregation;
-      } catch {
-        // ignore parse errors
+    // Step 3c: AI-inferred edges (prerequisite + topic_similarity)
+    if (guides.length >= 2) {
+      const cacheKey = guides.map((g) => g.id).sort().join(",");
+      const now = Date.now();
+      let smartEdges = edgeCache && edgeCache.key === cacheKey && (now - edgeCache.timestamp) < EDGE_CACHE_TTL
+        ? edgeCache.edges
+        : null;
+
+      if (!smartEdges) {
+        try {
+          const guidesForAI = guides.map((g) => ({
+            id: g.id,
+            topic: g.topic,
+            category: g.category,
+            pathTitle: g.learningPathId ? (pathMap.get(g.learningPathId)?.title ?? null) : null,
+          }));
+          smartEdges = await inferKnowledgeEdges(guidesForAI);
+          edgeCache = { edges: smartEdges, key: cacheKey, timestamp: now };
+        } catch (err) {
+          console.error("[knowledge-graph] AI edge inference failed:", err);
+          smartEdges = [];
+        }
       }
 
-      if (gapData?.aggregatedGaps) {
-        for (const gap of gapData.aggregatedGaps) {
-          const terms = gap.relatedTerms.map((t) => t.toLowerCase());
-          if (terms.length === 0) continue;
-
-          // Find guides whose topic contains any related term
-          const matchingGuides = guides.filter((g) => {
-            const topicLower = g.topic.toLowerCase();
-            return terms.some((term) => topicLower.includes(term));
-          });
-
-          if (matchingGuides.length < 2) continue;
-
-          for (let i = 0; i < matchingGuides.length; i++) {
-            for (let j = i + 1; j < matchingGuides.length; j++) {
-              addEdge(
-                matchingGuides[i].id,
-                matchingGuides[j].id,
-                "related_concept",
-                gap.gap,
-                true
-              );
-            }
-          }
+      for (const se of smartEdges) {
+        if (guideIdSet.has(se.sourceGuideId) && guideIdSet.has(se.targetGuideId)) {
+          addEdge(
+            se.sourceGuideId,
+            se.targetGuideId,
+            se.type,
+            se.label,
+            se.type === "topic_similarity" // topic_similarity is undirected, prerequisite is directed
+          );
         }
       }
     }

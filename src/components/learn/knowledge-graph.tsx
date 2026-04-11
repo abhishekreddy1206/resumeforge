@@ -25,7 +25,7 @@ interface GraphNode {
 interface GraphEdge {
   source: string;
   target: string;
-  type: "path_sequence" | "shared_source" | "related_concept";
+  type: "path_sequence" | "shared_source" | "related_concept" | "prerequisite" | "topic_similarity";
   label?: string;
 }
 
@@ -88,13 +88,27 @@ function edgeStyle(
   highlighted: boolean,
   dimmed: boolean
 ): React.SVGProps<SVGLineElement> {
-  const baseOpacity = type === "path_sequence" ? 0.4 : type === "shared_source" ? 0.3 : 0.2;
+  const baseOpacity =
+    type === "path_sequence" ? 0.4
+    : type === "prerequisite" ? 0.35
+    : type === "shared_source" ? 0.3
+    : type === "topic_similarity" ? 0.25
+    : 0.2;
   const opacity = highlighted ? 0.8 : dimmed ? 0.05 : baseOpacity;
 
   if (type === "path_sequence") {
     return {
       stroke: "var(--muted-foreground)",
       strokeWidth: 1.5,
+      opacity,
+      markerEnd: "url(#arrowhead)",
+    };
+  }
+  if (type === "prerequisite") {
+    return {
+      stroke: "var(--chart-4)",
+      strokeWidth: 1.5,
+      strokeDasharray: "8 4",
       opacity,
       markerEnd: "url(#arrowhead)",
     };
@@ -107,6 +121,15 @@ function edgeStyle(
       opacity,
     };
   }
+  if (type === "topic_similarity") {
+    return {
+      stroke: "var(--chart-5)",
+      strokeWidth: 1,
+      strokeDasharray: "3 3",
+      opacity,
+    };
+  }
+  // related_concept (legacy fallback)
   return {
     stroke: "var(--muted-foreground)",
     strokeWidth: 1,
