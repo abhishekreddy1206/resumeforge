@@ -186,52 +186,8 @@ export default function LearnPage() {
         <div className="section-divider mt-4" />
       </div>
 
-      {/* AI Recommendations — loads independently from the rest of the page */}
-      {recsLoading ? (
-        <section className="anim-fade-up-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" />
-            <span className="label-mono text-muted-foreground">
-              Analyzing your skill gaps<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
-            </span>
-          </div>
-        </section>
-      ) : recommendations.length > 0 ? (
-        <section className="anim-fade-up-1">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <span className="label-mono text-primary">Recommended from your skill gaps</span>
-          </div>
-          <div className="grid md:grid-cols-3 gap-4">
-            {recommendations.slice(0, 3).map((rec, i) => (
-              <div
-                key={i}
-                className="bg-card border border-border rounded p-4 card-hover group cursor-pointer"
-                style={{ animationDelay: `${0.08 * (i + 1)}s` }}
-              >
-                <div className="label-mono text-destructive mb-2">{rec.frequency} jobs mention this</div>
-                <div
-                  className="text-base font-medium mb-1 group-hover:text-primary transition-colors"
-                  style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.1rem" }}
-                >
-                  {rec.topic}
-                </div>
-                <div className="text-xs text-muted-foreground mb-3 leading-relaxed">{rec.description}</div>
-                <button
-                  onClick={() => handleCreate(rec.topic)}
-                  disabled={creating}
-                  className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 transition-colors flex items-center gap-1"
-                >
-                  Generate Guide <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       {/* Create New Guide — editorial input */}
-      <section className="anim-fade-up-2">
+      <section className="anim-fade-up-1">
         <div className="border border-dashed border-border rounded bg-card/50 px-6 py-8">
           <div className="max-w-lg mx-auto">
             <div className="label-mono text-muted-foreground mb-3 text-center">New Study Guide</div>
@@ -402,7 +358,7 @@ export default function LearnPage() {
       </section>
 
       {/* Learning Paths */}
-      <section className="anim-fade-up-3">
+      <section className="anim-fade-up-2">
         <div className="flex items-center justify-between mb-4">
           <span className="label-mono text-muted-foreground">Learning Paths</span>
           <button onClick={() => setShowNewPath(true)} className="label-mono text-primary hover:text-primary/80 flex items-center gap-1 transition-colors">
@@ -476,7 +432,7 @@ export default function LearnPage() {
       </section>
 
       {/* All Guides */}
-      <section className="anim-fade-up-4">
+      <section className="anim-fade-up-3">
         <div className="flex items-center justify-between mb-4">
           <span className="label-mono text-muted-foreground">All Guides</span>
           <span className="label-mono text-muted-foreground/60">{guides.length} total</span>
@@ -521,6 +477,50 @@ export default function LearnPage() {
           </div>
         )}
       </section>
+
+      {/* AI Recommendations — loads independently from the rest of the page */}
+      {recsLoading ? (
+        <section>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" />
+            <span className="label-mono text-muted-foreground">
+              Analyzing your skill gaps<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+            </span>
+          </div>
+        </section>
+      ) : recommendations.length > 0 ? (
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="label-mono text-primary">Recommended from your skill gaps</span>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {recommendations.slice(0, 3).map((rec, i) => (
+              <div
+                key={i}
+                className="bg-card border border-border rounded p-4 card-hover group cursor-pointer"
+                style={{ animationDelay: `${0.08 * (i + 1)}s` }}
+              >
+                <div className="label-mono text-destructive mb-2">{rec.frequency} jobs mention this</div>
+                <div
+                  className="text-base font-medium mb-1 group-hover:text-primary transition-colors"
+                  style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.1rem" }}
+                >
+                  {rec.topic}
+                </div>
+                <div className="text-xs text-muted-foreground mb-3 leading-relaxed">{rec.description}</div>
+                <button
+                  onClick={() => handleCreate(rec.topic)}
+                  disabled={creating}
+                  className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 transition-colors flex items-center gap-1"
+                >
+                  Generate Guide <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
