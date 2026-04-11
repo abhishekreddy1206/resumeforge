@@ -130,12 +130,17 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
               </button>
             </div>
             {sourceType === "url" && (
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste article URL (Substack, Medium, blog, docs)..."
-                className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-              />
+              <div>
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="Paste article URL (Substack, Medium, blog, docs)..."
+                  className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                />
+                <p className="text-[11px] text-muted-foreground/50 mt-1.5">
+                  Substack and Medium member articles supported with configured credentials
+                </p>
+              </div>
             )}
             {sourceType === "text" && (
               <textarea

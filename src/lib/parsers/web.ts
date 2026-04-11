@@ -318,6 +318,114 @@ export async function scrapeJobUrlResolved(url: string): Promise<{ text: string;
   return { text, canonicalUrl: finalUrl !== url ? finalUrl : undefined };
 }
 
+async function fetchSubstackArticle(url: string): Promise<{
+  title: string;
+  text: string;
+  publisher?: string;
+  date?: string;
+}> {
+  const match = url.match(/(?:https?:\/\/)?([^.]+)\.substack\.com\/p\/([^/?#]+)/);
+  if (!match) throw new Error("Invalid Substack URL");
+  const [, publication, slug] = match;
+
+  const connectSid = process.env.SUBSTACK_CONNECT_SID;
+  const apiUrl = `https://${publication}.substack.com/api/v1/posts/${slug}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let res: Response;
+  try {
+    res = await fetch(apiUrl, {
+      headers: {
+        ...(connectSid ? { Cookie: `connect.sid=${connectSid}` } : {}),
+        Accept: "application/json",
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) throw new Error(`Substack API returned ${res.status}`);
+  const data = await res.json();
+
+  const $ = cheerio.load(data.body_html || "");
+  const text = $.text().replace(/\s+/g, " ").trim();
+
+  console.log(`[web-scraper] Fetched Substack article "${data.title}" (${text.length} chars)`);
+
+  return {
+    title: data.title || "Untitled",
+    text,
+    publisher: `${publication} (Substack)`,
+    date: data.post_date || undefined,
+  };
+}
+
+async function fetchMediumArticle(url: string): Promise<{
+  title: string;
+  text: string;
+  publisher?: string;
+  date?: string;
+}> {
+  const sid = process.env.MEDIUM_SID;
+  const uid = process.env.MEDIUM_UID;
+
+  validateExternalUrl(url);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        ...(sid && uid ? { Cookie: `sid=${sid}; uid=${uid}` } : {}),
+        ...BROWSER_HEADERS,
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) throw new Error(`Medium returned ${response.status}`);
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+
+  const title =
+    $("meta[property='og:title']").attr("content") ||
+    $("h1").first().text().trim() ||
+    "Untitled";
+
+  const publisher =
+    $("meta[property='og:site_name']").attr("content") || "Medium";
+
+  const date =
+    $("meta[property='article:published_time']").attr("content") || undefined;
+
+  $("script, style, nav, footer, iframe, noscript, svg, img, link, meta, header, aside").remove();
+
+  let text = "";
+  for (const selector of ["article", '[role="main"]', "main", ".content"]) {
+    const el = $(selector);
+    if (el.length) {
+      text = el.text().replace(/\s+/g, " ").trim();
+      if (text.length > 200) break;
+    }
+  }
+
+  if (!text || text.length < 200) {
+    throw new Error("Could not extract full article — Medium cookies may have expired");
+  }
+
+  console.log(`[web-scraper] Fetched Medium article "${title}" (${text.length} chars)`);
+
+  return { title, text, publisher, date };
+}
+
 export async function scrapeArticleUrl(url: string): Promise<{
   title: string;
   text: string;
@@ -326,6 +434,28 @@ export async function scrapeArticleUrl(url: string): Promise<{
   doi?: string;
 }> {
   validateExternalUrl(url);
+
+  // Authenticated fetching for Substack member content
+  if (url.match(/\.substack\.com\/p\//)) {
+    try {
+      const result = await fetchSubstackArticle(url);
+      return { ...result, text: result.text.slice(0, 10000) };
+    } catch (err) {
+      console.log(`[web-scraper] Substack API failed, falling back to HTML scraping: ${err}`);
+      // Fall through to regular scraping
+    }
+  }
+
+  // Authenticated fetching for Medium member content
+  if (url.includes("medium.com/") || url.includes("towardsdatascience.com/") || url.includes("levelup.gitconnected.com/") || url.includes("betterprogramming.pub/")) {
+    try {
+      const result = await fetchMediumArticle(url);
+      return { ...result, text: result.text.slice(0, 10000) };
+    } catch (err) {
+      console.log(`[web-scraper] Medium auth failed, falling back to HTML scraping: ${err}`);
+      // Fall through to regular scraping
+    }
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);

@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefinePanel } from "@/components/learn/refine-panel";
-import { ArrowLeft, ArrowRight, BookOpen, Sparkles, X } from "lucide-react";
+import { LearningPathGraph } from "@/components/learn/learning-path-graph";
+import { ArrowLeft, ArrowRight, BookOpen, Sparkles } from "lucide-react";
 
 interface GuideItem {
   id: string;
@@ -32,12 +32,6 @@ interface PathData {
   guides: GuideItem[];
 }
 
-interface CrossLinkSuggestion {
-  guideId: string;
-  guideTopic: string;
-  reason: string;
-}
-
 export default function PathDetailPage() {
   const params = useParams();
   const pathId = params.id as string;
@@ -45,13 +39,6 @@ export default function PathDetailPage() {
   const [path, setPath] = useState<PathData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Cross-link suggestions keyed by source guide ID
-  const [crossLinks, setCrossLinks] = useState<Record<string, CrossLinkSuggestion[]>>({});
-  const [crossLinkLoading, setCrossLinkLoading] = useState<string | null>(null);
-
-  // Dismissed cross-link banners keyed by source guide ID
-  const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set());
 
   // Curriculum generation
   const [generating, setGenerating] = useState(false);
@@ -96,57 +83,6 @@ export default function PathDetailPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [path?.guides.map((g) => g.status).join(","), pathId]);
-
-  const checkCrossLinks = useCallback(
-    async (sourceGuideId: string) => {
-      setCrossLinkLoading(sourceGuideId);
-      try {
-        const res = await fetch(`/api/learn/paths/${pathId}/cross-link`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceGuideId }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const suggestions: CrossLinkSuggestion[] = Array.isArray(data.suggestions)
-            ? data.suggestions
-            : [];
-          if (suggestions.length > 0) {
-            setCrossLinks((prev) => ({ ...prev, [sourceGuideId]: suggestions }));
-            setDismissedLinks((prev) => {
-              const next = new Set(prev);
-              next.delete(sourceGuideId);
-              return next;
-            });
-          }
-        }
-        // 404 or any error — silently ignore (API not built yet)
-      } catch {
-        // Gracefully handle missing endpoint
-      } finally {
-        setCrossLinkLoading(null);
-      }
-    },
-    [pathId]
-  );
-
-  const handleAddToGuide = useCallback(async (targetGuideId: string, sourceGuideId: string) => {
-    // Remove just this one suggestion from the source guide's cross-link list.
-    // When the cross-link API is fully built, this will also POST the source
-    // to /api/learn/guides/${targetGuideId}/refine.
-    setCrossLinks((prev) => {
-      const updated = (prev[sourceGuideId] ?? []).filter((s) => s.guideId !== targetGuideId);
-      if (updated.length === 0) {
-        const { [sourceGuideId]: _removed, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [sourceGuideId]: updated };
-    });
-  }, []);
-
-  const handleDismissCrossLink = useCallback((sourceGuideId: string) => {
-    setDismissedLinks((prev) => new Set(prev).add(sourceGuideId));
-  }, []);
 
   const handleGenerate = useCallback(async () => {
     if (generating) return;
@@ -201,6 +137,7 @@ export default function PathDetailPage() {
   const totalGuides = path.guides.length;
   const completedCount = path.guides.filter((g) => g.completionStatus === "completed").length;
   const progressPct = totalGuides > 0 ? Math.round((completedCount / totalGuides) * 100) : 0;
+  const hasGeneratingGuides = path.guides.some((g) => g.status === "generating");
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 space-y-10">
@@ -268,6 +205,16 @@ export default function PathDetailPage() {
         <div className="section-divider mt-6" />
       </div>
 
+      {/* Interactive learning path graph */}
+      {totalGuides >= 2 && (
+        <section className="anim-fade-up-1">
+          <LearningPathGraph
+            guides={path.guides}
+            guideOrder={path.guideOrder}
+          />
+        </section>
+      )}
+
       {/* Ordered guide list */}
       <section className="anim-fade-up-2 space-y-4">
         <span className="label-mono text-muted-foreground">
@@ -305,129 +252,78 @@ export default function PathDetailPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {path.guides.map((guide, i) => {
-              const suggestions = crossLinks[guide.id] ?? [];
-              const dismissed = dismissedLinks.has(guide.id);
-              const showBanner = suggestions.length > 0 && !dismissed;
-              const isCheckingLinks = crossLinkLoading === guide.id;
+            {/* Generation banner when guides are being generated */}
+            {hasGeneratingGuides && (
+              <div className="border border-primary/20 bg-primary/5 rounded px-4 py-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                <span className="text-sm text-foreground">
+                  Generating guide content...
+                </span>
+                <span className="label-mono text-muted-foreground/60 ml-auto">
+                  {path.guides.filter((g) => g.status !== "generating").length} of {totalGuides} ready
+                </span>
+              </div>
+            )}
 
-              return (
-                <div key={guide.id} className="space-y-2">
-                  {/* Guide card */}
-                  <div className="bg-card border border-border rounded card-hover">
-                    {/* Card header row */}
-                    <div className="px-5 py-4 flex items-start gap-4">
-                      {/* Order number */}
-                      <div className="shrink-0 w-7 h-7 rounded-full border border-border flex items-center justify-center mt-0.5">
-                        <span className="label-mono text-muted-foreground/60 text-[11px]">{i + 1}</span>
-                      </div>
-
-                      {/* Guide info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <Link
-                            href={`/learn/${guide.slug}`}
-                            className="group flex items-center gap-1 hover:text-primary transition-colors"
-                          >
-                            <span
-                              className="text-base font-medium group-hover:text-primary transition-colors"
-                              style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.1rem" }}
-                            >
-                              {guide.topic}
-                            </span>
-                            <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
-                          </Link>
-
-                          {/* Completion badge */}
-                          <span
-                            className="label-mono shrink-0"
-                            style={{
-                              color:
-                                guide.completionStatus === "completed"
-                                  ? "oklch(0.55 0.15 150)"
-                                  : guide.completionStatus === "in_progress"
-                                  ? "var(--primary)"
-                                  : "var(--muted-foreground)",
-                              opacity: guide.completionStatus === "not_started" ? 0.5 : 1,
-                            }}
-                          >
-                            {guide.completionStatus === "completed"
-                              ? "Completed"
-                              : guide.completionStatus === "in_progress"
-                              ? "In Progress"
-                              : "Not Started"}
-                          </span>
-                          {guide.status === "generating" && (
-                            <span className="label-mono text-primary flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 animate-pulse" />
-                              Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Source count */}
-                        <div className="label-mono text-muted-foreground/60 mt-1">
-                          {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""}
-                          {isCheckingLinks && (
-                            <span className="ml-2 text-primary">
-                              checking cross-links
-                              <span className="anim-dot-1">.</span>
-                              <span className="anim-dot-2">.</span>
-                              <span className="anim-dot-3">.</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
+            {path.guides.map((guide, i) => (
+              <div key={guide.id}>
+                {/* Guide card */}
+                <Link
+                  href={`/learn/${guide.slug}`}
+                  className="bg-card border border-border rounded card-hover block"
+                >
+                  <div className="px-5 py-4 flex items-center gap-4">
+                    {/* Order number */}
+                    <div className="shrink-0 w-7 h-7 rounded-full border border-border flex items-center justify-center">
+                      <span className="label-mono text-muted-foreground/60 text-[11px]">{i + 1}</span>
                     </div>
 
-                    {/* RefinePanel — indented under card */}
-                    <div className="px-4 pb-4">
-                      <RefinePanel
-                        guideId={guide.id}
-                        existingSources={[]}
-                        onRefined={() => {
-                          fetchPath();
-                          checkCrossLinks(guide.id);
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Cross-link suggestion banner */}
-                  {showBanner && (
-                    <div className="ml-11 border border-primary/20 bg-primary/5 rounded px-4 py-3 flex items-start justify-between gap-3 anim-fade-up">
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-xs text-muted-foreground mb-2"
-                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                    {/* Guide info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-base font-medium group-hover:text-primary transition-colors truncate"
+                          style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.1rem" }}
                         >
-                          This source may also be relevant to:
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {suggestions.map((s) => (
-                            <div key={s.guideId} className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => handleAddToGuide(s.guideId, guide.id)}
-                                className="label-mono text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                              >
-                                Add to <strong>{s.guideTopic}</strong>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                          {guide.topic}
+                        </span>
+                        {guide.status === "generating" && (
+                          <span className="label-mono text-primary flex items-center gap-1 shrink-0">
+                            <Sparkles className="w-3 h-3 animate-pulse" />
+                            Generating
+                          </span>
+                        )}
                       </div>
-                      <button
-                        onClick={() => handleDismissCrossLink(guide.id)}
-                        className="text-muted-foreground hover:text-foreground transition-colors shrink-0 mt-0.5"
-                        aria-label="Dismiss"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="label-mono text-muted-foreground/60 mt-0.5">
+                        {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""}
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {/* Status badge */}
+                    <span
+                      className="label-mono shrink-0"
+                      style={{
+                        color:
+                          guide.completionStatus === "completed"
+                            ? "oklch(0.55 0.15 150)"
+                            : guide.completionStatus === "in_progress"
+                            ? "var(--primary)"
+                            : "var(--muted-foreground)",
+                        opacity: guide.completionStatus === "not_started" ? 0.5 : 1,
+                      }}
+                    >
+                      {guide.completionStatus === "completed"
+                        ? "Completed"
+                        : guide.completionStatus === "in_progress"
+                        ? "In Progress"
+                        : "Not Started"}
+                    </span>
+
+                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
+                  </div>
+                </Link>
+              </div>
+            ))}
           </div>
         )}
       </section>

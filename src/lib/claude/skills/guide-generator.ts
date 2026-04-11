@@ -1,4 +1,5 @@
 import { askJson } from "../client";
+import { GUIDE_INSTRUCTIONS, GUIDE_SCHEMA, SECTION_SCHEMA, OUTLINE_SCHEMA, truncateSource } from "./guide-prompts";
 
 export interface CodeExample {
   language: string;
@@ -79,69 +80,16 @@ export async function generateGuide(
   options?: { sources?: string[]; difficulty?: string; model?: string }
 ): Promise<GuideContent> {
   const sourceBlock = options?.sources?.length
-    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${s.slice(0, 8000)}`).join("\n\n")}`
+    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 8000)}`).join("\n\n")}`
     : "";
+  const difficultyHint = options?.difficulty ? `\nTarget difficulty: ${options.difficulty}` : "";
 
-  const difficultyHint = options?.difficulty
-    ? `\nTarget difficulty: ${options.difficulty}`
-    : "";
-
-  return askJson<GuideContent>(`You are a senior software engineer and technical interviewer at a top tech company. Create a comprehensive, interactive study guide on the topic below.
+  return askJson<GuideContent>(`${GUIDE_INSTRUCTIONS}
 
 TOPIC: ${topic}${difficultyHint}${sourceBlock}
 
-GUIDE STRUCTURE:
-Create a deep-dive guide with 4-8 sections that progressively build understanding. Each section MUST include ALL of these elements:
-
-1. EXPLANATION — Clear, thorough markdown prose that builds intuition through concrete examples. Explain the "why" not just the "what". Use analogies. Reference real-world systems (e.g., how Google/Netflix/Uber uses this).
-
-2. CODE EXAMPLES — Real, production-quality code (not toy examples). Show actual implementations, not pseudocode. Include edge case handling. Use Python, Go, Java, or TypeScript as appropriate for the topic.
-
-3. KNOWLEDGE CHECKS — Mix of:
-   - "quiz" type: Multiple choice with 4 options, one correct answer (index), and an explanation of WHY
-   - "open_ended" type: "Explain X to me as if..." prompts with a rubric for evaluation
-   Include 2-4 checks per section.
-
-4. INTERVIEW SCENARIOS — Frame as actual interview questions:
-   - Setup: "You're in a system design interview and asked to..."
-   - Hints: 3-4 progressive hints (from subtle to direct)
-   - Sample answer: A strong candidate's response
-   Include 1-2 scenarios per section.
-
-5. KEY TAKEAWAYS — 2-4 bullet points summarizing the most important concepts.
-
-Section IDs must be kebab-case slugs of the title (e.g., "leader-election").
-
-QUALITY BAR:
-- Content should prepare someone for FAANG-level technical interviews
-- Include real system examples (not generic "Company X")
-- Code must compile/run (no syntax errors, no placeholder functions)
-- Quiz explanations should teach, not just confirm
-- Interview scenarios should be at staff/senior engineer level
-
 Return ONLY valid JSON matching this structure:
-{
-  "title": "string",
-  "overview": "string (2-3 paragraphs)",
-  "estimatedMinutes": number,
-  "difficulty": "beginner|intermediate|advanced",
-  "prerequisites": ["string"],
-  "sections": [
-    {
-      "id": "string (kebab-case)",
-      "title": "string",
-      "explanation": "string (markdown)",
-      "codeExamples": [{"language":"string","code":"string","caption":"string"}],
-      "knowledgeChecks": [
-        {"type":"quiz","question":"string","options":["string"],"answer":0,"explanation":"string"},
-        {"type":"open_ended","prompt":"string","rubric":"string"}
-      ],
-      "interviewScenarios": [{"setup":"string","hints":["string"],"sampleAnswer":"string"}],
-      "keyTakeaways": ["string"]
-    }
-  ],
-  "references": [{"title":"string","url":"string","description":"string"}]
-}`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+${GUIDE_SCHEMA}`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
 }
 
 export async function refineGuide(
@@ -149,33 +97,42 @@ export async function refineGuide(
   newSources: string[],
   options?: { instructions?: string; model?: string }
 ): Promise<RefineResult> {
-  const instructionBlock = options?.instructions
-    ? `\nUSER INSTRUCTIONS: ${options.instructions}`
-    : "";
+  const instructionBlock = options?.instructions ? `\nUSER INSTRUCTIONS: ${options.instructions}` : "";
 
-  return askJson<RefineResult>(`You are a senior software engineer updating an existing study guide with new source material.
+  // Send compressed summary instead of full guide JSON to reduce prompt size
+  const existingSummary = {
+    title: existingContent.title,
+    overview: existingContent.overview,
+    sectionCount: existingContent.sections.length,
+    sections: existingContent.sections.map(s => ({
+      id: s.id,
+      title: s.title,
+      keyTakeaways: s.keyTakeaways,
+      hasCode: s.codeExamples.length > 0,
+      checkCount: s.knowledgeChecks.length,
+      scenarioCount: s.interviewScenarios.length,
+    })),
+  };
 
-EXISTING GUIDE:
-${JSON.stringify(existingContent)}
+  return askJson<RefineResult>(`${GUIDE_INSTRUCTIONS}
+
+REFINE EXISTING GUIDE:
+${JSON.stringify(existingSummary)}
 
 NEW SOURCE MATERIAL:
-${newSources.map((s, i) => `--- New Source ${i + 1} ---\n${s.slice(0, 8000)}`).join("\n\n")}${instructionBlock}
+${newSources.map((s, i) => `--- New Source ${i + 1} ---\n${truncateSource(s, 8000)}`).join("\n\n")}${instructionBlock}
 
 TASK:
-Analyze the new sources and enhance the existing guide:
-- Add new details, examples, or nuance to existing sections where the sources provide deeper coverage
-- Add new sections if the sources cover topics not yet in the guide
-- Add new code examples from the sources (real implementations, not toy code)
-- Add new quiz questions and interview scenarios based on the new material
-- Update references to include the new sources
-- Keep everything that was already good — don't remove content unless it's factually wrong
-
-If the new sources require restructuring more than 60% of sections, regenerate the entire guide from scratch using all available information (existing + new). State this in the changeDescription.
+- Enhance existing sections with new details, examples, nuance from sources
+- Add new sections if sources cover missing topics
+- Add code examples, quizzes, interview scenarios from new material
+- Keep existing good content. Only remove factually wrong content.
+- If >60% restructure needed, regenerate entirely. State this in changeDescription.
 
 Return ONLY valid JSON:
 {
-  "content": { ... same GuideContent structure ... },
-  "changeDescription": "string — summarize what changed (e.g., 'Added 2 new sections on X, deepened Y with real-world examples from Z')"
+  "content": ${GUIDE_SCHEMA},
+  "changeDescription": "string — summarize what changed"
 }`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
 }
 
@@ -188,35 +145,18 @@ export async function generateGuideOutline(
   options?: { sources?: string[]; difficulty?: string; model?: string }
 ): Promise<GuideOutline> {
   const sourceBlock = options?.sources?.length
-    ? `\n\nSOURCE MATERIAL (use to inform section planning):\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${s.slice(0, 4000)}`).join("\n\n")}`
+    ? `\n\nSOURCE MATERIAL (inform section planning):\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 4000)}`).join("\n\n")}`
     : "";
+  const difficultyHint = options?.difficulty ? `\nTarget difficulty: ${options.difficulty}` : "";
 
-  const difficultyHint = options?.difficulty
-    ? `\nTarget difficulty: ${options.difficulty}`
-    : "";
-
-  return askJson<GuideOutline>(`You are a senior software engineer. Plan the structure of a comprehensive study guide.
+  return askJson<GuideOutline>(`${GUIDE_INSTRUCTIONS}
 
 TOPIC: ${topic}${difficultyHint}${sourceBlock}
 
-Create an outline with 4-8 sections that progressively build understanding. Do NOT write the section content — only plan the structure.
+Plan 4-8 sections that progressively build understanding. Do NOT write section content — only plan structure.
 
 Return ONLY valid JSON:
-{
-  "title": "string",
-  "overview": "string (2-3 paragraphs)",
-  "estimatedMinutes": number,
-  "difficulty": "beginner|intermediate|advanced",
-  "prerequisites": ["string"],
-  "sectionPlan": [
-    {
-      "id": "string (kebab-case slug of title)",
-      "title": "string",
-      "scope": "string (2-3 sentences describing what this section covers, what code examples to include, what quiz topics to test)"
-    }
-  ],
-  "references": [{"title":"string","url":"string","description":"string"}]
-}`, { timeoutMs: 120_000, skill: "guide-outline", model: options?.model });
+${OUTLINE_SCHEMA}`, { timeoutMs: 120_000, skill: "guide-outline", model: options?.model });
 }
 
 /**
@@ -230,48 +170,20 @@ export async function generateGuideSection(
   options?: { sources?: string[]; model?: string }
 ): Promise<GuideSection> {
   const sourceBlock = options?.sources?.length
-    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${s.slice(0, 6000)}`).join("\n\n")}`
+    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 6000)}`).join("\n\n")}`
     : "";
 
-  return askJson<GuideSection>(`You are a senior software engineer and technical interviewer. Write ONE section of a study guide.
+  return askJson<GuideSection>(`${GUIDE_INSTRUCTIONS}
 
 GUIDE TOPIC: ${topic}
 DIFFICULTY: ${context.difficulty}
-OTHER SECTIONS IN THIS GUIDE: ${context.siblingTitles.join(", ")}
+OTHER SECTIONS: ${context.siblingTitles.join(", ")}
 
 SECTION TO WRITE:
 - ID: ${sectionPlan.id}
 - Title: ${sectionPlan.title}
 - Scope: ${sectionPlan.scope}${sourceBlock}
 
-Write this section with ALL of these elements:
-
-1. EXPLANATION — Clear markdown prose with concrete examples. Explain "why" not just "what". Use analogies. Reference real systems (Google, Netflix, Uber).
-
-2. CODE EXAMPLES — 1-3 real, production-quality examples. No pseudocode. Include edge case handling. Use Python, Go, Java, or TypeScript as appropriate.
-
-3. KNOWLEDGE CHECKS — 2-4 items, mix of:
-   - "quiz" type: 4 options, one correct answer (index), explanation of WHY
-   - "open_ended" type: "Explain X" prompts with evaluation rubric
-
-4. INTERVIEW SCENARIOS — 1-2 items:
-   - Setup: "You're in a system design interview and asked to..."
-   - Hints: 3-4 progressive hints
-   - Sample answer: strong candidate response
-
-5. KEY TAKEAWAYS — 2-4 bullet points
-
 Return ONLY valid JSON:
-{
-  "id": "${sectionPlan.id}",
-  "title": "${sectionPlan.title}",
-  "explanation": "string (markdown)",
-  "codeExamples": [{"language":"string","code":"string","caption":"string"}],
-  "knowledgeChecks": [
-    {"type":"quiz","question":"string","options":["string"],"answer":0,"explanation":"string"},
-    {"type":"open_ended","prompt":"string","rubric":"string"}
-  ],
-  "interviewScenarios": [{"setup":"string","hints":["string"],"sampleAnswer":"string"}],
-  "keyTakeaways": ["string"]
-}`, { timeoutMs: 300_000, skill: "guide-section", model: options?.model });
+${SECTION_SCHEMA}`, { timeoutMs: 300_000, skill: "guide-section", model: options?.model });
 }

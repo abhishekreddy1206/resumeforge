@@ -160,32 +160,44 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
       </div>
 
       {/* Generation progress */}
-      {guide.status === "generating" && (
-        <div className="mb-8 border border-primary/20 bg-primary/5 rounded px-5 py-4 anim-fade-up">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-medium text-foreground">Generating sections...</span>
+      {guide.status === "generating" && (() => {
+        const readySections = guide.content.sections.filter((s) => s.explanation.length > 0).length;
+        const totalSections = guide.content.sections.length;
+        const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
+        return (
+          <div className="mb-8 border border-primary/20 bg-primary/5 rounded px-5 py-4 anim-fade-up">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+              <span className="text-sm font-medium text-foreground">Generating sections...</span>
+              <span className="label-mono text-primary ml-auto">{pct}%</span>
+            </div>
+            <div className="bg-muted rounded-full h-1.5 overflow-hidden mb-3">
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out bg-primary"
+                style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%` }}
+              />
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {guide.content.sections.map((s) => {
+                const isReady = s.explanation.length > 0;
+                return (
+                  <span
+                    key={s.id}
+                    className={`label-mono px-2 py-0.5 rounded ${
+                      isReady ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {isReady ? "\u2713" : "\u2022"} {s.title}
+                  </span>
+                );
+              })}
+            </div>
+            <p className="label-mono text-muted-foreground/60 mt-2">
+              {readySections} of {totalSections} sections ready
+            </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            {guide.content.sections.map((s) => {
-              const isReady = s.explanation.length > 0;
-              return (
-                <span
-                  key={s.id}
-                  className={`label-mono px-2 py-0.5 rounded ${
-                    isReady ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {isReady ? "\u2713" : "\u2022"} {s.title}
-                </span>
-              );
-            })}
-          </div>
-          <p className="label-mono text-muted-foreground/60 mt-2">
-            {guide.content.sections.filter((s) => s.explanation.length > 0).length} of {guide.content.sections.length} sections ready
-          </p>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Guide content */}
       <div className="anim-fade-up-2">
@@ -197,14 +209,21 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         />
       </div>
 
-      {/* Refine panel */}
+      {/* Refine panel — hidden during generation to prevent race conditions */}
       <div className="mt-16 anim-fade-up-3">
         <div className="section-divider mb-6" />
-        <RefinePanel
-          guideId={guide.id}
-          existingSources={guide.sources}
-          onRefined={() => fetchGuide()}
-        />
+        {guide.status === "generating" ? (
+          <div className="text-sm text-muted-foreground flex items-center gap-2 py-4">
+            <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" />
+            Guide is still generating. Refinement will be available once all sections are complete.
+          </div>
+        ) : (
+          <RefinePanel
+            guideId={guide.id}
+            existingSources={guide.sources}
+            onRefined={() => fetchGuide()}
+          />
+        )}
       </div>
     </div>
   );
