@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLinks } from "@/components/nav-links";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import "prismjs/themes/prism-tomorrow.css";
 import "./globals.css";
 
 // Display: Fraunces — variable optical serif, warm ink-trap resilience in dark mode
