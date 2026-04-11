@@ -48,6 +48,20 @@ export interface GuideContent {
   references: Array<{ title: string; url?: string; description: string }>;
 }
 
+export interface GuideOutline {
+  title: string;
+  overview: string;
+  estimatedMinutes: number;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  prerequisites: string[];
+  sectionPlan: Array<{
+    id: string;
+    title: string;
+    scope: string;
+  }>;
+  references: Array<{ title: string; url?: string; description: string }>;
+}
+
 export interface RefineResult {
   content: GuideContent;
   changeDescription: string;
@@ -163,4 +177,101 @@ Return ONLY valid JSON:
   "content": { ... same GuideContent structure ... },
   "changeDescription": "string — summarize what changed (e.g., 'Added 2 new sections on X, deepened Y with real-world examples from Z')"
 }`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+}
+
+/**
+ * Fast outline generation (~15s). Returns the guide skeleton
+ * with section titles and scopes but no content.
+ */
+export async function generateGuideOutline(
+  topic: string,
+  options?: { sources?: string[]; difficulty?: string; model?: string }
+): Promise<GuideOutline> {
+  const sourceBlock = options?.sources?.length
+    ? `\n\nSOURCE MATERIAL (use to inform section planning):\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${s.slice(0, 4000)}`).join("\n\n")}`
+    : "";
+
+  const difficultyHint = options?.difficulty
+    ? `\nTarget difficulty: ${options.difficulty}`
+    : "";
+
+  return askJson<GuideOutline>(`You are a senior software engineer. Plan the structure of a comprehensive study guide.
+
+TOPIC: ${topic}${difficultyHint}${sourceBlock}
+
+Create an outline with 4-8 sections that progressively build understanding. Do NOT write the section content — only plan the structure.
+
+Return ONLY valid JSON:
+{
+  "title": "string",
+  "overview": "string (2-3 paragraphs)",
+  "estimatedMinutes": number,
+  "difficulty": "beginner|intermediate|advanced",
+  "prerequisites": ["string"],
+  "sectionPlan": [
+    {
+      "id": "string (kebab-case slug of title)",
+      "title": "string",
+      "scope": "string (2-3 sentences describing what this section covers, what code examples to include, what quiz topics to test)"
+    }
+  ],
+  "references": [{"title":"string","url":"string","description":"string"}]
+}`, { timeoutMs: 120_000, skill: "guide-outline", model: options?.model });
+}
+
+/**
+ * Generate a single section's full content. Designed to run in parallel
+ * with other section generations.
+ */
+export async function generateGuideSection(
+  topic: string,
+  sectionPlan: { id: string; title: string; scope: string },
+  context: { difficulty: string; siblingTitles: string[] },
+  options?: { sources?: string[]; model?: string }
+): Promise<GuideSection> {
+  const sourceBlock = options?.sources?.length
+    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${s.slice(0, 6000)}`).join("\n\n")}`
+    : "";
+
+  return askJson<GuideSection>(`You are a senior software engineer and technical interviewer. Write ONE section of a study guide.
+
+GUIDE TOPIC: ${topic}
+DIFFICULTY: ${context.difficulty}
+OTHER SECTIONS IN THIS GUIDE: ${context.siblingTitles.join(", ")}
+
+SECTION TO WRITE:
+- ID: ${sectionPlan.id}
+- Title: ${sectionPlan.title}
+- Scope: ${sectionPlan.scope}${sourceBlock}
+
+Write this section with ALL of these elements:
+
+1. EXPLANATION — Clear markdown prose with concrete examples. Explain "why" not just "what". Use analogies. Reference real systems (Google, Netflix, Uber).
+
+2. CODE EXAMPLES — 1-3 real, production-quality examples. No pseudocode. Include edge case handling. Use Python, Go, Java, or TypeScript as appropriate.
+
+3. KNOWLEDGE CHECKS — 2-4 items, mix of:
+   - "quiz" type: 4 options, one correct answer (index), explanation of WHY
+   - "open_ended" type: "Explain X" prompts with evaluation rubric
+
+4. INTERVIEW SCENARIOS — 1-2 items:
+   - Setup: "You're in a system design interview and asked to..."
+   - Hints: 3-4 progressive hints
+   - Sample answer: strong candidate response
+
+5. KEY TAKEAWAYS — 2-4 bullet points
+
+Return ONLY valid JSON:
+{
+  "id": "${sectionPlan.id}",
+  "title": "${sectionPlan.title}",
+  "explanation": "string (markdown)",
+  "codeExamples": [{"language":"string","code":"string","caption":"string"}],
+  "knowledgeChecks": [
+    {"type":"quiz","question":"string","options":["string"],"answer":0,"explanation":"string"},
+    {"type":"open_ended","prompt":"string","rubric":"string"}
+  ],
+  "interviewScenarios": [{"setup":"string","hints":["string"],"sampleAnswer":"string"}],
+  "keyTakeaways": ["string"]
+}`, { timeoutMs: 300_000, skill: "guide-section", model: options?.model });
 }
