@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronRight, Link2, FileText, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight, Link2, FileText, Upload, BookmarkCheck } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 
 interface Source {
@@ -18,14 +18,33 @@ interface RefinePanelProps {
   onRefined: () => void;
 }
 
+interface SavedSourceItem {
+  id: string;
+  type: string;
+  url: string;
+  title: string;
+  createdAt: string;
+}
+
 export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanelProps) {
   const [open, setOpen] = useState(false);
-  const [sourceType, setSourceType] = useState<"url" | "text" | "file">("url");
+  const [sourceType, setSourceType] = useState<"url" | "text" | "file" | "saved">("url");
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
   const [fileData, setFileData] = useState<{ name: string; base64: string; type: string } | null>(null);
+  const [selectedSaved, setSelectedSaved] = useState<SavedSourceItem | null>(null);
+  const [savedSources, setSavedSources] = useState<SavedSourceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && savedSources.length === 0) {
+      fetch("/api/learn/sources")
+        .then((r) => (r.ok ? r.json() : { sources: [] }))
+        .then((data) => setSavedSources(data.sources || []))
+        .catch(() => {});
+    }
+  }, [open, savedSources.length]);
 
   const handleRefine = async () => {
     if (loading) return;
@@ -36,6 +55,12 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
       sources.push({ type: "text", content: text.trim() });
     } else if (sourceType === "file" && fileData) {
       sources.push({ type: fileData.type, content: fileData.base64, encoding: "base64", filename: fileData.name });
+    } else if (sourceType === "saved" && selectedSaved) {
+      // Fetch full content then send as text
+      const fullRes = await fetch(`/api/learn/sources/${selectedSaved.id}`);
+      if (!fullRes.ok) { setError("Failed to load saved source"); setLoading(false); return; }
+      const full = await fullRes.json();
+      sources.push({ type: "text", content: full.content });
     }
     if (sources.length === 0) return;
 
@@ -51,6 +76,7 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
         setUrl("");
         setText("");
         setFileData(null);
+        setSelectedSaved(null);
         setOpen(false);
         onRefined();
       } else {
@@ -128,6 +154,18 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
               >
                 <Upload className="w-3 h-3" /> File
               </button>
+              {savedSources.length > 0 && (
+                <button
+                  onClick={() => setSourceType("saved")}
+                  className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                    sourceType === "saved"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <BookmarkCheck className="w-3 h-3" /> Saved ({savedSources.length})
+                </button>
+              )}
             </div>
             {sourceType === "url" && (
               <div>
@@ -164,11 +202,35 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
                 )}
               </div>
             )}
+            {sourceType === "saved" && (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {savedSources.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedSaved(s)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded text-left text-sm transition-all ${
+                      selectedSaved?.id === s.id
+                        ? "bg-primary/10 border border-primary"
+                        : "bg-background border border-input hover:border-primary hover:bg-primary/5"
+                    }`}
+                  >
+                    <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium">{s.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               onClick={handleRefine}
               disabled={loading || (
                 sourceType === "url" ? !url.trim() :
                 sourceType === "text" ? !text.trim() :
+                sourceType === "saved" ? !selectedSaved :
                 !fileData
               )}
               data-slot="button"

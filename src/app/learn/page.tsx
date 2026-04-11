@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 
@@ -32,11 +32,20 @@ interface LearningPathItem {
 
 interface SourceItem {
   id: string;
-  type: "url" | "text" | "pdf" | "docx";
+  type: "url" | "text" | "pdf" | "docx" | "saved";
   url?: string;
   content?: string;
   filename?: string;
   label: string;
+  savedSourceId?: string;
+}
+
+interface SavedSourceItem {
+  id: string;
+  type: string;
+  url: string;
+  title: string;
+  createdAt: string;
 }
 
 let sourceIdCounter = 0;
@@ -53,9 +62,10 @@ export default function LearnPage() {
   const [showNewPath, setShowNewPath] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [sources, setSources] = useState<SourceItem[]>([]);
-  const [sourceTab, setSourceTab] = useState<"url" | "text" | "file">("url");
+  const [sourceTab, setSourceTab] = useState<"url" | "text" | "file" | "saved">("url");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceText, setSourceText] = useState("");
+  const [savedSources, setSavedSources] = useState<SavedSourceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -88,6 +98,12 @@ export default function LearnPage() {
       .then((rec) => setRecommendations(Array.isArray(rec) ? rec : []))
       .catch(() => setRecommendations([]))
       .finally(() => setRecsLoading(false));
+
+    // Saved sources from extension captures
+    fetch("/api/learn/sources")
+      .then((r) => (r.ok ? r.json() : { sources: [] }))
+      .then((data) => setSavedSources(data.sources || []))
+      .catch(() => setSavedSources([]));
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -101,7 +117,7 @@ export default function LearnPage() {
       if (sources.length > 0) {
         payload.sources = sources.map((s) => {
           if (s.type === "url") return { type: "url", url: s.url };
-          if (s.type === "text") return { type: "text", content: s.content };
+          if (s.type === "text" || s.type === "saved") return { type: "text", content: s.content };
           return { type: s.type, content: s.content, encoding: "base64", filename: s.filename };
         });
       }
@@ -157,6 +173,23 @@ export default function LearnPage() {
       content: file.base64,
       filename: file.name,
       label: file.name,
+    }]);
+  };
+
+  const addSavedSource = async (saved: SavedSourceItem) => {
+    // Check if already added
+    if (sources.some((s) => s.savedSourceId === saved.id)) return;
+    // Fetch full content
+    const res = await fetch(`/api/learn/sources/${saved.id}`);
+    if (!res.ok) return;
+    const full = await res.json();
+    setSources((prev) => [...prev, {
+      id: String(++sourceIdCounter),
+      type: "saved",
+      content: full.content,
+      url: saved.url,
+      label: saved.title,
+      savedSourceId: saved.id,
     }]);
   };
 
@@ -290,6 +323,18 @@ export default function LearnPage() {
                   >
                     <Upload className="w-3 h-3" /> File
                   </button>
+                  {savedSources.length > 0 && (
+                    <button
+                      onClick={() => setSourceTab("saved")}
+                      className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                        sourceTab === "saved"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <BookmarkCheck className="w-3 h-3" /> Saved ({savedSources.length})
+                    </button>
+                  )}
                 </div>
 
                 {/* Tab content */}
@@ -334,6 +379,34 @@ export default function LearnPage() {
                 {sourceTab === "file" && (
                   <FileDropZone onFile={addFileSource} />
                 )}
+                {sourceTab === "saved" && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {savedSources.map((s) => {
+                      const alreadyAdded = sources.some((src) => src.savedSourceId === s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => addSavedSource(s)}
+                          disabled={alreadyAdded}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded text-left text-sm transition-all ${
+                            alreadyAdded
+                              ? "bg-muted/50 text-muted-foreground opacity-60"
+                              : "bg-background border border-input hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate font-medium">{s.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                            </div>
+                          </div>
+                          {alreadyAdded && <span className="text-xs text-muted-foreground shrink-0">Added</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -347,6 +420,7 @@ export default function LearnPage() {
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
                     {s.type === "url" ? <Link2 className="w-3 h-3 text-muted-foreground shrink-0" /> :
+                     s.type === "saved" ? <BookmarkCheck className="w-3 h-3 text-muted-foreground shrink-0" /> :
                      (s.type === "pdf" || s.type === "docx") ? <Upload className="w-3 h-3 text-muted-foreground shrink-0" /> :
                      <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
                     <span className="truncate max-w-[200px]">{s.label}</span>

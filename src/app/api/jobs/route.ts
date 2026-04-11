@@ -172,7 +172,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { url, description, aiModel } = await request.json();
+    const { url, description, aiModel, source } = await request.json();
 
     if (!url && !description) {
       return NextResponse.json(
@@ -246,6 +246,7 @@ export async function POST(request: NextRequest) {
         seniority: null,
         sponsorship: "unspecified",
         aiModel: aiModel || "sonnet",
+        source: source || null,
       },
     });
 

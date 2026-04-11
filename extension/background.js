@@ -225,6 +225,67 @@ async function handleMessage(msg) {
       return res.json();
     }
 
+    case "CAPTURE_PAGE": {
+      const { captureType, tabId } = msg;
+
+      // Inject capture.js into the active tab
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["capture.js"],
+      });
+
+      // Ask capture.js to extract content
+      const extraction = await chrome.tabs.sendMessage(tabId, { type: "EXTRACT_CONTENT" });
+      if (extraction.error) throw new Error(extraction.error);
+
+      // Validate extracted content
+      const text = (extraction.text || "").trim();
+      if (text.length < 50) {
+        throw new Error("Could not extract enough content from this page.");
+      }
+
+      if (captureType === "job") {
+        // Cap text and POST to jobs endpoint
+        const description = text.slice(0, 15000);
+        const res = await apiFetch("/api/jobs", {
+          method: "POST",
+          body: JSON.stringify({
+            url: extraction.url,
+            description,
+            source: "extension",
+          }),
+        });
+        const job = await res.json();
+        return { success: true, captureType: "job", title: job.title, id: job.id };
+      }
+
+      if (captureType === "article") {
+        // Determine article type from URL
+        const pageUrl = (extraction.url || "").toLowerCase();
+        let type = "article";
+        if (/medium\.com|towardsdatascience\.com|betterprogramming\.pub|levelup\.gitconnected\.com/.test(pageUrl)) {
+          type = "medium";
+        } else if (/\.substack\.com\/p\//.test(pageUrl)) {
+          type = "substack";
+        }
+
+        const content = text.slice(0, 10000);
+        const res = await apiFetch("/api/learn/sources", {
+          method: "POST",
+          body: JSON.stringify({
+            url: extraction.url,
+            title: extraction.title || "Untitled",
+            content,
+            type,
+          }),
+        });
+        const saved = await res.json();
+        return { success: true, captureType: "article", title: saved.title, id: saved.id };
+      }
+
+      throw new Error(`Unknown capture type: ${captureType}`);
+    }
+
     case "SET_API_URL": {
       await chrome.storage.sync.set({ apiUrl: msg.apiUrl });
       // Request host permission for the new URL if needed

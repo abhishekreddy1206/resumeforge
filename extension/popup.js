@@ -19,6 +19,10 @@ const loadingDiv = document.getElementById("loading");
 const errorBar = document.getElementById("error-bar");
 const errorText = document.getElementById("error-text");
 
+const captureJobBtn = document.getElementById("capture-job-btn");
+const captureArticleBtn = document.getElementById("capture-article-btn");
+const captureResult = document.getElementById("capture-result");
+
 let jobs = [];
 let selectedJob = null;
 
@@ -58,6 +62,8 @@ async function checkConnection() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       pageUrl = tab?.url || "";
     } catch { /* no tab access */ }
+
+    updateCaptureHints(pageUrl);
 
     const result = await chrome.runtime.sendMessage({ type: "GET_JOBS", pageUrl });
     if (result.error) throw new Error(result.error);
@@ -214,6 +220,69 @@ fillBtn.addEventListener("click", async () => {
     fillBtn.disabled = false;
   }
 });
+
+// ── Capture ──
+
+const JOB_SITE_PATTERNS = /greenhouse\.io|lever\.co|myworkdayjobs\.com|workday\.com|icims\.com|smartrecruiters\.com|ashbyhq\.com|jobvite\.com|linkedin\.com\/jobs|indeed\.com\/viewjob|glassdoor\.com\/job/i;
+const ARTICLE_SITE_PATTERNS = /medium\.com|towardsdatascience\.com|betterprogramming\.pub|levelup\.gitconnected\.com|\.substack\.com\/p\//i;
+
+function updateCaptureHints(pageUrl) {
+  captureJobBtn.classList.remove("suggested");
+  captureArticleBtn.classList.remove("suggested");
+  if (JOB_SITE_PATTERNS.test(pageUrl)) {
+    captureJobBtn.classList.add("suggested");
+  } else if (ARTICLE_SITE_PATTERNS.test(pageUrl)) {
+    captureArticleBtn.classList.add("suggested");
+  }
+}
+
+async function captureCurrentPage(captureType) {
+  const btn = captureType === "job" ? captureJobBtn : captureArticleBtn;
+  captureJobBtn.disabled = true;
+  captureArticleBtn.disabled = true;
+  captureResult.className = "capture-result hidden";
+  btn.textContent = captureType === "job" ? "Importing..." : "Capturing...";
+  hideError();
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error("No active tab found");
+
+    const result = await chrome.runtime.sendMessage({
+      type: "CAPTURE_PAGE",
+      captureType,
+      tabId: tab.id,
+    });
+
+    if (result.error) {
+      // Check for duplicate
+      if (result.error.includes("already been")) {
+        captureResult.className = "capture-result duplicate";
+        captureResult.textContent = result.error;
+      } else {
+        throw new Error(result.error);
+      }
+    } else {
+      captureResult.className = "capture-result success";
+      if (captureType === "job") {
+        captureResult.textContent = `Job imported! "${result.title}" is being analyzed.`;
+      } else {
+        captureResult.textContent = `Article saved: "${result.title}"`;
+      }
+    }
+  } catch (err) {
+    captureResult.className = "capture-result error";
+    captureResult.textContent = err.message || "Capture failed";
+  } finally {
+    captureJobBtn.disabled = false;
+    captureArticleBtn.disabled = false;
+    captureJobBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg> Import Job`;
+    captureArticleBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg> Capture Article`;
+  }
+}
+
+captureJobBtn.addEventListener("click", () => captureCurrentPage("job"));
+captureArticleBtn.addEventListener("click", () => captureCurrentPage("article"));
 
 // ── Helpers ──
 

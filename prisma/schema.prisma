@@ -38,6 +38,7 @@ model Profile {
   applicationProfile   ApplicationProfile?
   guides               Guide[]
   learningPaths        LearningPath[]
+  savedSources         SavedSource[]
 
   // Learn recommendations cache
   cachedGaps              String?
@@ -329,6 +330,17 @@ model GuideSource {
   type      String
   url       String?
   title     String?
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model SavedSource {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type      String   // "medium" | "substack" | "article"
+  url       String
+  title     String
   content   String
   createdAt DateTime @default(now())
 }
