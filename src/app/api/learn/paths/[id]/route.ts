@@ -32,7 +32,7 @@ export async function GET(
     };
     const orderedGuides = guideOrder
       .map((gid) => path.guides.find((g) => g.id === gid))
-      .filter(Boolean)
+      .filter((g): g is NonNullable<typeof g> => Boolean(g))
       .map(mapGuide);
     const orderedIds = new Set(guideOrder);
     const unordered = path.guides.filter((g) => !orderedIds.has(g.id)).map(mapGuide);

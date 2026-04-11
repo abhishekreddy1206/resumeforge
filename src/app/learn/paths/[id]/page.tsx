@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefinePanel } from "@/components/learn/refine-panel";
 import { ArrowLeft, ArrowRight, BookOpen, X } from "lucide-react";
@@ -104,10 +105,17 @@ export default function PathDetailPage() {
   );
 
   const handleAddToGuide = useCallback(async (targetGuideId: string, sourceGuideId: string) => {
-    // When the cross-link API is fully built, this will retrieve the source
-    // and POST it to /api/learn/guides/${targetGuideId}/refine.
-    // For now, dismiss the banner optimistically.
-    setDismissedLinks((prev) => new Set(prev).add(sourceGuideId));
+    // Remove just this one suggestion from the source guide's cross-link list.
+    // When the cross-link API is fully built, this will also POST the source
+    // to /api/learn/guides/${targetGuideId}/refine.
+    setCrossLinks((prev) => {
+      const updated = (prev[sourceGuideId] ?? []).filter((s) => s.guideId !== targetGuideId);
+      if (updated.length === 0) {
+        const { [sourceGuideId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [sourceGuideId]: updated };
+    });
   }, []);
 
   const handleDismissCrossLink = useCallback((sourceGuideId: string) => {
@@ -128,13 +136,13 @@ export default function PathDetailPage() {
   if (error || !path) {
     return (
       <div className="max-w-4xl mx-auto py-8 px-4">
-        <a
+        <Link
           href="/learn"
           className="inline-flex items-center gap-1.5 label-mono text-muted-foreground hover:text-foreground transition-colors mb-6"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Learn
-        </a>
+        </Link>
         <div className="text-center py-16 border border-dashed border-border rounded">
           <p className="text-sm text-muted-foreground">{error ?? "Path not found."}</p>
         </div>
@@ -150,13 +158,13 @@ export default function PathDetailPage() {
     <div className="max-w-4xl mx-auto py-8 px-4 space-y-10">
       {/* Back link */}
       <div className="anim-fade-up">
-        <a
+        <Link
           href="/learn"
           className="inline-flex items-center gap-1.5 label-mono text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Learn
-        </a>
+        </Link>
       </div>
 
       {/* Path masthead */}
@@ -233,7 +241,7 @@ export default function PathDetailPage() {
               const isCheckingLinks = crossLinkLoading === guide.id;
 
               return (
-                <div key={guide.id} className="space-y-2" style={{ animationDelay: `${0.05 * i}s` }}>
+                <div key={guide.id} className="space-y-2">
                   {/* Guide card */}
                   <div className="bg-card border border-border rounded card-hover">
                     {/* Card header row */}
@@ -246,7 +254,7 @@ export default function PathDetailPage() {
                       {/* Guide info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3">
-                          <a
+                          <Link
                             href={`/learn/${guide.slug}`}
                             className="group flex items-center gap-1 hover:text-primary transition-colors"
                           >
@@ -257,7 +265,7 @@ export default function PathDetailPage() {
                               {guide.topic}
                             </span>
                             <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
-                          </a>
+                          </Link>
 
                           {/* Completion badge */}
                           <span
