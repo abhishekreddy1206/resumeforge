@@ -9,6 +9,7 @@ import {
   History,
   Trophy,
   BookOpen,
+  BarChart3,
 } from "lucide-react";
 
 const navLinks = [
@@ -18,6 +19,7 @@ const navLinks = [
   { href: "/skills", label: "Skills", icon: Sparkles },
   { href: "/top-matches", label: "Top Matches", icon: Trophy },
   { href: "/learn", label: "Learn", icon: BookOpen },
+  { href: "/insights", label: "Insights", icon: BarChart3 },
   { href: "/versions", label: "Versions", icon: History },
 ];
 
