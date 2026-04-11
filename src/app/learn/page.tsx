@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
+import { KnowledgeGraph } from "@/components/learn/knowledge-graph";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 
 interface GuideListItem {
@@ -480,6 +481,18 @@ export default function LearnPage() {
           </div>
         )}
       </section>
+
+      {/* Knowledge Map */}
+      {guides.length >= 3 && (
+        <section className="anim-fade-up-4">
+          <div className="flex items-center justify-between mb-4">
+            <span className="label-mono text-muted-foreground">Knowledge Map</span>
+          </div>
+          <div className="border border-border rounded bg-card p-4">
+            <KnowledgeGraph />
+          </div>
+        </section>
+      )}
 
       {/* AI Recommendations — loads independently from the rest of the page */}
       {recsLoading ? (
