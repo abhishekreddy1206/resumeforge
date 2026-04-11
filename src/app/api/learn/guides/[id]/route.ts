@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
 export async function GET(
   _request: NextRequest,
@@ -68,6 +69,12 @@ export async function DELETE(
   try {
     const { id } = await params;
     await prisma.guide.delete({ where: { id } });
+
+    // Eagerly refresh recommendations cache (guide topics changed)
+    refreshRecommendationsCache().catch((err) =>
+      console.error("[guide-delete] Recommendation refresh failed:", err)
+    );
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Guide delete error:", error);

@@ -4,6 +4,7 @@ import { generateGuide } from "@/lib/claude";
 import { scrapeArticleUrl } from "@/lib/parsers/web";
 import { parsePdf } from "@/lib/parsers/pdf";
 import { parseDocx } from "@/lib/parsers/docx";
+import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -131,6 +132,11 @@ export async function POST(request: NextRequest) {
 
       return g;
     });
+
+    // Eagerly refresh recommendations cache (guide topics changed)
+    refreshRecommendationsCache().catch((err) =>
+      console.error("[guide-create] Recommendation refresh failed:", err)
+    );
 
     return NextResponse.json({
       id: guide.id,
