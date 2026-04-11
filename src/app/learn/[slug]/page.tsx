@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, use } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GuideRenderer } from "@/components/learn/guide-renderer";
 import { RefinePanel } from "@/components/learn/refine-panel";
-import { ArrowLeft, Clock, Signal, BookOpen } from "lucide-react";
+import { ArrowLeft, Clock, Signal, BookOpen, Sparkles } from "lucide-react";
 import type { GuideContent } from "@/lib/claude/skills/guide-generator";
 
 interface GuideData {
@@ -28,14 +28,8 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
 
   const fetchGuide = useCallback(async () => {
     try {
-      const listRes = await fetch("/api/learn/guides");
-      if (!listRes.ok) { setError("Failed to load guides"); return; }
-      const guides = await listRes.json();
-      const match = guides.find((g: { slug: string }) => g.slug === slug);
-      if (!match) { setError("Guide not found"); return; }
-
-      const res = await fetch(`/api/learn/guides/${match.id}`);
-      if (!res.ok) { setError("Failed to load guide"); return; }
+      const res = await fetch(`/api/learn/guides/${slug}`);
+      if (!res.ok) { setError("Guide not found"); return; }
       setGuide(await res.json());
     } catch {
       setError("Failed to load guide");
@@ -45,6 +39,26 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
   }, [slug]);
 
   useEffect(() => { fetchGuide(); }, [fetchGuide]);
+
+  // Poll for updates while guide is generating
+  useEffect(() => {
+    if (!guide || guide.status !== "generating") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/learn/guides/${slug}`);
+        if (res.ok) {
+          const updated = await res.json();
+          setGuide(updated);
+          if (updated.status !== "generating") {
+            clearInterval(interval);
+          }
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [guide?.status, slug]);
 
   const handleProgressUpdate = useCallback(async (progress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>) => {
     if (!guide) return;
@@ -144,6 +158,34 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         )}
         <div className="section-divider mt-5" />
       </div>
+
+      {/* Generation progress */}
+      {guide.status === "generating" && (
+        <div className="mb-8 border border-primary/20 bg-primary/5 rounded px-5 py-4 anim-fade-up">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+            <span className="text-sm font-medium text-foreground">Generating sections...</span>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {guide.content.sections.map((s) => {
+              const isReady = s.explanation.length > 0;
+              return (
+                <span
+                  key={s.id}
+                  className={`label-mono px-2 py-0.5 rounded ${
+                    isReady ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {isReady ? "\u2713" : "\u2022"} {s.title}
+                </span>
+              );
+            })}
+          </div>
+          <p className="label-mono text-muted-foreground/60 mt-2">
+            {guide.content.sections.filter((s) => s.explanation.length > 0).length} of {guide.content.sections.length} sections ready
+          </p>
+        </div>
+      )}
 
       {/* Guide content */}
       <div className="anim-fade-up-2">
