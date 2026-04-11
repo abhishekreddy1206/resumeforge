@@ -17,7 +17,7 @@ export function QuizCard({ question, options, answer, explanation, onComplete }:
   const handleSelect = (index: number) => {
     if (revealed) return;
     setSelected(index);
-    if (index === answer) onComplete?.();
+    onComplete?.();
   };
 
   return (

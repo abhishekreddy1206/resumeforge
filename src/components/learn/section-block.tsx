@@ -20,22 +20,22 @@ export function SectionBlock({ section, guideId, onQuizComplete, onScenarioCompl
     <div id={section.id} className="scroll-mt-24">
       <h2 className="text-xl font-bold mb-4">{section.title}</h2>
 
-      <div
-        className="prose prose-sm dark:prose-invert max-w-none mb-6"
-        dangerouslySetInnerHTML={{
-          __html: section.explanation
-            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            .replace(/`(.+?)`/g, '<code>$1</code>')
-            .replace(/^- (.+)$/gm, '<li>$1</li>')
-            .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-            .replace(/\n\n/g, '</p><p>')
-            .replace(/^/, '<p>')
-            .replace(/$/, '</p>'),
-        }}
-      />
+      <div className="prose prose-sm dark:prose-invert max-w-none mb-6">
+        {section.explanation.split("\n\n").map((block, bi) => {
+          const trimmed = block.trim();
+          if (trimmed.startsWith("### ")) return <h3 key={bi}>{trimmed.slice(4)}</h3>;
+          if (trimmed.startsWith("## ")) return <h2 key={bi}>{trimmed.slice(3)}</h2>;
+          const lines = trimmed.split("\n");
+          if (lines.every((l) => l.startsWith("- "))) {
+            return (
+              <ul key={bi}>
+                {lines.map((l, li) => <li key={li}>{l.slice(2)}</li>)}
+              </ul>
+            );
+          }
+          return <p key={bi}>{trimmed}</p>;
+        })}
+      </div>
 
       {section.codeExamples.map((ex, i) => (
         <CodeExample key={i} language={ex.language} code={ex.code} caption={ex.caption} />
