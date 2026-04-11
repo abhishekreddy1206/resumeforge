@@ -367,12 +367,15 @@ export default function LearnPage() {
         </div>
         <div className="grid md:grid-cols-3 gap-4">
           {paths.map((path) => (
-            <div key={path.id} className="bg-card border border-border rounded p-4 card-hover">
-              <div
-                className="text-base font-medium mb-1"
-                style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600 }}
-              >
-                {path.title}
+            <a key={path.id} href={`/learn/paths/${path.id}`} className="group bg-card border border-border rounded p-4 card-hover block">
+              <div className="flex items-start justify-between mb-1">
+                <div
+                  className="text-base font-medium group-hover:text-primary transition-colors"
+                  style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600 }}
+                >
+                  {path.title}
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5 ml-2" />
               </div>
               <div className="label-mono text-muted-foreground mb-3">{path.guideCount} guides · {path.completedCount} done</div>
               <div className="bg-muted rounded-full h-1 overflow-hidden">
@@ -392,7 +395,7 @@ export default function LearnPage() {
               }}>
                 {path.progress}% complete
               </div>
-            </div>
+            </a>
           ))}
           {showNewPath && (
             <div className="bg-card border border-dashed border-border rounded p-4 flex flex-col gap-3 anim-fade-up">
