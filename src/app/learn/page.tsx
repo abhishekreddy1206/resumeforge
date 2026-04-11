@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload } from "lucide-react";
+import { FileDropZone } from "@/components/learn/file-drop-zone";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 
 interface GuideListItem {
@@ -29,6 +30,14 @@ interface LearningPathItem {
   progress: number;
 }
 
+interface SourceItem {
+  type: "url" | "text" | "pdf" | "docx";
+  url?: string;
+  content?: string;
+  filename?: string;
+  label: string;
+}
+
 export default function LearnPage() {
   const [guides, setGuides] = useState<GuideListItem[]>([]);
   const [paths, setPaths] = useState<LearningPathItem[]>([]);
@@ -39,6 +48,11 @@ export default function LearnPage() {
   const [creating, setCreating] = useState(false);
   const [newPathTitle, setNewPathTitle] = useState("");
   const [showNewPath, setShowNewPath] = useState(false);
+  const [showSources, setShowSources] = useState(false);
+  const [sources, setSources] = useState<SourceItem[]>([]);
+  const [sourceTab, setSourceTab] = useState<"url" | "text" | "file">("url");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceText, setSourceText] = useState("");
 
   const fetchData = () => {
     // Fast: guides + paths (~9ms) — unblocks page immediately
@@ -63,10 +77,18 @@ export default function LearnPage() {
     if (!topicText.trim() || creating) return;
     setCreating(true);
     try {
+      const payload: Record<string, unknown> = { topic: topicText.trim() };
+      if (sources.length > 0) {
+        payload.sources = sources.map((s) => {
+          if (s.type === "url") return { type: "url", url: s.url };
+          if (s.type === "text") return { type: "text", content: s.content };
+          return { type: s.type, content: s.content, encoding: "base64", filename: s.filename };
+        });
+      }
       const res = await fetch("/api/learn/guides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicText.trim() }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         const data = await res.json();
@@ -77,6 +99,43 @@ export default function LearnPage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const addUrlSource = () => {
+    const trimmed = sourceUrl.trim();
+    if (!trimmed) return;
+    try {
+      const hostname = new URL(trimmed).hostname.replace("www.", "");
+      setSources((prev) => [...prev, { type: "url", url: trimmed, label: hostname }]);
+      setSourceUrl("");
+    } catch {
+      setSources((prev) => [...prev, { type: "url", url: trimmed, label: trimmed.slice(0, 30) }]);
+      setSourceUrl("");
+    }
+  };
+
+  const addTextSource = () => {
+    const trimmed = sourceText.trim();
+    if (!trimmed) return;
+    setSources((prev) => [...prev, {
+      type: "text",
+      content: trimmed,
+      label: trimmed.slice(0, 40) + (trimmed.length > 40 ? "..." : ""),
+    }]);
+    setSourceText("");
+  };
+
+  const addFileSource = (file: { name: string; base64: string; type: string }) => {
+    setSources((prev) => [...prev, {
+      type: file.type as "pdf" | "docx",
+      content: file.base64,
+      filename: file.name,
+      label: file.name,
+    }]);
+  };
+
+  const removeSource = (index: number) => {
+    setSources((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleCreatePath = async () => {
@@ -175,25 +234,164 @@ export default function LearnPage() {
               <input
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate(topic)}
+                onKeyDown={(e) => e.key === "Enter" && !showSources && handleCreate(topic)}
                 placeholder="Enter a topic — B-trees, Raft consensus, system design..."
                 className="flex-1 bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                 style={{ fontFamily: "var(--font-geist-sans)" }}
                 disabled={creating}
               />
+              {!showSources && (
+                <button
+                  onClick={() => handleCreate(topic)}
+                  disabled={!topic.trim() || creating}
+                  data-slot="button"
+                  className="bg-primary text-primary-foreground px-5 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all"
+                >
+                  {creating ? (
+                    <span className="flex items-center gap-1">
+                      Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                    </span>
+                  ) : "Generate"}
+                </button>
+              )}
+            </div>
+
+            {/* Toggle */}
+            {!creating && (
+              <button
+                onClick={() => setShowSources(!showSources)}
+                className="label-mono text-primary hover:text-primary/80 mt-3 flex items-center gap-1 transition-colors"
+              >
+                <Plus className={`w-3 h-3 transition-transform ${showSources ? "rotate-45" : ""}`} />
+                {showSources ? "Hide Sources" : "Add Sources"}
+              </button>
+            )}
+
+            {/* Expandable source panel */}
+            {showSources && !creating && (
+              <div className="mt-4 space-y-4 anim-fade-up">
+                {/* Tabs */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSourceTab("url")}
+                    className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                      sourceTab === "url"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Link2 className="w-3 h-3" /> URL
+                  </button>
+                  <button
+                    onClick={() => setSourceTab("text")}
+                    className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                      sourceTab === "text"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <FileText className="w-3 h-3" /> Text
+                  </button>
+                  <button
+                    onClick={() => setSourceTab("file")}
+                    className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                      sourceTab === "file"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Upload className="w-3 h-3" /> File
+                  </button>
+                </div>
+
+                {/* Tab content */}
+                {sourceTab === "url" && (
+                  <div className="flex gap-2">
+                    <input
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addUrlSource()}
+                      placeholder="Paste article URL (Medium, Substack, blog, docs)..."
+                      className="flex-1 bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                    />
+                    <button
+                      onClick={addUrlSource}
+                      disabled={!sourceUrl.trim()}
+                      data-slot="button"
+                      className="bg-muted text-foreground px-3 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+                {sourceTab === "text" && (
+                  <div className="space-y-2">
+                    <textarea
+                      value={sourceText}
+                      onChange={(e) => setSourceText(e.target.value)}
+                      placeholder="Paste text content..."
+                      rows={3}
+                      className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                    />
+                    <button
+                      onClick={addTextSource}
+                      disabled={!sourceText.trim()}
+                      data-slot="button"
+                      className="bg-muted text-foreground px-3 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+                {sourceTab === "file" && (
+                  <FileDropZone onFile={addFileSource} />
+                )}
+              </div>
+            )}
+
+            {/* Source chips */}
+            {sources.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {sources.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-1.5 bg-muted rounded px-2.5 py-1 text-xs anim-fade-up"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
+                    {s.type === "url" ? <Link2 className="w-3 h-3 text-muted-foreground shrink-0" /> :
+                     (s.type === "pdf" || s.type === "docx") ? <Upload className="w-3 h-3 text-muted-foreground shrink-0" /> :
+                     <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
+                    <span className="truncate max-w-[200px]">{s.label}</span>
+                    <button
+                      onClick={() => removeSource(i)}
+                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Generate button when sources panel is open */}
+            {showSources && (
               <button
                 onClick={() => handleCreate(topic)}
                 disabled={!topic.trim() || creating}
                 data-slot="button"
-                className="bg-primary text-primary-foreground px-5 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all"
+                className="mt-4 bg-primary text-primary-foreground px-5 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all w-full"
               >
                 {creating ? (
-                  <span className="flex items-center gap-1">
-                    Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                  <span className="flex items-center justify-center gap-1">
+                    Generating from {sources.length} source{sources.length !== 1 ? "s" : ""}<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
                   </span>
-                ) : "Generate"}
+                ) : (
+                  sources.length > 0
+                    ? `Generate from ${sources.length} source${sources.length !== 1 ? "s" : ""}`
+                    : "Generate"
+                )}
               </button>
-            </div>
+            )}
           </div>
         </div>
       </section>
