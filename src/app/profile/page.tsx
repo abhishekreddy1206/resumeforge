@@ -206,9 +206,9 @@ function SectionHeading({ icon: Icon, title, count, action }: {
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center justify-between mb-5">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center">
+        <div className="w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center ring-1 ring-primary/[0.06]">
           <Icon className="w-4 h-4 text-primary" />
         </div>
         <div>
@@ -839,59 +839,93 @@ export default function ProfilePage() {
           {/* ════════ Left Column ════════ */}
           <div className="space-y-6 min-w-0" ref={leftColRef}>
 
-            {/* ── Header Card ── */}
-            <Card className="shadow-sm overflow-hidden anim-fade-up-1">
-              <div className="h-16 bg-gradient-to-br from-primary/15 via-primary/8 to-transparent" />
-              <CardHeader className="-mt-4 relative pb-3">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-xl">{profile.name}</CardTitle>
-                    <CardDescription className="mt-1 text-xs">
-                      {[profile.email, profile.phone, profile.location].filter(Boolean).join("  ·  ")}
+            {/* ── Header Banner ── */}
+            <Card className="shadow-sm overflow-hidden anim-fade-up-1 group/banner">
+              <div className="h-36 relative overflow-hidden">
+                {/* Layered gradient for depth */}
+                <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary/70 to-accent/40" />
+                {/* Radial glow */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,_oklch(0.75_0.12_200_/_0.3)_0%,_transparent_70%)]" />
+                {/* Subtle noise texture overlay */}
+                <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
+                {/* Decorative geometric accent */}
+                <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full border border-white/10" />
+                <div className="absolute -right-4 -top-4 w-32 h-32 rounded-full border border-white/[0.06]" />
+              </div>
+              <CardHeader className="relative pb-5 pt-0">
+                {/* Circular avatar overlapping banner */}
+                <div className="w-[76px] h-[76px] rounded-full bg-accent border-4 border-card flex items-center justify-center -mt-10 shadow-lg ring-2 ring-primary/10">
+                  <span className="text-xl font-bold text-primary tracking-tight">
+                    {profile.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mt-3">
+                  <div className="min-w-0">
+                    <CardTitle className="text-2xl font-display tracking-tight">{profile.name}</CardTitle>
+                    <CardDescription className="mt-1.5 text-xs flex items-center gap-1.5 flex-wrap">
+                      {[profile.email, profile.phone, profile.location].filter(Boolean).map((item, idx) => (
+                        <span key={idx} className="inline-flex items-center">
+                          {idx > 0 && <span className="text-border mx-1">·</span>}
+                          {item}
+                        </span>
+                      ))}
                     </CardDescription>
-                  </div>
-                  <div className="flex gap-1.5 shrink-0">
-                    {profile.github && (
-                      <a href={profile.github} target="_blank" rel="noopener noreferrer" title="GitHub"
-                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
-                        <Github className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {profile.linkedin && (
-                      <a href={profile.linkedin} target="_blank" rel="noopener noreferrer" title="LinkedIn"
-                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
-                        <Linkedin className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {profile.website && (
-                      <a href={profile.website} target="_blank" rel="noopener noreferrer" title="Website"
-                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
-                        <Globe className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {profile.twitter && (
-                      <a href={profile.twitter} target="_blank" rel="noopener noreferrer" title="X / Twitter"
-                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
-                        <Twitter className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {profile.pinterest && (
-                      <a href={profile.pinterest} target="_blank" rel="noopener noreferrer" title="Pinterest"
-                        className="w-8 h-8 rounded-md border border-border/50 flex items-center justify-center hover:bg-accent transition-all">
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="12" y1="17" x2="12" y2="8" /><path d="M8 11c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.8-2 5-4 7" /><circle cx="9" cy="19" r="1" />
-                        </svg>
-                      </a>
-                    )}
+
+                    {/* Social links as pills */}
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {profile.github && (
+                        <a href={profile.github} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/20 hover:shadow-sm hover:-translate-y-px transition-all duration-200">
+                          <Github className="w-3 h-3" />
+                          <span className="truncate max-w-[160px]">{profile.github.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                        </a>
+                      )}
+                      {profile.linkedin && (
+                        <a href={profile.linkedin} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/20 hover:shadow-sm hover:-translate-y-px transition-all duration-200">
+                          <Linkedin className="w-3 h-3" />
+                          <span className="truncate max-w-[160px]">{profile.linkedin.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                        </a>
+                      )}
+                      {profile.website && (
+                        <a href={profile.website} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/20 hover:shadow-sm hover:-translate-y-px transition-all duration-200">
+                          <Globe className="w-3 h-3" />
+                          <span className="truncate max-w-[160px]">{profile.website.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                        </a>
+                      )}
+                      {profile.twitter && (
+                        <a href={profile.twitter} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/20 hover:shadow-sm hover:-translate-y-px transition-all duration-200">
+                          <Twitter className="w-3 h-3" />
+                          <span className="truncate max-w-[160px]">{profile.twitter.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                        </a>
+                      )}
+                      {profile.pinterest && (
+                        <a href={profile.pinterest} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/20 hover:shadow-sm hover:-translate-y-px transition-all duration-200">
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="17" x2="12" y2="8" /><path d="M8 11c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.8-2 5-4 7" /><circle cx="9" cy="19" r="1" />
+                          </svg>
+                          <span className="truncate max-w-[160px]">{profile.pinterest.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardHeader>
-              {profile.summary && (
-                <CardContent className="pt-0">
-                  <p className="text-sm text-muted-foreground leading-relaxed">{profile.summary}</p>
-                </CardContent>
-              )}
             </Card>
+
+            {/* ── About ── */}
+            {profile.summary && (
+              <Card className="shadow-sm anim-fade-up-1 card-hover">
+                <CardContent className="pt-6">
+                  <SectionHeading icon={BookOpen} title="About" />
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{profile.summary}</p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* ── Email Addresses ── */}
             <Card className="shadow-sm anim-fade-up-1">
@@ -936,30 +970,47 @@ export default function ProfilePage() {
 
             {/* ── Experience ── */}
             {profile.experiences.length > 0 && (
-              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0s" } as React.CSSProperties}>
+              <Card className="shadow-sm scroll-reveal card-hover" style={{ "--reveal-delay": "0s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={Building2} title="Experience" count={profile.experiences.length} />
                   <div className="space-y-5">
                     {profile.experiences.map((exp, i) => (
                       <div key={exp.id}>
                         {i > 0 && <Separator className="mb-5" />}
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 mb-2">
-                          <div>
-                            <p className="font-semibold text-sm">{exp.title}</p>
-                            <p className="text-xs text-muted-foreground">{exp.company}</p>
+                        <div className="flex gap-3">
+                          {/* Company initial square */}
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center shrink-0 ring-1 ring-primary/[0.06] shadow-sm">
+                            <span className="text-sm font-bold text-primary">
+                              {exp.company?.charAt(0).toUpperCase() || "?"}
+                            </span>
                           </div>
-                          <Badge variant="outline" className="text-xs shrink-0 w-fit">
-                            {exp.startDate} — {exp.endDate || "Present"}
-                          </Badge>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 mb-2">
+                              <div>
+                                <p className="font-semibold text-sm">{exp.title}</p>
+                                <p className="text-xs text-muted-foreground">{exp.company}</p>
+                              </div>
+                              <Badge variant="outline" className="text-xs shrink-0 w-fit">
+                                {exp.startDate} — {exp.endDate || "Present"}
+                              </Badge>
+                            </div>
+                            <ul className="mt-2 space-y-1">
+                              {(safeParse(exp.bullets) as string[]).map((bullet: string, j: number) => (
+                                <li key={j} className="text-xs text-muted-foreground flex gap-2">
+                                  <span className="text-primary/40 mt-0.5 shrink-0">-</span>
+                                  <span>{bullet}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {exp.skills && (safeParse(exp.skills) as string[]).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {(safeParse(exp.skills) as string[]).map((s: string) => (
+                                  <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <ul className="mt-2 space-y-1">
-                          {(safeParse(exp.bullets) as string[]).map((bullet: string, j: number) => (
-                            <li key={j} className="text-xs text-muted-foreground flex gap-2">
-                              <span className="text-primary/40 mt-0.5 shrink-0">-</span>
-                              <span>{bullet}</span>
-                            </li>
-                          ))}
-                        </ul>
                       </div>
                     ))}
                   </div>
@@ -969,7 +1020,7 @@ export default function ProfilePage() {
 
             {/* ── Projects ── */}
             {profile.projects.length > 0 && (
-              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.06s" } as React.CSSProperties}>
+              <Card className="shadow-sm scroll-reveal card-hover" style={{ "--reveal-delay": "0.06s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={FolderGit2} title="Projects" count={profile.projects.length} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -999,19 +1050,27 @@ export default function ProfilePage() {
 
             {/* ── Education ── */}
             {profile.educations.length > 0 && (
-              <Card className="shadow-sm scroll-reveal" style={{ "--reveal-delay": "0.12s" } as React.CSSProperties}>
+              <Card className="shadow-sm scroll-reveal card-hover" style={{ "--reveal-delay": "0.12s" } as React.CSSProperties}>
                 <CardContent className="pt-6">
                   <SectionHeading icon={GraduationCap} title="Education" count={profile.educations.length} />
                   <div className="space-y-3">
                     {profile.educations.map((edu) => (
-                      <div key={edu.id} className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                        <div>
-                          <p className="font-semibold text-sm">{edu.degree}{edu.field ? ` in ${edu.field}` : ""}</p>
-                          <p className="text-xs text-muted-foreground">{edu.school}</p>
+                      <div key={edu.id} className="flex gap-3">
+                        {/* School initial square */}
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/60 flex items-center justify-center shrink-0 ring-1 ring-primary/[0.06] shadow-sm">
+                          <span className="text-sm font-bold text-primary">
+                            {edu.school?.charAt(0).toUpperCase() || "?"}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {edu.endDate && <Badge variant="outline" className="text-xs">{edu.endDate}</Badge>}
-                          {edu.gpa && <span className="text-xs text-muted-foreground">GPA: {edu.gpa}</span>}
+                        <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:justify-between gap-1">
+                          <div>
+                            <p className="font-semibold text-sm">{edu.degree}{edu.field ? ` in ${edu.field}` : ""}</p>
+                            <p className="text-xs text-muted-foreground">{edu.school}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {edu.endDate && <Badge variant="outline" className="text-xs">{edu.endDate}</Badge>}
+                            {edu.gpa && <span className="text-xs text-muted-foreground">GPA: {edu.gpa}</span>}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1074,7 +1133,7 @@ export default function ProfilePage() {
                     editingPub === pub.id ? (
                       <PublicationForm key={pub.id} initial={pub} onSave={handleSavePub} onCancel={() => setEditingPub(null)} />
                     ) : (
-                      <div key={pub.id} className="group rounded-lg hover:bg-muted/20 transition-colors">
+                      <div key={pub.id} className="group rounded-lg hover:bg-muted/20 transition-colors border-l-2 border-primary/40 pl-1">
                         <div
                           className="flex items-start justify-between gap-2 p-3 cursor-pointer"
                           onClick={() => setExpandedPub(expandedPub === pub.id ? null : pub.id)}
@@ -1296,9 +1355,15 @@ export default function ProfilePage() {
                     editingRec === i ? (
                       <RecommendationForm key={i} initial={rec} onSave={(data) => handleSaveRec(data, i)} onCancel={() => setEditingRec(null)} />
                     ) : (
-                      <div key={i} className="group p-3 rounded-lg hover:bg-muted/20 transition-colors">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
+                      <div key={i} className="group p-4 rounded-lg bg-gradient-to-r from-muted/40 to-muted/10 border-l-[3px] border-primary transition-all hover:from-muted/50 hover:to-muted/20">
+                        <div className="flex items-start gap-3">
+                          {/* Recommender initial avatar */}
+                          <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center shrink-0">
+                            <span className="text-xs font-semibold text-primary">
+                              {rec.recommenderName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm text-muted-foreground italic leading-relaxed">
                               &ldquo;{rec.text}&rdquo;
                             </p>
