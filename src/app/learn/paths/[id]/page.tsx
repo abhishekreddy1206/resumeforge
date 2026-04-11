@@ -5,12 +5,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefinePanel } from "@/components/learn/refine-panel";
-import { ArrowLeft, ArrowRight, BookOpen, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Sparkles, X } from "lucide-react";
 
 interface GuideItem {
   id: string;
   topic: string;
   slug: string;
+  status: string;
   completionStatus: "not_started" | "in_progress" | "completed";
   version: number;
   category: string | null;
@@ -52,6 +53,10 @@ export default function PathDetailPage() {
   // Dismissed cross-link banners keyed by source guide ID
   const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set());
 
+  // Curriculum generation
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
   const fetchPath = useCallback(async () => {
     try {
       const res = await fetch(`/api/learn/paths/${pathId}`);
@@ -70,6 +75,27 @@ export default function PathDetailPage() {
   useEffect(() => {
     fetchPath();
   }, [fetchPath]);
+
+  // Poll while any guide is still generating
+  useEffect(() => {
+    if (!path) return;
+    const hasGenerating = path.guides.some((g) => g.status === "generating");
+    if (!hasGenerating) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/learn/paths/${pathId}`);
+        if (res.ok) {
+          const updated = await res.json();
+          setPath(updated);
+          const stillGenerating = updated.guides.some((g: GuideItem) => g.status === "generating");
+          if (!stillGenerating) clearInterval(interval);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [path?.guides.map((g) => g.status).join(","), pathId]);
 
   const checkCrossLinks = useCallback(
     async (sourceGuideId: string) => {
@@ -121,6 +147,28 @@ export default function PathDetailPage() {
   const handleDismissCrossLink = useCallback((sourceGuideId: string) => {
     setDismissedLinks((prev) => new Set(prev).add(sourceGuideId));
   }, []);
+
+  const handleGenerate = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch(`/api/learn/paths/${pathId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        await fetchPath();
+      } else {
+        const errData = await res.json().catch(() => null);
+        setGenError(errData?.error || "Failed to generate curriculum.");
+      }
+    } catch {
+      setGenError("Something went wrong. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }, [generating, pathId, fetchPath]);
 
   if (loading) {
     return (
@@ -227,10 +275,33 @@ export default function PathDetailPage() {
         </span>
 
         {totalGuides === 0 ? (
-          <div className="border border-dashed border-border rounded py-12 flex flex-col items-center gap-2 text-muted-foreground">
-            <BookOpen className="w-6 h-6 opacity-40" />
-            <p className="text-sm">No guides in this path yet.</p>
-            <p className="text-xs opacity-60">Add guides from the Learn page.</p>
+          <div className="border border-dashed border-border rounded py-12 flex flex-col items-center gap-3 text-muted-foreground">
+            {generating ? (
+              <>
+                <Sparkles className="w-6 h-6 text-primary animate-pulse" />
+                <p className="text-sm text-foreground">Generating curriculum for <strong>{path.title}</strong></p>
+                <p className="text-xs text-muted-foreground">
+                  Planning topics and creating study guides<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                </p>
+                <p className="text-xs text-muted-foreground/60 mt-1">This may take a few minutes.</p>
+              </>
+            ) : (
+              <>
+                <BookOpen className="w-6 h-6 opacity-40" />
+                <p className="text-sm">No guides in this path yet.</p>
+                <button
+                  onClick={handleGenerate}
+                  data-slot="button"
+                  className="mt-2 bg-primary text-primary-foreground px-5 py-2.5 rounded text-sm font-medium transition-all flex items-center gap-2"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Generate Curriculum
+                </button>
+                {genError && (
+                  <p className="text-sm text-destructive mt-2">{genError}</p>
+                )}
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -286,6 +357,12 @@ export default function PathDetailPage() {
                               ? "In Progress"
                               : "Not Started"}
                           </span>
+                          {guide.status === "generating" && (
+                            <span className="label-mono text-primary flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 animate-pulse" />
+                              Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Source count */}

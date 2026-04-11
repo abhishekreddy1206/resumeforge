@@ -12,7 +12,7 @@ export async function GET(
       include: {
         guides: {
           select: {
-            id: true, topic: true, slug: true, completionStatus: true,
+            id: true, topic: true, slug: true, status: true, completionStatus: true,
             version: true, category: true, updatedAt: true,
             sectionProgress: true,
             _count: { select: { sources: true } },
