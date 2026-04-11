@@ -38,3 +38,5 @@ export { generateGuide, refineGuide } from "./skills/guide-generator";
 export type { GuideContent, GuideSection, RefineResult } from "./skills/guide-generator";
 export { recommendGuides } from "./skills/guide-recommender";
 export type { GuideRecommendation } from "./skills/guide-recommender";
+export { checkSourceCrossLinks } from "./skills/source-cross-linker";
+export type { CrossLinkSuggestion } from "./skills/source-cross-linker";

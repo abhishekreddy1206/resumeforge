@@ -78,10 +78,21 @@ async function logTokenUsage(skill: string, envelope: CLIEnvelope): Promise<void
 }
 
 export function extractJson(text: string): Record<string, unknown> {
-  const jsonMatch =
-    text.match(/```(?:json)?\s*([\s\S]*?)```/) ||
-    text.match(/(\{[\s\S]*\})/) ||
-    text.match(/(\[[\s\S]*\])/);
+  // Try code fences first (most reliable)
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+
+  // Try both object and array patterns, pick the one that starts earliest.
+  // This avoids a bug where the object regex greedily captures from the first
+  // `{` to the last `}` inside a JSON array, producing invalid JSON.
+  const objMatch = text.match(/(\{[\s\S]*\})/);
+  const arrMatch = text.match(/(\[[\s\S]*\])/);
+  const bareMatch =
+    objMatch && arrMatch
+      ? (text.indexOf(arrMatch[0]) < text.indexOf(objMatch[0]) ? arrMatch : objMatch)
+      : arrMatch || objMatch;
+
+  const jsonMatch = fenceMatch || bareMatch;
+
   if (!jsonMatch) {
     log.error("Failed to extract JSON from Claude response", {
       responseLength: text.length,
