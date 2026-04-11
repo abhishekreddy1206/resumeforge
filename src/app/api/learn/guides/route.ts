@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateGuideOutline, generateGuideSection } from "@/lib/claude";
+import { generateGuideOutline, generateGuideSection, matchGuideToPath } from "@/lib/claude";
 import type { GuideSection, GuideContent } from "@/lib/claude";
 import { scrapeArticleUrl } from "@/lib/parsers/web";
 import { parsePdf } from "@/lib/parsers/pdf";
@@ -215,6 +215,56 @@ export async function POST(request: NextRequest) {
       });
 
       console.log(`[guide-create] Guide ${guide.id} complete: ${completedCount} sections, ${failedCount} failed → ${finalStatus}`);
+
+      // Auto-link to matching learning path
+      try {
+        const allPaths = await prisma.learningPath.findMany({
+          include: { guides: { select: { topic: true } } },
+        });
+
+        if (allPaths.length > 0) {
+          const currentGuide = await prisma.guide.findUnique({
+            where: { id: guide.id },
+            select: { learningPathId: true },
+          });
+
+          if (!currentGuide?.learningPathId) {
+            const pathsForMatching = allPaths.map((p) => ({
+              id: p.id,
+              title: p.title,
+              description: p.description,
+              existingTopics: p.guides.map((g) => g.topic),
+            }));
+
+            const match = await matchGuideToPath(topic, pathsForMatching);
+
+            if (match.pathId && match.confidence >= 0.6) {
+              await prisma.guide.update({
+                where: { id: guide.id },
+                data: { learningPathId: match.pathId },
+              });
+
+              const matchedPath = await prisma.learningPath.findUnique({
+                where: { id: match.pathId },
+                select: { guideOrder: true, title: true },
+              });
+              if (matchedPath) {
+                const order = JSON.parse(matchedPath.guideOrder) as string[];
+                order.push(guide.id);
+                await prisma.learningPath.update({
+                  where: { id: match.pathId },
+                  data: { guideOrder: JSON.stringify(order) },
+                });
+                console.log(`[guide-create] Auto-linked to path "${matchedPath.title}" (confidence: ${match.confidence})`);
+              }
+            } else {
+              console.log(`[guide-create] No matching path (best: ${match.pathId ? match.confidence.toFixed(2) : "none"})`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[guide-create] Auto-link failed (non-fatal):", err);
+      }
 
       refreshRecommendationsCache().catch((err) =>
         console.error("[guide-create] Recommendation refresh failed:", err)

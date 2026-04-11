@@ -42,3 +42,5 @@ export { checkSourceCrossLinks } from "./skills/source-cross-linker";
 export type { CrossLinkSuggestion } from "./skills/source-cross-linker";
 export { planCurriculum } from "./skills/curriculum-planner";
 export type { CurriculumPlan, CurriculumTopic } from "./skills/curriculum-planner";
+export { matchGuideToPath } from "./skills/path-matcher";
+export type { PathMatchResult } from "./skills/path-matcher";
