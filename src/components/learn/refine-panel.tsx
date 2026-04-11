@@ -25,6 +25,7 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
   const [text, setText] = useState("");
   const [fileData, setFileData] = useState<{ name: string; base64: string; type: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRefine = async () => {
     if (loading) return;
@@ -39,6 +40,7 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
     if (sources.length === 0) return;
 
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/learn/guides/${guideId}/refine`, {
         method: "POST",
@@ -51,9 +53,13 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
         setFileData(null);
         setOpen(false);
         onRefined();
+      } else {
+        const errData = await res.json().catch(() => null);
+        setError(errData?.error || "Refinement failed. Please try again.");
       }
     } catch (err) {
       console.error("Refine failed:", err);
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -169,6 +175,9 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
                 </span>
               ) : "Refine with Source"}
             </button>
+            {error && (
+              <p className="text-sm text-destructive mt-2">{error}</p>
+            )}
           </div>
         </div>
       )}

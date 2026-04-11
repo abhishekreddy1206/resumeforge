@@ -67,7 +67,7 @@ export async function POST(
           guideId: guide.id,
           version: guide.version,
           content: guide.content,
-          changeDescription: null,
+          changeDescription: result.changeDescription ?? null,
         },
       });
 

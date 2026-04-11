@@ -57,6 +57,7 @@ export default function LearnPage() {
   const [sourceTab, setSourceTab] = useState<"url" | "text" | "file">("url");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceText, setSourceText] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = () => {
     // Fast: guides + paths (~9ms) — unblocks page immediately
@@ -80,6 +81,7 @@ export default function LearnPage() {
   const handleCreate = async (topicText: string) => {
     if (!topicText.trim() || creating) return;
     setCreating(true);
+    setError(null);
     try {
       const payload: Record<string, unknown> = { topic: topicText.trim() };
       if (sources.length > 0) {
@@ -97,9 +99,13 @@ export default function LearnPage() {
       if (res.ok) {
         const data = await res.json();
         window.location.href = `/learn/${data.slug}`;
+      } else {
+        const errData = await res.json().catch(() => null);
+        setError(errData?.error || "Failed to create guide. Please try again.");
       }
     } catch (err) {
       console.error("Create guide failed:", err);
+      setError("Something went wrong. Please try again.");
     } finally {
       setCreating(false);
     }
@@ -146,17 +152,23 @@ export default function LearnPage() {
 
   const handleCreatePath = async () => {
     if (!newPathTitle.trim()) return;
+    setError(null);
     try {
-      await fetch("/api/learn/paths", {
+      const res = await fetch("/api/learn/paths", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newPathTitle.trim() }),
       });
-      setNewPathTitle("");
-      setShowNewPath(false);
-      fetchData();
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = `/learn/paths/${data.id}`;
+      } else {
+        const errData = await res.json().catch(() => null);
+        setError(errData?.error || "Failed to create learning path.");
+      }
     } catch (err) {
       console.error("Create path failed:", err);
+      setError("Something went wrong. Please try again.");
     }
   };
 
@@ -353,6 +365,12 @@ export default function LearnPage() {
                     : "Generate"
                 )}
               </button>
+            )}
+
+            {error && (
+              <p className="text-sm text-destructive mt-3 text-center" style={{ fontFamily: "var(--font-geist-sans)" }}>
+                {error}
+              </p>
             )}
           </div>
         </div>

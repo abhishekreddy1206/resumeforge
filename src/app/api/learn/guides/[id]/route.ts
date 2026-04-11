@@ -8,8 +8,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const guide = await prisma.guide.findUnique({
-      where: { id },
+    const guide = await prisma.guide.findFirst({
+      where: { OR: [{ id }, { slug: id }] },
       include: {
         sources: {
           select: { id: true, type: true, url: true, title: true, createdAt: true },
