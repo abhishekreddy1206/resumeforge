@@ -60,8 +60,9 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
   };
 
   return (
-    <div className="flex gap-8">
-      <aside className="hidden lg:block w-56 shrink-0 sticky top-24 self-start">
+    <div className="flex gap-10">
+      {/* Sticky sidebar — editorial table of contents */}
+      <aside className="hidden lg:block w-52 shrink-0 sticky top-28 self-start">
         <ProgressTracker
           sections={content.sections}
           progress={progress}
@@ -70,44 +71,49 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
         />
       </aside>
 
-      <div className="flex-1 min-w-0 space-y-12">
-        <div>
-          <h1 className="text-2xl font-bold mb-2">{content.title}</h1>
-          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mb-4">
-            <span>{content.estimatedMinutes} min</span>
-            <span className="capitalize">{content.difficulty}</span>
-            {content.prerequisites.length > 0 && (
-              <span>Prerequisites: {content.prerequisites.join(", ")}</span>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{content.overview}</p>
+      {/* Main content column */}
+      <div className="flex-1 min-w-0">
+        {/* Overview — set in body type for readability */}
+        <div className="mb-12">
+          <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-wrap" style={{ maxWidth: "42rem" }}>
+            {content.overview}
+          </p>
         </div>
 
-        {content.sections.map((section) => (
-          <SectionBlock
-            key={section.id}
-            section={section}
-            guideId={guideId}
-            onQuizComplete={handleQuizComplete}
-            onScenarioComplete={handleScenarioComplete}
-          />
-        ))}
+        {/* Sections — generous vertical rhythm */}
+        <div className="space-y-16">
+          {content.sections.map((section, i) => (
+            <div key={section.id}>
+              {i > 0 && <div className="section-divider mb-12" />}
+              <SectionBlock
+                section={section}
+                guideId={guideId}
+                onQuizComplete={handleQuizComplete}
+                onScenarioComplete={handleScenarioComplete}
+              />
+            </div>
+          ))}
+        </div>
 
+        {/* References — editorial footnotes */}
         {content.references.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold mb-3">References</h2>
-            <ul className="space-y-2">
+          <div className="mt-16">
+            <div className="section-divider mb-6" />
+            <div className="label-mono text-muted-foreground mb-4">References</div>
+            <ol className="space-y-2 list-decimal list-inside">
               {content.references.map((ref, i) => (
-                <li key={i} className="text-sm">
+                <li key={i} className="text-sm text-muted-foreground leading-relaxed">
                   {ref.url ? (
-                    <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{ref.title}</a>
+                    <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 transition-colors">
+                      {ref.title}
+                    </a>
                   ) : (
-                    <span className="font-medium">{ref.title}</span>
+                    <span className="text-foreground">{ref.title}</span>
                   )}
-                  {ref.description && <span className="text-muted-foreground"> — {ref.description}</span>}
+                  {ref.description && <span> — {ref.description}</span>}
                 </li>
               ))}
-            </ul>
+            </ol>
           </div>
         )}
       </div>

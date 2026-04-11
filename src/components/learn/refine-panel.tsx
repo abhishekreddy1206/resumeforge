@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight, Link2, FileText } from "lucide-react";
 
 interface Source {
   id: string;
@@ -54,50 +55,65 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
   };
 
   return (
-    <div className="border rounded-lg">
+    <div className="border border-border rounded bg-card">
+      {/* Collapsible header */}
       <button
         onClick={() => setOpen(!open)}
-        className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-muted/50 transition-colors"
+        className="w-full text-left px-5 py-3.5 flex items-center justify-between hover:bg-muted/30 transition-colors group"
       >
-        <span className="text-sm font-medium">Sources &amp; Refinement</span>
-        <span className="text-xs text-muted-foreground">{existingSources.length} source{existingSources.length !== 1 ? "s" : ""}</span>
+        <div className="flex items-center gap-2">
+          <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+          <span className="label-mono text-muted-foreground group-hover:text-foreground transition-colors">Sources & Refinement</span>
+        </div>
+        <span className="label-mono text-muted-foreground/60">{existingSources.length} source{existingSources.length !== 1 ? "s" : ""}</span>
       </button>
 
+      {/* Expandable content */}
       {open && (
-        <div className="px-4 pb-4 space-y-3">
+        <div className="px-5 pb-5 border-t border-border anim-fade-up">
+          {/* Existing sources list */}
           {existingSources.length > 0 && (
-            <div className="space-y-1">
+            <div className="py-3 space-y-2">
               {existingSources.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono uppercase bg-muted px-1.5 py-0.5 rounded">{s.type}</span>
-                  <span className="truncate">{s.title || s.url || "Text input"}</span>
+                <div key={s.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="label-mono bg-muted px-1.5 py-0.5 rounded">{s.type}</span>
+                  <span className="truncate text-xs">{s.title || s.url || "Text input"}</span>
                 </div>
               ))}
             </div>
           )}
 
-          <div className="border-t pt-3">
-            <div className="text-xs font-medium mb-2">Add New Source</div>
-            <div className="flex gap-2 mb-2">
+          {/* Add new source */}
+          <div className="pt-3 border-t border-border">
+            <div className="label-mono text-muted-foreground mb-3">Add New Source</div>
+            <div className="flex gap-2 mb-3">
               <button
                 onClick={() => setSourceType("url")}
-                className={`text-xs px-2 py-1 rounded ${sourceType === "url" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                  sourceType === "url"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
               >
-                URL
+                <Link2 className="w-3 h-3" /> URL
               </button>
               <button
                 onClick={() => setSourceType("text")}
-                className={`text-xs px-2 py-1 rounded ${sourceType === "text" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                  sourceType === "text"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
               >
-                Text
+                <FileText className="w-3 h-3" /> Text
               </button>
             </div>
             {sourceType === "url" ? (
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste article URL (Substack, Medium, blog, etc.)..."
-                className="w-full bg-muted border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Paste article URL (Substack, Medium, blog, docs)..."
+                className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
               />
             ) : (
               <textarea
@@ -105,15 +121,20 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Paste text content..."
                 rows={3}
-                className="w-full bg-muted border rounded px-3 py-2 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
               />
             )}
             <button
               onClick={handleRefine}
               disabled={loading || (sourceType === "url" ? !url.trim() : !text.trim())}
-              className="mt-2 bg-primary text-primary-foreground px-4 py-1.5 rounded text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              data-slot="button"
+              className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-all"
             >
-              {loading ? "Refining guide..." : "Refine with Source"}
+              {loading ? (
+                <span className="flex items-center gap-1">
+                  Refining<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                </span>
+              ) : "Refine with Source"}
             </button>
           </div>
         </div>

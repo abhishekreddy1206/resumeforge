@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PenLine, CheckCircle } from "lucide-react";
 
 interface OpenEndedPromptProps {
   prompt: string;
@@ -44,51 +45,79 @@ export function OpenEndedPrompt({ prompt, guideId, sectionId, promptIndex, onCom
   };
 
   return (
-    <div className="my-4 border rounded-lg p-4">
-      <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Open-Ended Question</div>
-      <p className="text-sm font-medium mb-3">{prompt}</p>
+    <div className="border border-border rounded bg-card p-5" style={{ maxWidth: "42rem" }}>
+      <div className="flex items-center gap-1.5 mb-3">
+        <PenLine className="w-3 h-3 text-primary" />
+        <span className="label-mono text-primary">Open-Ended Question</span>
+      </div>
+      <p className="text-sm font-medium leading-relaxed mb-4">{prompt}</p>
       <textarea
         value={answer}
         onChange={(e) => setAnswer(e.target.value)}
-        placeholder="Type your answer here..."
+        placeholder="Write your answer..."
         rows={4}
-        className="w-full bg-muted border rounded p-3 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+        className="w-full bg-background border border-input rounded p-3 text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
         disabled={!!evaluation}
       />
       {!evaluation && (
         <button
           onClick={handleSubmit}
           disabled={!answer.trim() || loading}
-          className="mt-2 bg-primary text-primary-foreground px-4 py-1.5 rounded text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          data-slot="button"
+          className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-all"
         >
-          {loading ? "Evaluating..." : "Check My Answer"}
+          {loading ? (
+            <span className="flex items-center gap-1">
+              Evaluating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5" /> Check My Answer
+            </span>
+          )}
         </button>
       )}
       {evaluation && (
-        <div className="mt-3 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Score:</span>
-            <span className="text-sm font-bold">{evaluation.score}/5</span>
+        <div className="mt-4 space-y-4 anim-fade-up">
+          {/* Score */}
+          <div className="flex items-center gap-3">
+            <div className="label-mono text-muted-foreground">Score</div>
+            <div className="flex gap-0.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <div
+                  key={n}
+                  className="w-6 h-1.5 rounded-full transition-colors"
+                  style={{ backgroundColor: n <= evaluation.score ? "var(--primary)" : "var(--muted)" }}
+                />
+              ))}
+            </div>
+            <span className="label-mono text-foreground">{evaluation.score}/5</span>
           </div>
+
+          {/* Strengths */}
           {evaluation.strengths.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-green-600 dark:text-green-400 mb-1">Strengths</div>
-              <ul className="list-disc list-inside text-sm space-y-0.5">
-                {evaluation.strengths.map((s, i) => <li key={i}>{s}</li>)}
+            <div className="border-l-2 border-chart-3 pl-4">
+              <div className="label-mono text-chart-3 mb-2">Strengths</div>
+              <ul className="space-y-1">
+                {evaluation.strengths.map((s, i) => <li key={i} className="text-sm text-foreground/85 leading-relaxed">{s}</li>)}
               </ul>
             </div>
           )}
+
+          {/* Improvements */}
           {evaluation.improvements.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-amber-600 dark:text-amber-400 mb-1">Areas for Improvement</div>
-              <ul className="list-disc list-inside text-sm space-y-0.5">
-                {evaluation.improvements.map((s, i) => <li key={i}>{s}</li>)}
+            <div className="border-l-2 border-primary pl-4">
+              <div className="label-mono text-primary mb-2">Areas for Improvement</div>
+              <ul className="space-y-1">
+                {evaluation.improvements.map((s, i) => <li key={i} className="text-sm text-foreground/85 leading-relaxed">{s}</li>)}
               </ul>
             </div>
           )}
+
+          {/* Model answer */}
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Reference Answer</div>
-            <p className="text-sm bg-muted p-3 rounded">{evaluation.modelAnswer}</p>
+            <div className="label-mono text-muted-foreground mb-2">Reference Answer</div>
+            <p className="text-sm text-foreground/75 bg-muted/50 rounded p-4 leading-relaxed">{evaluation.modelAnswer}</p>
           </div>
         </div>
       )}

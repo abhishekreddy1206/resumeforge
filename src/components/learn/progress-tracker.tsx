@@ -30,35 +30,77 @@ export function ProgressTracker({ sections, progress, activeSection, onSectionCl
     return "not_started";
   };
 
-  const STATUS_DOT = {
-    completed: "bg-green-500",
-    in_progress: "bg-amber-500",
-    not_started: "bg-muted-foreground/30",
-  };
-
   const completedCount = sections.filter((s) => getSectionStatus(s) === "completed").length;
 
   return (
-    <div className="space-y-1">
-      <div className="text-xs text-muted-foreground mb-2">
-        {completedCount}/{sections.length} sections complete
+    <div>
+      {/* Header */}
+      <div className="label-mono text-muted-foreground mb-3">
+        {completedCount}/{sections.length} sections
       </div>
-      {sections.map((section) => {
-        const status = getSectionStatus(section);
-        const isActive = section.id === activeSection;
-        return (
-          <button
-            key={section.id}
-            onClick={() => onSectionClick(section.id)}
-            className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              isActive ? "bg-primary/10 text-primary" : "hover:bg-muted"
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
-            <span className="truncate">{section.title}</span>
-          </button>
-        );
-      })}
+
+      {/* Overall progress bar */}
+      <div className="bg-muted rounded-full h-1 mb-4 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500 ease-out"
+          style={{
+            width: sections.length > 0 ? `${(completedCount / sections.length) * 100}%` : "0%",
+            backgroundColor: completedCount === sections.length && sections.length > 0
+              ? "oklch(0.55 0.15 150)"
+              : "var(--primary)",
+          }}
+        />
+      </div>
+
+      {/* Section list — editorial chapter list with connecting line */}
+      <div className="relative">
+        {/* Vertical connecting line */}
+        <div className="absolute left-[5px] top-2 bottom-2 w-px bg-border" />
+
+        <div className="space-y-0.5">
+          {sections.map((section) => {
+            const status = getSectionStatus(section);
+            const isActive = section.id === activeSection;
+
+            return (
+              <button
+                key={section.id}
+                onClick={() => onSectionClick(section.id)}
+                className={`w-full text-left flex items-start gap-3 px-0 py-2 rounded-sm transition-colors group ${
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {/* Status indicator — sits on the connecting line */}
+                <div className="relative z-10 mt-1 shrink-0">
+                  <div
+                    className="w-[11px] h-[11px] rounded-full border-2 transition-colors"
+                    style={{
+                      borderColor: status === "completed"
+                        ? "oklch(0.55 0.15 150)"
+                        : isActive
+                        ? "var(--primary)"
+                        : "var(--border)",
+                      backgroundColor: status === "completed"
+                        ? "oklch(0.55 0.15 150)"
+                        : status === "in_progress"
+                        ? "var(--primary)"
+                        : "var(--background)",
+                    }}
+                  />
+                </div>
+
+                {/* Section title */}
+                <span
+                  className="text-xs leading-snug truncate transition-colors"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  {section.title}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

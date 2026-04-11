@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, Plus, Sparkles, ArrowRight } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight } from "lucide-react";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 
 interface GuideListItem {
@@ -94,44 +94,58 @@ export default function LearnPage() {
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
-        <Skeleton className="h-32 rounded-lg" />
-        <Skeleton className="h-20 rounded-lg" />
-        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-32 rounded-lg skeleton-shimmer" />
+        <Skeleton className="h-20 rounded-lg skeleton-shimmer" />
+        <Skeleton className="h-48 rounded-lg skeleton-shimmer" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <BookOpen className="w-6 h-6" /> Learn
+    <div className="max-w-5xl mx-auto py-8 px-4 space-y-12">
+      {/* Header — editorial masthead */}
+      <div className="anim-fade-up">
+        <h1
+          className="text-3xl sm:text-4xl tracking-tight text-gradient"
+          style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontWeight: 500 }}
+        >
+          Learn
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">Interactive study guides for technical interview preparation</p>
+        <p className="text-sm text-muted-foreground mt-2" style={{ fontFamily: "var(--font-geist-sans)", maxWidth: "32rem" }}>
+          AI-generated study guides for the technical topics that matter to your job search.
+          Interactive quizzes, code deep-dives, and interview scenarios.
+        </p>
+        <div className="section-divider mt-4" />
       </div>
 
       {/* AI Recommendations */}
       {recommendations.length > 0 && (
-        <section className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-violet-500" />
-              <span className="text-sm font-semibold text-violet-600 dark:text-violet-400">Recommended Based on Your Skill Gaps</span>
-            </div>
+        <section className="anim-fade-up-1">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="label-mono text-primary">Recommended from your skill gaps</span>
           </div>
-          <div className="grid md:grid-cols-3 gap-3">
+          <div className="grid md:grid-cols-3 gap-4">
             {recommendations.slice(0, 3).map((rec, i) => (
-              <div key={i} className="bg-card border rounded-lg p-3">
-                <div className="text-xs text-red-500 mb-1">{rec.frequency} jobs mention this</div>
-                <div className="text-sm font-semibold mb-1">{rec.topic}</div>
-                <div className="text-xs text-muted-foreground mb-2">{rec.description}</div>
+              <div
+                key={i}
+                className="bg-card border border-border rounded p-4 card-hover group cursor-pointer"
+                style={{ animationDelay: `${0.08 * (i + 1)}s` }}
+              >
+                <div className="label-mono text-destructive mb-2">{rec.frequency} jobs mention this</div>
+                <div
+                  className="text-base font-medium mb-1 group-hover:text-primary transition-colors"
+                  style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.1rem" }}
+                >
+                  {rec.topic}
+                </div>
+                <div className="text-xs text-muted-foreground mb-3 leading-relaxed">{rec.description}</div>
                 <button
                   onClick={() => handleCreate(rec.topic)}
                   disabled={creating}
-                  className="text-xs bg-violet-500 text-white px-3 py-1 rounded hover:bg-violet-600 disabled:opacity-50 transition-colors"
+                  className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 transition-colors flex items-center gap-1"
                 >
-                  Generate Guide
+                  Generate Guide <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
             ))}
@@ -139,108 +153,152 @@ export default function LearnPage() {
         </section>
       )}
 
-      {/* Create New Guide */}
-      <section className="bg-card border border-dashed rounded-lg p-6 text-center">
-        <div className="text-sm text-foreground mb-2">Create a New Guide</div>
-        <div className="flex gap-2 max-w-lg mx-auto">
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate(topic)}
-            placeholder="Enter a topic (e.g., 'B-trees', 'Raft consensus')..."
-            className="flex-1 bg-muted border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            disabled={creating}
-          />
-          <button
-            onClick={() => handleCreate(topic)}
-            disabled={!topic.trim() || creating}
-            className="bg-foreground text-background px-4 py-2 rounded text-sm font-semibold hover:bg-foreground/90 disabled:opacity-50 transition-colors"
-          >
-            {creating ? "Generating..." : "Generate"}
-          </button>
+      {/* Create New Guide — editorial input */}
+      <section className="anim-fade-up-2">
+        <div className="border border-dashed border-border rounded bg-card/50 px-6 py-8">
+          <div className="max-w-lg mx-auto">
+            <div className="label-mono text-muted-foreground mb-3 text-center">New Study Guide</div>
+            <div className="flex gap-2">
+              <input
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate(topic)}
+                placeholder="Enter a topic — B-trees, Raft consensus, system design..."
+                className="flex-1 bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+                disabled={creating}
+              />
+              <button
+                onClick={() => handleCreate(topic)}
+                disabled={!topic.trim() || creating}
+                data-slot="button"
+                className="bg-primary text-primary-foreground px-5 py-2.5 rounded text-sm font-medium disabled:opacity-50 transition-all"
+              >
+                {creating ? (
+                  <span className="flex items-center gap-1">
+                    Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                  </span>
+                ) : "Generate"}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* Learning Paths */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Learning Paths</h2>
-          <button onClick={() => setShowNewPath(true)} className="text-xs text-primary hover:underline flex items-center gap-1">
+      <section className="anim-fade-up-3">
+        <div className="flex items-center justify-between mb-4">
+          <span className="label-mono text-muted-foreground">Learning Paths</span>
+          <button onClick={() => setShowNewPath(true)} className="label-mono text-primary hover:text-primary/80 flex items-center gap-1 transition-colors">
             <Plus className="w-3 h-3" /> Create Path
           </button>
         </div>
-        <div className="grid md:grid-cols-3 gap-3">
+        <div className="grid md:grid-cols-3 gap-4">
           {paths.map((path) => (
-            <div key={path.id} className="bg-card border rounded-lg p-4">
-              <div className="text-sm font-semibold mb-1">{path.title}</div>
-              <div className="text-xs text-muted-foreground mb-2">{path.guideCount} guides · {path.completedCount} completed</div>
-              <div className="bg-muted rounded h-1.5 overflow-hidden">
+            <div key={path.id} className="bg-card border border-border rounded p-4 card-hover">
+              <div
+                className="text-base font-medium mb-1"
+                style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600 }}
+              >
+                {path.title}
+              </div>
+              <div className="label-mono text-muted-foreground mb-3">{path.guideCount} guides · {path.completedCount} done</div>
+              <div className="bg-muted rounded-full h-1 overflow-hidden">
                 <div
-                  className={`h-full rounded transition-all ${path.progress >= 100 ? "bg-green-500" : path.progress > 0 ? "bg-amber-500" : "bg-muted-foreground/20"}`}
-                  style={{ width: `${path.progress}%` }}
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{
+                    width: `${Math.max(path.progress, 2)}%`,
+                    backgroundColor: path.progress >= 100
+                      ? "oklch(0.55 0.15 150)"
+                      : "var(--primary)",
+                    opacity: path.progress === 0 ? 0.3 : 1,
+                  }}
                 />
               </div>
-              <div className="text-xs mt-1" style={{ color: path.progress >= 100 ? "rgb(34 197 94)" : path.progress > 0 ? "rgb(245 158 11)" : undefined }}>
+              <div className="label-mono mt-2" style={{
+                color: path.progress >= 100 ? "oklch(0.55 0.15 150)" : "var(--muted-foreground)",
+              }}>
                 {path.progress}% complete
               </div>
             </div>
           ))}
           {showNewPath && (
-            <div className="bg-card border border-dashed rounded-lg p-4 flex flex-col gap-2">
+            <div className="bg-card border border-dashed border-border rounded p-4 flex flex-col gap-3 anim-fade-up">
               <input
                 value={newPathTitle}
                 onChange={(e) => setNewPathTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreatePath()}
                 placeholder="Path title..."
-                className="bg-muted border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                className="bg-background border border-input rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                 autoFocus
               />
               <div className="flex gap-2">
-                <button onClick={handleCreatePath} disabled={!newPathTitle.trim()} className="text-xs bg-primary text-primary-foreground px-3 py-1 rounded disabled:opacity-50">
+                <button
+                  onClick={handleCreatePath}
+                  disabled={!newPathTitle.trim()}
+                  data-slot="button"
+                  className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                >
                   Create
                 </button>
-                <button onClick={() => { setShowNewPath(false); setNewPathTitle(""); }} className="text-xs text-muted-foreground">
+                <button onClick={() => { setShowNewPath(false); setNewPathTitle(""); }} className="label-mono text-muted-foreground hover:text-foreground transition-colors">
                   Cancel
                 </button>
               </div>
             </div>
           )}
           {paths.length === 0 && !showNewPath && (
-            <div className="bg-card border border-dashed rounded-lg p-4 flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-muted/50" onClick={() => setShowNewPath(true)}>
-              <Plus className="w-4 h-4 mr-1" /> New Path
+            <div
+              className="border border-dashed border-border rounded p-4 flex items-center justify-center text-muted-foreground cursor-pointer hover:bg-card hover:border-primary/30 transition-all"
+              onClick={() => setShowNewPath(true)}
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              <span className="label-mono">New Path</span>
             </div>
           )}
         </div>
       </section>
 
       {/* All Guides */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3">All Guides</h2>
+      <section className="anim-fade-up-4">
+        <div className="flex items-center justify-between mb-4">
+          <span className="label-mono text-muted-foreground">All Guides</span>
+          <span className="label-mono text-muted-foreground/60">{guides.length} total</span>
+        </div>
         {guides.length === 0 ? (
-          <div className="text-center py-8 text-sm text-muted-foreground">
-            No guides yet. Create your first guide above or generate one from a recommendation.
+          <div className="text-center py-12 border border-dashed border-border rounded">
+            <p className="text-sm text-muted-foreground">No guides yet.</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Create your first guide above or generate one from a recommendation.</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {guides.map((guide) => (
-              <a key={guide.id} href={`/learn/${guide.slug}`} className="block bg-card border rounded-lg p-3 hover:bg-muted/50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{guide.topic}</div>
-                    <div className="text-xs text-muted-foreground">
-                      v{guide.version} · {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""} · Updated {new Date(guide.updatedAt).toLocaleDateString()}
-                    </div>
+          <div className="space-y-1">
+            {guides.map((guide, i) => (
+              <a
+                key={guide.id}
+                href={`/learn/${guide.slug}`}
+                className="group flex items-center justify-between py-3 px-4 rounded hover:bg-card border border-transparent hover:border-border transition-all"
+                style={{ animationDelay: `${0.04 * i}s` }}
+              >
+                <div className="min-w-0">
+                  <div
+                    className="text-sm font-medium group-hover:text-primary transition-colors truncate"
+                    style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.05rem" }}
+                  >
+                    {guide.topic}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs ${
-                      guide.completionStatus === "completed" ? "text-green-500" :
-                      guide.completionStatus === "in_progress" ? "text-amber-500" : "text-muted-foreground"
-                    }`}>
-                      {guide.completionStatus === "completed" ? "Completed" :
-                       guide.completionStatus === "in_progress" ? "In Progress" : "Not Started"}
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+                  <div className="label-mono text-muted-foreground mt-0.5">
+                    v{guide.version} · {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""} · {new Date(guide.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-4">
+                  <span className={`label-mono ${
+                    guide.completionStatus === "completed" ? "text-chart-3" :
+                    guide.completionStatus === "in_progress" ? "text-primary" : "text-muted-foreground/40"
+                  }`}>
+                    {guide.completionStatus === "completed" ? "Done" :
+                     guide.completionStatus === "in_progress" ? "In Progress" : "Not Started"}
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
               </a>
             ))}

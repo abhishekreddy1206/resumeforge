@@ -21,34 +21,41 @@ export function QuizCard({ question, options, answer, explanation, onComplete }:
   };
 
   return (
-    <div className="my-4 border rounded-lg p-4">
-      <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Knowledge Check</div>
-      <p className="text-sm font-medium mb-3">{question}</p>
+    <div className="border border-border rounded bg-card p-5" style={{ maxWidth: "42rem" }}>
+      <div className="label-mono text-primary mb-3">Knowledge Check</div>
+      <p className="text-sm font-medium mb-4 leading-relaxed">{question}</p>
       <div className="space-y-2">
         {options.map((opt, i) => {
-          let style = "bg-muted hover:bg-muted/80 cursor-pointer";
+          let base = "border-border bg-background hover:bg-muted hover:border-primary/30 cursor-pointer";
           if (revealed) {
-            if (i === answer) style = "bg-green-500/10 border-green-500 text-green-700 dark:text-green-400";
-            else if (i === selected) style = "bg-red-500/10 border-red-500 text-red-700 dark:text-red-400";
-            else style = "bg-muted opacity-50";
+            if (i === answer) base = "border-chart-3 bg-chart-3/5";
+            else if (i === selected) base = "border-destructive bg-destructive/5";
+            else base = "border-border bg-muted/50 opacity-50";
           }
           return (
             <button
               key={i}
               onClick={() => handleSelect(i)}
               disabled={revealed}
-              className={`w-full text-left px-3 py-2 rounded border text-sm transition-colors ${style}`}
+              className={`w-full text-left px-4 py-2.5 rounded border text-sm transition-all ${base}`}
             >
-              <span className="font-mono text-xs mr-2">{String.fromCharCode(65 + i)}.</span>
-              {opt}
+              <span
+                className="inline-block w-5 mr-2 text-muted-foreground"
+                style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.7rem" }}
+              >
+                {String.fromCharCode(65 + i)}.
+              </span>
+              <span className={revealed && i === answer ? "text-chart-3 font-medium" : revealed && i === selected ? "text-destructive" : ""}>
+                {opt}
+              </span>
             </button>
           );
         })}
       </div>
       {revealed && (
-        <div className="mt-3 p-3 bg-muted rounded text-sm">
-          <span className="font-medium">{selected === answer ? "Correct!" : "Incorrect."}</span>{" "}
-          {explanation}
+        <div className="mt-4 border-l-2 border-primary pl-4 py-2 anim-fade-up">
+          <span className="text-sm font-medium">{selected === answer ? "Correct." : "Not quite."}</span>
+          <p className="text-sm text-muted-foreground leading-relaxed mt-1">{explanation}</p>
         </div>
       )}
     </div>
