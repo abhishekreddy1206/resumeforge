@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { aggregateGaps } from "@/lib/claude";
+import { computeGapsFingerprint, getCachedGaps, setCachedGaps } from "@/lib/learn-cache";
 
 function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
   if (typeof value !== "string") return value ?? fallback;
@@ -43,9 +44,12 @@ export async function POST(request: NextRequest) {
         title: true,
         company: true,
         matchResult: true,
+        matchedAt: true,
         terminologyMap: true,
       },
     });
+
+    const isUnfiltered = !jobIds || jobIds.length === 0;
 
     // Filter to jobs that actually have match results with gaps
     interface MatchBreakdown {
@@ -81,8 +85,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await aggregateGaps(jobMatchData, {});
+    // For unfiltered queries, check the shared gaps cache
+    if (isUnfiltered) {
+      const profile = await prisma.profile.findFirst({ select: { id: true } });
+      if (profile) {
+        const gapsFp = computeGapsFingerprint(jobs.map((j) => ({ id: j.id, matchedAt: j.matchedAt })));
+        const cached = await getCachedGaps(profile.id, gapsFp);
+        if (cached) {
+          console.log("[gaps] Cache hit — returning cached gap aggregation");
+          return NextResponse.json(cached);
+        }
 
+        const result = await aggregateGaps(jobMatchData, {});
+        await setCachedGaps(profile.id, result, gapsFp);
+        return NextResponse.json(result);
+      }
+    }
+
+    const result = await aggregateGaps(jobMatchData, {});
     return NextResponse.json(result);
   } catch (error) {
     console.error("Gap aggregation error:", error);
