@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { aggregateGaps, recommendGuides } from "@/lib/claude";
+import {
+  computeGapsFingerprint,
+  computeRecsFingerprint,
+  getCachedGaps,
+  setCachedGaps,
+  getCachedRecommendations,
+  setCachedRecommendations,
+} from "@/lib/learn-cache";
 
 function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
   if (typeof value !== "string") return value ?? fallback;
@@ -13,15 +21,32 @@ function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
 
 export async function GET() {
   try {
+    const profile = await prisma.profile.findFirst({ select: { id: true } });
+    if (!profile) return NextResponse.json([]);
+
     const jobs = await prisma.job.findMany({
       where: { matchResult: { not: null } },
-      select: { title: true, company: true, matchResult: true, terminologyMap: true },
+      select: { id: true, title: true, company: true, matchResult: true, matchedAt: true, terminologyMap: true },
     });
 
-    if (jobs.length < 2) {
-      return NextResponse.json([]);
+    if (jobs.length < 2) return NextResponse.json([]);
+
+    const guideTopics = (
+      await prisma.guide.findMany({ select: { topic: true } })
+    ).map((g) => g.topic);
+
+    // Compute fingerprints to check cache validity
+    const gapsFp = computeGapsFingerprint(jobs.map((j) => ({ id: j.id, matchedAt: j.matchedAt })));
+    const recsFp = computeRecsFingerprint(gapsFp, guideTopics);
+
+    // Fast path: full cache hit
+    const cachedRecs = await getCachedRecommendations(profile.id, recsFp);
+    if (cachedRecs) {
+      console.log("[recommendations] Cache hit — returning cached recommendations");
+      return NextResponse.json(cachedRecs);
     }
 
+    // Build job match data for AI calls
     interface MatchBreakdown {
       breakdown?: {
         gaps?: string[];
@@ -48,22 +73,25 @@ export async function GET() {
       })
       .filter((d): d is NonNullable<typeof d> => d !== null);
 
-    if (jobMatchData.length < 2) {
-      return NextResponse.json([]);
+    if (jobMatchData.length < 2) return NextResponse.json([]);
+
+    // Check if gaps are still cached (only guide topics changed)
+    let gapResult = await getCachedGaps(profile.id, gapsFp);
+    if (gapResult) {
+      console.log("[recommendations] Gaps cache hit — only re-running recommendGuides");
+    } else {
+      console.log("[recommendations] Gaps cache miss — running aggregateGaps + recommendGuides");
+      gapResult = await aggregateGaps(jobMatchData, {});
+      await setCachedGaps(profile.id, gapResult, gapsFp);
     }
-
-    const gapResult = await aggregateGaps(jobMatchData, {});
-
-    const existingGuides = await prisma.guide.findMany({
-      select: { topic: true },
-    });
-    const existingTopics = existingGuides.map((g) => g.topic);
 
     const recommendations = await recommendGuides(
       gapResult.aggregatedGaps,
       gapResult.leverageScores,
-      existingTopics,
+      guideTopics,
     );
+
+    await setCachedRecommendations(profile.id, recommendations, recsFp);
 
     return NextResponse.json(recommendations);
   } catch (error) {
