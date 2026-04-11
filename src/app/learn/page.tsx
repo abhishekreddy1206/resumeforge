@@ -34,23 +34,27 @@ export default function LearnPage() {
   const [paths, setPaths] = useState<LearningPathItem[]>([]);
   const [recommendations, setRecommendations] = useState<GuideRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recsLoading, setRecsLoading] = useState(true);
   const [topic, setTopic] = useState("");
   const [creating, setCreating] = useState(false);
   const [newPathTitle, setNewPathTitle] = useState("");
   const [showNewPath, setShowNewPath] = useState(false);
 
   const fetchData = () => {
+    // Fast: guides + paths (~9ms) — unblocks page immediately
     Promise.all([
       fetch("/api/learn/guides").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/learn/paths").then((r) => (r.ok ? r.json() : [])),
-      fetch("/api/learn/recommendations").then((r) => (r.ok ? r.json() : [])),
     ])
-      .then(([g, p, rec]) => {
-        setGuides(g);
-        setPaths(p);
-        setRecommendations(Array.isArray(rec) ? rec : []);
-      })
+      .then(([g, p]) => { setGuides(g); setPaths(p); })
       .finally(() => setLoading(false));
+
+    // Slow: recommendations (5-30s) — loads independently in background
+    fetch("/api/learn/recommendations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rec) => setRecommendations(Array.isArray(rec) ? rec : []))
+      .catch(() => setRecommendations([]))
+      .finally(() => setRecsLoading(false));
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -118,8 +122,17 @@ export default function LearnPage() {
         <div className="section-divider mt-4" />
       </div>
 
-      {/* AI Recommendations */}
-      {recommendations.length > 0 && (
+      {/* AI Recommendations — loads independently from the rest of the page */}
+      {recsLoading ? (
+        <section className="anim-fade-up-1">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" />
+            <span className="label-mono text-muted-foreground">
+              Analyzing your skill gaps<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+            </span>
+          </div>
+        </section>
+      ) : recommendations.length > 0 ? (
         <section className="anim-fade-up-1">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
@@ -151,7 +164,7 @@ export default function LearnPage() {
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Create New Guide — editorial input */}
       <section className="anim-fade-up-2">
