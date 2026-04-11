@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Link2, FileText } from "lucide-react";
+import { ChevronRight, Link2, FileText, Upload } from "lucide-react";
+import { FileDropZone } from "@/components/learn/file-drop-zone";
 
 interface Source {
   id: string;
@@ -19,9 +20,10 @@ interface RefinePanelProps {
 
 export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanelProps) {
   const [open, setOpen] = useState(false);
-  const [sourceType, setSourceType] = useState<"url" | "text">("url");
+  const [sourceType, setSourceType] = useState<"url" | "text" | "file">("url");
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
+  const [fileData, setFileData] = useState<{ name: string; base64: string; type: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleRefine = async () => {
@@ -31,6 +33,8 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
       sources.push({ type: "url", url: url.trim() });
     } else if (sourceType === "text" && text.trim()) {
       sources.push({ type: "text", content: text.trim() });
+    } else if (sourceType === "file" && fileData) {
+      sources.push({ type: fileData.type, content: fileData.base64, encoding: "base64", filename: fileData.name });
     }
     if (sources.length === 0) return;
 
@@ -44,6 +48,7 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
       if (res.ok) {
         setUrl("");
         setText("");
+        setFileData(null);
         setOpen(false);
         onRefined();
       }
@@ -107,15 +112,26 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
               >
                 <FileText className="w-3 h-3" /> Text
               </button>
+              <button
+                onClick={() => setSourceType("file")}
+                className={`flex items-center gap-1 label-mono px-2.5 py-1.5 rounded transition-all ${
+                  sourceType === "file"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Upload className="w-3 h-3" /> File
+              </button>
             </div>
-            {sourceType === "url" ? (
+            {sourceType === "url" && (
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="Paste article URL (Substack, Medium, blog, docs)..."
                 className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
               />
-            ) : (
+            )}
+            {sourceType === "text" && (
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -124,9 +140,26 @@ export function RefinePanel({ guideId, existingSources, onRefined }: RefinePanel
                 className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
               />
             )}
+            {sourceType === "file" && (
+              <div>
+                <FileDropZone
+                  onFile={(f) => setFileData(f)}
+                  disabled={loading}
+                />
+                {fileData && (
+                  <div className="label-mono text-muted-foreground mt-2">
+                    Selected: {fileData.name}
+                  </div>
+                )}
+              </div>
+            )}
             <button
               onClick={handleRefine}
-              disabled={loading || (sourceType === "url" ? !url.trim() : !text.trim())}
+              disabled={loading || (
+                sourceType === "url" ? !url.trim() :
+                sourceType === "text" ? !text.trim() :
+                !fileData
+              )}
               data-slot="button"
               className="mt-3 bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-all"
             >
