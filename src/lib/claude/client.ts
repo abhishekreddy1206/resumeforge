@@ -80,7 +80,8 @@ async function logTokenUsage(skill: string, envelope: CLIEnvelope): Promise<void
 export function extractJson(text: string): Record<string, unknown> {
   const jsonMatch =
     text.match(/```(?:json)?\s*([\s\S]*?)```/) ||
-    text.match(/(\{[\s\S]*\})/);
+    text.match(/(\{[\s\S]*\})/) ||
+    text.match(/(\[[\s\S]*\])/);
   if (!jsonMatch) {
     log.error("Failed to extract JSON from Claude response", {
       responseLength: text.length,
@@ -291,7 +292,7 @@ export async function askJson<T = Record<string, any>>(
   prompt: string,
   options?: AskOptions
 ): Promise<T> {
-  const jsonEnforcement = "\n\nCRITICAL: Your response MUST be a single valid JSON object. No markdown, no commentary, no code fences, no text before or after the JSON. Start with { and end with }.";
+  const jsonEnforcement = "\n\nCRITICAL: Your response MUST be valid JSON only. No markdown, no commentary, no code fences, no text before or after the JSON. If the result is an object, start with { and end with }. If the result is an array, start with [ and end with ].";
   const enforced = prompt + jsonEnforcement;
   const text = await ask(enforced, options);
   try {
