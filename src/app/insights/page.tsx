@@ -79,6 +79,14 @@ const CLUSTER_COLORS = [
 
 export { CLUSTER_COLORS };
 
+const monoStyle: React.CSSProperties = {
+  fontFamily: "var(--font-dm-mono)",
+  fontSize: "0.625rem",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase" as const,
+  fontWeight: 500,
+};
+
 export default function InsightsPage() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,14 +101,14 @@ export default function InsightsPage() {
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <Skeleton className="h-8 w-64 skeleton-shimmer" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16" />
+            <Skeleton key={i} className="h-20 skeleton-shimmer" />
           ))}
         </div>
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-full skeleton-shimmer" />
+        <Skeleton className="h-64 w-full skeleton-shimmer" />
       </div>
     );
   }
@@ -108,8 +116,24 @@ export default function InsightsPage() {
   if (!data || data.meta.realisticJobs < 2) {
     return (
       <div className="max-w-5xl mx-auto py-8 px-4">
-        <h1 className="text-2xl font-semibold mb-2">Market Insights</h1>
-        <div className="bg-card border rounded-lg p-8 text-center space-y-3">
+        <section className="border-b border-border pb-10 pt-2 anim-fade-up">
+          <p className="text-muted-foreground mb-6" style={monoStyle}>
+            Insights
+          </p>
+          <h1
+            className="text-foreground leading-none"
+            style={{
+              fontFamily: "var(--font-cormorant)",
+              fontStyle: "italic",
+              fontSize: "clamp(2.5rem, 6vw, 4rem)",
+              fontWeight: 400,
+            }}
+          >
+            Market <span className="text-primary">Insights</span>
+          </h1>
+          <div className="section-divider mt-5" />
+        </section>
+        <div className="bg-card border rounded-lg p-8 text-center space-y-3 mt-8 anim-fade-up-1">
           <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
           <p className="text-muted-foreground">
             Score more jobs to unlock market insights. You need at least 2 jobs matching 60%+ to see patterns.
@@ -125,59 +149,87 @@ export default function InsightsPage() {
   const { meta } = data;
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
-      <h1 className="text-2xl font-semibold">Market Insights</h1>
+    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8">
+      {/* Header — editorial masthead */}
+      <section className="border-b border-border pb-10 pt-2 anim-fade-up">
+        <p className="text-muted-foreground mb-6" style={monoStyle}>
+          Insights · {meta.realisticJobs} of {meta.totalJobs} jobs scoring 60+
+        </p>
+        <h1
+          className="text-foreground leading-none"
+          style={{
+            fontFamily: "var(--font-cormorant)",
+            fontStyle: "italic",
+            fontSize: "clamp(2.5rem, 6vw, 4rem)",
+            fontWeight: 400,
+          }}
+        >
+          {meta.realisticJobs}{" "}
+          <span className="text-primary">realistic</span> targets
+        </h1>
+        {meta.topFinding && (
+          <p
+            className="text-muted-foreground mt-4 max-w-lg leading-relaxed"
+            style={{ fontFamily: "var(--font-geist-sans)", fontSize: "0.875rem" }}
+          >
+            {meta.topFinding}
+          </p>
+        )}
+        <div className="section-divider mt-5" />
+      </section>
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-card border rounded-lg p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 anim-fade-up-1">
+        <div className="bg-card border rounded-lg p-4 card-hover">
           <div className="text-2xl font-bold">{meta.realisticJobs}</div>
-          <div className="text-xs text-muted-foreground">realistic targets</div>
+          <div className="label-mono text-muted-foreground">realistic targets</div>
         </div>
-        <div className="bg-card border rounded-lg p-3">
+        <div className="bg-card border rounded-lg p-4 card-hover">
           <div className="text-2xl font-bold">{meta.clusterCount}</div>
-          <div className="text-xs text-muted-foreground">role profiles</div>
+          <div className="label-mono text-muted-foreground">role profiles</div>
         </div>
-        <div className="bg-card border rounded-lg p-3">
+        <div className="bg-card border rounded-lg p-4 card-hover">
           <div className="text-2xl font-bold text-red-400">{meta.gapCount}</div>
-          <div className="text-xs text-muted-foreground">key gaps</div>
+          <div className="label-mono text-muted-foreground">key gaps</div>
         </div>
-        <div className="bg-card border rounded-lg p-3">
+        <div className="bg-card border rounded-lg p-4 card-hover">
           <div className="text-2xl font-bold text-emerald-400">{meta.avgScore}%</div>
-          <div className="text-xs text-muted-foreground">avg match</div>
+          <div className="label-mono text-muted-foreground">avg match</div>
         </div>
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="clusters">
-        <TabsList variant="line">
-          <TabsTrigger value="clusters">
-            <Layers className="w-3.5 h-3.5" /> Clusters
-          </TabsTrigger>
-          <TabsTrigger value="demand">
-            <BarChart3 className="w-3.5 h-3.5" /> Demand
-          </TabsTrigger>
-          <TabsTrigger value="gaps">
-            <TrendingUp className="w-3.5 h-3.5" /> Gaps
-          </TabsTrigger>
-          <TabsTrigger value="study">
-            <BookOpen className="w-3.5 h-3.5" /> Study
-          </TabsTrigger>
-        </TabsList>
+      <div className="anim-fade-up-2">
+        <Tabs defaultValue="clusters">
+          <TabsList variant="line">
+            <TabsTrigger value="clusters">
+              <Layers className="w-3.5 h-3.5" /> Clusters
+            </TabsTrigger>
+            <TabsTrigger value="demand">
+              <BarChart3 className="w-3.5 h-3.5" /> Demand
+            </TabsTrigger>
+            <TabsTrigger value="gaps">
+              <TrendingUp className="w-3.5 h-3.5" /> Gaps
+            </TabsTrigger>
+            <TabsTrigger value="study">
+              <BookOpen className="w-3.5 h-3.5" /> Study
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="clusters">
-          <ClustersTab clusters={data.clusters} summary={data.clusterSummary} />
-        </TabsContent>
-        <TabsContent value="demand">
-          <DemandTab patterns={data.demandPatterns} clusters={data.clusters} />
-        </TabsContent>
-        <TabsContent value="gaps">
-          <GapsTab analysis={data.gapAnalysis} clusters={data.clusters} />
-        </TabsContent>
-        <TabsContent value="study">
-          <StudyTab topics={data.learnTopics} realisticJobCount={meta.realisticJobs} clusters={data.clusters} />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="clusters">
+            <ClustersTab clusters={data.clusters} summary={data.clusterSummary} />
+          </TabsContent>
+          <TabsContent value="demand">
+            <DemandTab patterns={data.demandPatterns} clusters={data.clusters} />
+          </TabsContent>
+          <TabsContent value="gaps">
+            <GapsTab analysis={data.gapAnalysis} clusters={data.clusters} />
+          </TabsContent>
+          <TabsContent value="study">
+            <StudyTab topics={data.learnTopics} realisticJobCount={meta.realisticJobs} clusters={data.clusters} />
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

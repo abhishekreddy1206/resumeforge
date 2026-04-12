@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
@@ -51,6 +52,21 @@ interface SavedSourceItem {
 let sourceIdCounter = 0;
 
 export default function LearnPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
+        <Skeleton className="h-32 rounded-lg skeleton-shimmer" />
+        <Skeleton className="h-20 rounded-lg skeleton-shimmer" />
+        <Skeleton className="h-48 rounded-lg skeleton-shimmer" />
+      </div>
+    }>
+      <LearnPageContent />
+    </Suspense>
+  );
+}
+
+function LearnPageContent() {
+  const searchParams = useSearchParams();
   const [guides, setGuides] = useState<GuideListItem[]>([]);
   const [paths, setPaths] = useState<LearningPathItem[]>([]);
   const [recommendations, setRecommendations] = useState<GuideRecommendation[]>([]);
@@ -107,6 +123,12 @@ export default function LearnPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Pre-fill topic from query param (e.g. from insights gaps-tab "Study this" links)
+  useEffect(() => {
+    const topicParam = searchParams.get("topic");
+    if (topicParam) setTopic(topicParam);
+  }, [searchParams]);
 
   const handleCreate = async (topicText: string) => {
     if (!topicText.trim() || creating) return;

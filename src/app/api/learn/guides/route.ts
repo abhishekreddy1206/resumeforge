@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateGuideOutline, generateGuideSection, matchGuideToPath } from "@/lib/claude";
@@ -158,118 +159,126 @@ export async function POST(request: NextRequest) {
       return g;
     });
 
-    // Fire-and-forget: generate sections in parallel batches, updating DB after each batch
-    (async () => {
-      const siblingTitles = outline.sectionPlan.map((sp) => sp.title);
-      let completedCount = 0;
-      let failedCount = 0;
-
-      for (let i = 0; i < outline.sectionPlan.length; i += SECTION_BATCH_SIZE) {
-        const batch = outline.sectionPlan.slice(i, i + SECTION_BATCH_SIZE);
-
-        const results = await Promise.allSettled(
-          batch.map((sp) =>
-            generateGuideSection(topic, sp, { difficulty: outline.difficulty, siblingTitles }, {
-              sources: sourceTexts.length > 0 ? sourceTexts : undefined,
-              model,
-            })
-          )
-        );
-
-        // Merge completed sections into the stored guide
-        const completedSections: Array<{ id: string; section: GuideSection }> = [];
-        for (let j = 0; j < results.length; j++) {
-          const result = results[j];
-          if (result.status === "fulfilled") {
-            completedSections.push({ id: batch[j].id, section: result.value });
-            completedCount++;
-          } else {
-            console.error(`[guide-create] Section "${batch[j].title}" failed:`, result.reason);
-            failedCount++;
-          }
-        }
-
-        if (completedSections.length > 0) {
-          const current = await prisma.guide.findUnique({ where: { id: guide.id } });
-          if (current) {
-            const currentContent = JSON.parse(current.content) as GuideContent;
-            for (const { id, section } of completedSections) {
-              const idx = currentContent.sections.findIndex((s) => s.id === id);
-              if (idx !== -1) {
-                currentContent.sections[idx] = section;
-              }
-            }
-            await prisma.guide.update({
-              where: { id: guide.id },
-              data: { content: JSON.stringify(currentContent) },
-            });
-          }
-        }
-      }
-
-      // Set final status
-      const finalStatus = completedCount === 0 ? "failed" : "published";
-      await prisma.guide.update({
-        where: { id: guide.id },
-        data: { status: finalStatus },
-      });
-
-      console.log(`[guide-create] Guide ${guide.id} complete: ${completedCount} sections, ${failedCount} failed → ${finalStatus}`);
-
-      // Auto-link to matching learning path
+    // Use after() to keep the runtime alive for background section generation
+    after(async () => {
       try {
-        const allPaths = await prisma.learningPath.findMany({
-          include: { guides: { select: { topic: true } } },
-        });
+        const siblingTitles = outline.sectionPlan.map((sp) => sp.title);
+        let completedCount = 0;
+        let failedCount = 0;
 
-        if (allPaths.length > 0) {
-          const currentGuide = await prisma.guide.findUnique({
-            where: { id: guide.id },
-            select: { learningPathId: true },
-          });
+        for (let i = 0; i < outline.sectionPlan.length; i += SECTION_BATCH_SIZE) {
+          const batch = outline.sectionPlan.slice(i, i + SECTION_BATCH_SIZE);
 
-          if (!currentGuide?.learningPathId) {
-            const pathsForMatching = allPaths.map((p) => ({
-              id: p.id,
-              title: p.title,
-              description: p.description,
-              existingTopics: p.guides.map((g) => g.topic),
-            }));
+          const results = await Promise.allSettled(
+            batch.map((sp) =>
+              generateGuideSection(topic, sp, { difficulty: outline.difficulty, siblingTitles }, {
+                sources: sourceTexts.length > 0 ? sourceTexts : undefined,
+                model,
+              })
+            )
+          );
 
-            const match = await matchGuideToPath(topic, pathsForMatching);
+          // Merge completed sections into the stored guide
+          const completedSections: Array<{ id: string; section: GuideSection }> = [];
+          for (let j = 0; j < results.length; j++) {
+            const result = results[j];
+            if (result.status === "fulfilled") {
+              completedSections.push({ id: batch[j].id, section: result.value });
+              completedCount++;
+            } else {
+              console.error(`[guide-create] Section "${batch[j].title}" failed:`, result.reason);
+              failedCount++;
+            }
+          }
 
-            if (match.pathId && match.confidence >= 0.6) {
+          if (completedSections.length > 0) {
+            const current = await prisma.guide.findUnique({ where: { id: guide.id } });
+            if (current) {
+              const currentContent = JSON.parse(current.content) as GuideContent;
+              for (const { id, section } of completedSections) {
+                const idx = currentContent.sections.findIndex((s) => s.id === id);
+                if (idx !== -1) {
+                  currentContent.sections[idx] = section;
+                }
+              }
               await prisma.guide.update({
                 where: { id: guide.id },
-                data: { learningPathId: match.pathId },
+                data: { content: JSON.stringify(currentContent) },
               });
-
-              const matchedPath = await prisma.learningPath.findUnique({
-                where: { id: match.pathId },
-                select: { guideOrder: true, title: true },
-              });
-              if (matchedPath) {
-                const order = JSON.parse(matchedPath.guideOrder) as string[];
-                order.push(guide.id);
-                await prisma.learningPath.update({
-                  where: { id: match.pathId },
-                  data: { guideOrder: JSON.stringify(order) },
-                });
-                console.log(`[guide-create] Auto-linked to path "${matchedPath.title}" (confidence: ${match.confidence})`);
-              }
-            } else {
-              console.log(`[guide-create] No matching path (best: ${match.pathId ? match.confidence.toFixed(2) : "none"})`);
             }
           }
         }
-      } catch (err) {
-        console.error("[guide-create] Auto-link failed (non-fatal):", err);
-      }
 
-      refreshRecommendationsCache().catch((err) =>
-        console.error("[guide-create] Recommendation refresh failed:", err)
-      );
-    })();
+        // Set final status
+        const finalStatus = completedCount === 0 ? "failed" : "published";
+        await prisma.guide.update({
+          where: { id: guide.id },
+          data: { status: finalStatus },
+        });
+
+        console.log(`[guide-create] Guide ${guide.id} complete: ${completedCount} sections, ${failedCount} failed → ${finalStatus}`);
+
+        // Auto-link to matching learning path
+        try {
+          const allPaths = await prisma.learningPath.findMany({
+            include: { guides: { select: { topic: true } } },
+          });
+
+          if (allPaths.length > 0) {
+            const currentGuide = await prisma.guide.findUnique({
+              where: { id: guide.id },
+              select: { learningPathId: true },
+            });
+
+            if (!currentGuide?.learningPathId) {
+              const pathsForMatching = allPaths.map((p) => ({
+                id: p.id,
+                title: p.title,
+                description: p.description,
+                existingTopics: p.guides.map((g) => g.topic),
+              }));
+
+              const match = await matchGuideToPath(topic, pathsForMatching);
+
+              if (match.pathId && match.confidence >= 0.6) {
+                await prisma.guide.update({
+                  where: { id: guide.id },
+                  data: { learningPathId: match.pathId },
+                });
+
+                const matchedPath = await prisma.learningPath.findUnique({
+                  where: { id: match.pathId },
+                  select: { guideOrder: true, title: true },
+                });
+                if (matchedPath) {
+                  const order = JSON.parse(matchedPath.guideOrder) as string[];
+                  order.push(guide.id);
+                  await prisma.learningPath.update({
+                    where: { id: match.pathId },
+                    data: { guideOrder: JSON.stringify(order) },
+                  });
+                  console.log(`[guide-create] Auto-linked to path "${matchedPath.title}" (confidence: ${match.confidence})`);
+                }
+              } else {
+                console.log(`[guide-create] No matching path (best: ${match.pathId ? match.confidence.toFixed(2) : "none"})`);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("[guide-create] Auto-link failed (non-fatal):", err);
+        }
+
+        refreshRecommendationsCache().catch((err) =>
+          console.error("[guide-create] Recommendation refresh failed:", err)
+        );
+      } catch (err) {
+        console.error("[guide-create] Background generation crashed:", err);
+        await prisma.guide.update({
+          where: { id: guide.id },
+          data: { status: "failed" },
+        }).catch(() => {});
+      }
+    });
 
     return NextResponse.json({
       id: guide.id,

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, useRef, use } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GuideRenderer } from "@/components/learn/guide-renderer";
 import { RefinePanel } from "@/components/learn/refine-panel";
-import { ArrowLeft, Clock, Signal, BookOpen, Sparkles } from "lucide-react";
+import { ArrowLeft, Clock, Signal, BookOpen, Sparkles, RotateCcw } from "lucide-react";
 import type { GuideContent } from "@/lib/claude/skills/guide-generator";
 
 interface GuideData {
@@ -25,6 +25,9 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
   const [guide, setGuide] = useState<GuideData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stalePolls, setStalePolls] = useState(0);
+  const [resuming, setResuming] = useState(false);
+  const lastPctRef = useRef(0);
 
   const fetchGuide = useCallback(async () => {
     try {
@@ -51,6 +54,19 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
           setGuide(updated);
           if (updated.status !== "generating") {
             clearInterval(interval);
+            setStalePolls(0);
+          } else {
+            const readySections = (updated.content as GuideContent).sections.filter(
+              (s: GuideContent["sections"][number]) => s.explanation.length > 0
+            ).length;
+            const totalSections = (updated.content as GuideContent).sections.length;
+            const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
+            if (pct === lastPctRef.current) {
+              setStalePolls((prev) => prev + 1);
+            } else {
+              setStalePolls(0);
+              lastPctRef.current = pct;
+            }
           }
         }
       } catch {
@@ -59,6 +75,23 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
     }, 5000);
     return () => clearInterval(interval);
   }, [guide?.status, slug]);
+
+  const handleResumeGeneration = useCallback(async () => {
+    if (!guide || resuming) return;
+    setResuming(true);
+    setStalePolls(0);
+    try {
+      const res = await fetch(`/api/learn/guides/${guide.id}/resume`, { method: "POST" });
+      if (res.ok) {
+        // Re-fetch to pick up "generating" status and restart polling
+        await fetchGuide();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setResuming(false);
+    }
+  }, [guide, resuming, fetchGuide]);
 
   const handleProgressUpdate = useCallback(async (progress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>) => {
     if (!guide) return;
@@ -195,9 +228,41 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
             <p className="label-mono text-muted-foreground/60 mt-2">
               {readySections} of {totalSections} sections ready
             </p>
+            {stalePolls >= 6 && (
+              <div className="mt-3 pt-3 border-t border-primary/10 flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">Generation may have stalled.</span>
+                <button
+                  onClick={handleResumeGeneration}
+                  disabled={resuming}
+                  className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                >
+                  <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
+                  {resuming ? "Resuming..." : "Retry"}
+                </button>
+              </div>
+            )}
           </div>
         );
       })()}
+
+      {/* Failed state — offer retry */}
+      {guide.status === "failed" && guide.content.sections.some((s) => s.explanation.length === 0) && (
+        <div className="mb-8 border border-destructive/20 bg-destructive/5 rounded px-5 py-4 anim-fade-up">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Some sections failed to generate.
+            </span>
+            <button
+              onClick={handleResumeGeneration}
+              disabled={resuming}
+              className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+            >
+              <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
+              {resuming ? "Retrying..." : "Retry Failed Sections"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Guide content */}
       <div className="anim-fade-up-2">

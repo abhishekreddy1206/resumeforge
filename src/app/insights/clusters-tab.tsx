@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
 import { CLUSTER_COLORS } from "./page";
 
 interface Cluster {
@@ -32,7 +32,7 @@ export function ClustersTab({
           return (
             <div
               key={cluster.name}
-              className={`border rounded-lg p-4 ${colors.border} ${colors.bg}`}
+              className={`border rounded-lg p-4 ${colors.border} ${colors.bg} card-hover`}
             >
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold">{cluster.name}</h3>
@@ -73,19 +73,23 @@ export function ClustersTab({
               {isOpen && (
                 <div className="mt-3 space-y-1.5 border-t pt-3 border-foreground/5">
                   {cluster.jobs.map((job) => (
-                    <div
+                    <a
                       key={job.id}
-                      className="flex items-center justify-between text-xs"
+                      href={`/jobs#${job.id}`}
+                      className="flex items-center justify-between text-xs group hover:text-primary transition-colors"
                     >
-                      <div>
+                      <div className="min-w-0">
                         <span className="font-medium">{job.title}</span>
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground group-hover:text-primary/60">
                           {" "}
                           · {job.company}
                         </span>
                       </div>
-                      <span className="font-mono text-xs">{job.score}%</span>
-                    </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span className="font-mono text-xs">{job.score}%</span>
+                        <ArrowRight className="w-3 h-3 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                      </div>
+                    </a>
                   ))}
                 </div>
               )}

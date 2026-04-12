@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CLUSTER_COLORS } from "./page";
 
 interface LearnTopic {
@@ -32,6 +33,32 @@ export function StudyTab({
   clusters: Cluster[];
 }) {
   const clusterIndex = new Map(clusters.map((c, i) => [c.name, i]));
+  const [generating, setGenerating] = useState<number | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const handleGenerate = async (topic: LearnTopic) => {
+    if (generating !== null) return;
+    setGenerating(topic.rank);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/learn/guides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topic.topic }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.slug) {
+        window.location.href = `/learn/${data.slug}`;
+      } else {
+        setGenError(data?.error || "Failed to generate guide.");
+        setGenerating(null);
+      }
+    } catch {
+      setGenError("Something went wrong. Please try again.");
+      setGenerating(null);
+    }
+  };
+
   return (
     <div className="space-y-4 pt-4">
       <p className="text-xs text-muted-foreground leading-relaxed">
@@ -40,6 +67,10 @@ export function StudyTab({
         <strong className="text-foreground">{realisticJobCount} jobs</strong>{" "}
         scoring 60+.
       </p>
+
+      {genError && (
+        <p className="text-xs text-destructive text-center">{genError}</p>
+      )}
 
       <div className="space-y-3">
         {topics.map((topic) => (
@@ -108,16 +139,26 @@ export function StudyTab({
                     );
                   })}
                 </div>
-                <a
-                  href={
-                    topic.existingGuide
-                      ? `/learn/${encodeURIComponent(topic.topic.toLowerCase().replace(/\s+/g, "-"))}`
-                      : `/learn?topic=${encodeURIComponent(topic.topic)}`
-                  }
-                  className="text-xs bg-primary/20 border border-primary/30 text-primary px-3 py-1 rounded-md hover:bg-primary/30 transition-colors"
-                >
-                  {topic.existingGuide ? "View Guide →" : "Generate Guide →"}
-                </a>
+                {topic.existingGuide ? (
+                  <a
+                    href={`/learn/${encodeURIComponent(topic.topic.toLowerCase().replace(/\s+/g, "-"))}`}
+                    className="text-xs bg-primary/20 border border-primary/30 text-primary px-3 py-1 rounded-md hover:bg-primary/30 transition-colors"
+                  >
+                    View Guide →
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => handleGenerate(topic)}
+                    disabled={generating !== null}
+                    className="text-xs bg-primary/20 border border-primary/30 text-primary px-3 py-1 rounded-md hover:bg-primary/30 transition-colors disabled:opacity-50"
+                  >
+                    {generating === topic.rank ? (
+                      <span className="flex items-center gap-1">
+                        Generating<span className="anim-dot-1">.</span><span className="anim-dot-2">.</span><span className="anim-dot-3">.</span>
+                      </span>
+                    ) : "Generate Guide →"}
+                  </button>
+                )}
               </div>
             </div>
           </div>
