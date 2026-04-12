@@ -25,9 +25,11 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
   const [guide, setGuide] = useState<GuideData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stalePolls, setStalePolls] = useState(0);
   const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const lastPctRef = useRef(0);
+  const stalePollsRef = useRef(0);
+  const resumingRef = useRef(false);
 
   const fetchGuide = useCallback(async () => {
     try {
@@ -43,30 +45,60 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
 
   useEffect(() => { fetchGuide(); }, [fetchGuide]);
 
-  // Poll for updates while guide is generating
+  // Poll for updates while guide is generating; auto-resume when stalled
   useEffect(() => {
     if (!guide || guide.status !== "generating") return;
+    stalePollsRef.current = 0;
+    lastPctRef.current = 0;
+
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/learn/guides/${slug}`);
-        if (res.ok) {
-          const updated = await res.json();
-          setGuide(updated);
-          if (updated.status !== "generating") {
-            clearInterval(interval);
-            setStalePolls(0);
-          } else {
-            const readySections = (updated.content as GuideContent).sections.filter(
-              (s: GuideContent["sections"][number]) => s.explanation.length > 0
-            ).length;
-            const totalSections = (updated.content as GuideContent).sections.length;
-            const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
-            if (pct === lastPctRef.current) {
-              setStalePolls((prev) => prev + 1);
+        if (!res.ok) return;
+        const updated = await res.json();
+        setGuide(updated);
+
+        if (updated.status !== "generating") {
+          clearInterval(interval);
+          stalePollsRef.current = 0;
+          return;
+        }
+
+        const readySections = (updated.content as GuideContent).sections.filter(
+          (s: GuideContent["sections"][number]) => s.explanation.length > 0
+        ).length;
+        const totalSections = (updated.content as GuideContent).sections.length;
+        const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
+
+        if (pct === lastPctRef.current) {
+          stalePollsRef.current++;
+        } else {
+          stalePollsRef.current = 0;
+          lastPctRef.current = pct;
+        }
+
+        // Auto-resume: if no progress for 4 polls (20s) and not already resuming
+        if (stalePollsRef.current >= 4 && !resumingRef.current) {
+          resumingRef.current = true;
+          setResuming(true);
+          setResumeError(null);
+          try {
+            const resumeRes = await fetch(`/api/learn/guides/${updated.id}/resume`, { method: "POST" });
+            if (resumeRes.ok) {
+              stalePollsRef.current = 0;
+              lastPctRef.current = 0;
+              // Re-fetch immediately to pick up changes
+              const freshRes = await fetch(`/api/learn/guides/${slug}`);
+              if (freshRes.ok) setGuide(await freshRes.json());
             } else {
-              setStalePolls(0);
-              lastPctRef.current = pct;
+              const data = await resumeRes.json().catch(() => null);
+              setResumeError(data?.error || "Resume failed");
             }
+          } catch {
+            setResumeError("Failed to resume generation");
+          } finally {
+            resumingRef.current = false;
+            setResuming(false);
           }
         }
       } catch {
@@ -74,24 +106,31 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [guide?.status, slug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are intentionally narrow; we restart only on status/id/slug change, not every content update
+  }, [guide?.status, guide?.id, slug]);
 
   const handleResumeGeneration = useCallback(async () => {
-    if (!guide || resuming) return;
+    if (!guide || resumingRef.current) return;
+    resumingRef.current = true;
     setResuming(true);
-    setStalePolls(0);
+    setResumeError(null);
+    stalePollsRef.current = 0;
     try {
       const res = await fetch(`/api/learn/guides/${guide.id}/resume`, { method: "POST" });
       if (res.ok) {
-        // Re-fetch to pick up "generating" status and restart polling
+        // Re-fetch to pick up updated content and restart polling
         await fetchGuide();
+      } else {
+        const data = await res.json().catch(() => null);
+        setResumeError(data?.error || "Resume failed");
       }
     } catch {
-      // ignore
+      setResumeError("Failed to resume generation");
     } finally {
+      resumingRef.current = false;
       setResuming(false);
     }
-  }, [guide, resuming, fetchGuide]);
+  }, [guide, fetchGuide]);
 
   const handleProgressUpdate = useCallback(async (progress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>) => {
     if (!guide) return;
@@ -228,16 +267,21 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
             <p className="label-mono text-muted-foreground/60 mt-2">
               {readySections} of {totalSections} sections ready
             </p>
-            {stalePolls >= 6 && (
-              <div className="mt-3 pt-3 border-t border-primary/10 flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">Generation may have stalled.</span>
+            {resuming && (
+              <div className="mt-3 pt-3 border-t border-primary/10 flex items-center gap-2">
+                <RotateCcw className="w-3 h-3 text-primary animate-spin" />
+                <span className="text-xs text-muted-foreground">Generating next batch of sections...</span>
+              </div>
+            )}
+            {resumeError && (
+              <div className="mt-3 pt-3 border-t border-destructive/10 flex items-center gap-3">
+                <span className="text-xs text-destructive">{resumeError}</span>
                 <button
                   onClick={handleResumeGeneration}
                   disabled={resuming}
                   className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
                 >
-                  <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
-                  {resuming ? "Resuming..." : "Retry"}
+                  <RotateCcw className="w-3 h-3" /> Retry
                 </button>
               </div>
             )}

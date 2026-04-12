@@ -8,7 +8,7 @@ import { parsePdf } from "@/lib/parsers/pdf";
 import { parseDocx } from "@/lib/parsers/docx";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
-const SECTION_BATCH_SIZE = 3;
+const SECTION_BATCH_SIZE = 2;
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -159,15 +159,19 @@ export async function POST(request: NextRequest) {
       return g;
     });
 
-    // Use after() to keep the runtime alive for background section generation
+    // Use after() to keep the runtime alive for background section generation.
+    // This is the optimistic path — if after() fails, the client auto-resumes
+    // via the /resume endpoint which generates sections synchronously.
     after(async () => {
       try {
+        console.log(`[guide-create] after() callback STARTED for guide ${guide.id} (${outline.sectionPlan.length} sections)`);
         const siblingTitles = outline.sectionPlan.map((sp) => sp.title);
         let completedCount = 0;
         let failedCount = 0;
 
         for (let i = 0; i < outline.sectionPlan.length; i += SECTION_BATCH_SIZE) {
           const batch = outline.sectionPlan.slice(i, i + SECTION_BATCH_SIZE);
+          console.log(`[guide-create] Starting batch ${Math.floor(i / SECTION_BATCH_SIZE) + 1}: ${batch.map((s) => s.title).join(", ")}`);
 
           const results = await Promise.allSettled(
             batch.map((sp) =>
@@ -177,6 +181,8 @@ export async function POST(request: NextRequest) {
               })
             )
           );
+
+          console.log(`[guide-create] Batch ${Math.floor(i / SECTION_BATCH_SIZE) + 1} results: ${results.map((r, j) => `${batch[j].title}: ${r.status}`).join(", ")}`);
 
           // Merge completed sections into the stored guide
           const completedSections: Array<{ id: string; section: GuideSection }> = [];
