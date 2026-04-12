@@ -44,6 +44,6 @@ Return ONLY valid JSON:
   "confidence": 0.85,
   "reason": "brief explanation"
 }`,
-    { timeoutMs: 30_000, skill: "path-matcher", model: options?.model }
+    { timeoutMs: 30_000, skill: "path-matcher", model: options?.model || "haiku" }
   );
 }

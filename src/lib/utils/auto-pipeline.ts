@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { matchProfileToJob, applyResumeTips, generateTailoredResume } from "@/lib/claude";
+import { matchProfileToJob, applyResumeTips, generateTailoredResume, mergeProfileChanges } from "@/lib/claude";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { generatePdf } from "@/lib/generators/pdf";
@@ -117,7 +117,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         modelOpts
       );
 
-      updatedProfile = tipResult.updatedProfile;
+      updatedProfile = mergeProfileChanges(profileData, tipResult.changes);
       console.log(`[auto-pipeline] Tips applied for job ${jobId}: ${tipResult.reply}`);
     } catch (err) {
       console.error(`[auto-pipeline] Tip application failed for job ${jobId}:`, err);

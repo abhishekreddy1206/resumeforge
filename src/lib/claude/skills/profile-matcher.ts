@@ -70,11 +70,11 @@ ADDITIONAL SCORING RULES:
 - Gaps reduce the score proportionally to their importance in the JD (must-have vs nice-to-have)
 - Relevant certifications matching JD requirements add points
 - Relevant publications demonstrate domain expertise
-- IMPORTANT: When scoring an optimized/tailored profile (one with reworded bullets, reordered skills, ATS-targeted language), score it HIGHER than an unoptimized version with the same raw experience. Better keyword matching, JD-aligned bullet phrasing, and strategic skill emphasis genuinely improve ATS pass rates and should be reflected in the score.
+- When scoring an optimized/tailored profile (reworded bullets, reordered skills, ATS-targeted language), score it HIGHER than unoptimized versions. Better keyword matching and JD-aligned phrasing genuinely improve ATS pass rates.
 
 RESUME TIPS (max 5, ordered by impact):
 - "grounded":true only if the candidate demonstrably has the skill/experience — never suggest fabricating
-- Suggest: reframing experience in JD language, emphasizing relevant bullets, reordering sections, using JD exact terms for ATS, highlighting relevant publications/certifications/recommendations
+- Suggest: reframe in JD language, reorder sections, use exact JD terms, highlight relevant pubs/certs/recs
 - "grounded":false for stretch suggestions; frame as "Consider learning X"
 
 Return ONLY valid JSON:

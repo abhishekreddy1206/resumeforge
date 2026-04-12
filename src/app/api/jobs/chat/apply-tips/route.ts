@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applyResumeTips } from "@/lib/claude";
+import { applyResumeTips, mergeProfileChanges } from "@/lib/claude";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
 function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
@@ -89,7 +89,9 @@ export async function POST(request: NextRequest) {
       { model: job.aiModel }
     );
 
-    return NextResponse.json(result);
+    // Merge section-level changes onto base profile to reconstruct full profile
+    const updatedProfile = mergeProfileChanges(profileData, result.changes);
+    return NextResponse.json({ reply: result.reply, updatedProfile });
   } catch (error) {
     console.error("Apply tips error:", error);
     return NextResponse.json(

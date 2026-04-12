@@ -56,6 +56,6 @@ Return ONLY valid JSON:
   ],
   "summary": "Your targets split into 2 profiles. Backend Infrastructure dominates (60%) with K8s/AWS as the common thread. Platform Engineering has fewer roles but higher average fit."
 }`,
-    { skill: "job-clusterer", model: options?.model }
+    { skill: "job-clusterer", model: options?.model || "haiku" }
   );
 }

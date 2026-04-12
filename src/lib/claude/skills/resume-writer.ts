@@ -1,4 +1,4 @@
-import { askJson, compactProfile, AI_FINGERPRINT_BANNED } from "../client";
+import { askJson, compactProfile, AI_FINGERPRINT_BANNED, ROLE_ARCHETYPES } from "../client";
 import type { ResumeData } from "@/lib/types";
 
 /**
@@ -41,28 +41,27 @@ ATS KEYWORD STRATEGY:
 - Reframe transferable experience using JD vocabulary; skills section ordering should reflect the JD
 
 TERMINOLOGY BRIDGING:
-The job analysis includes a terminologyMap that bridges JD terms to common resume synonyms.
-When the candidate's profile uses a synonym, ALWAYS rewrite to use the JD's exact term.
-Examples:
-- JD says "RAG pipelines", profile says "LLM workflows with retrieval" → write "RAG pipeline design"
-- JD says "stakeholder management", profile says "collaborated with teams" → write "stakeholder management across engineering and product"
-- JD says "CI/CD", profile says "automated deployments" → write "CI/CD pipeline automation"
-Use these bridges aggressively while staying truthful to real experience.
+When the candidate's profile uses a synonym for a JD term, ALWAYS rewrite to use the JD's exact term.
+Example: JD says "RAG pipelines", profile says "LLM workflows with retrieval" → write "RAG pipeline design"
+Apply same bridging to all JD terms where profile uses a synonym. Stay truthful.
 
 ARCHETYPE-ADAPTIVE FRAMING:
-The job analysis includes a roleArchetype field. Adapt your framing:
-- backend-engineer: emphasize system design, APIs, scalability, performance
-- frontend-engineer: emphasize user experience, performance, accessibility, design systems
-- fullstack-engineer: emphasize end-to-end delivery, versatility across stack
-- platform-engineer: emphasize scale, reliability, automation, cost optimization, infrastructure
-- ml-engineer: emphasize model performance, data pipelines, experimentation, production ML
-- data-engineer: emphasize data pipelines, ETL, data quality, warehousing, scale
-- engineering-manager: emphasize team growth, process improvement, cross-functional delivery
-- technical-pm: emphasize customer impact, technical communication, stakeholder alignment
-- solutions-architect: emphasize system design, customer engagement, technical strategy
-- security-engineer: emphasize threat modeling, compliance, secure architecture
+Adapt framing by roleArchetype:
+${ROLE_ARCHETYPES}
+
+Per-archetype emphasis:
+- backend-engineer: system design, APIs, scalability, performance
+- frontend-engineer: user experience, performance, accessibility, design systems
+- fullstack-engineer: end-to-end delivery, versatility across stack
+- platform-engineer: scale, reliability, automation, cost optimization, infrastructure
+- ml-engineer: model performance, data pipelines, experimentation, production ML
+- data-engineer: data pipelines, ETL, data quality, warehousing, scale
+- engineering-manager: team growth, process improvement, cross-functional delivery
+- technical-pm: customer impact, technical communication, stakeholder alignment
+- solutions-architect: system design, customer engagement, technical strategy
+- security-engineer: threat modeling, compliance, secure architecture
 Reorder experience bullets and project selection to match the archetype's priorities.
-If roleArchetype is missing, infer it from the job title and requirements.
+If missing, infer from job title and requirements.
 
 AI FINGERPRINT AVOIDANCE:
 ${AI_FINGERPRINT_BANNED}

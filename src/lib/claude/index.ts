@@ -33,7 +33,7 @@ export { generateCoverLetter } from "./skills/cover-letter-writer";
 export { generateInterviewPrep } from "./skills/interview-prep";
 export type { InterviewPrep, InterviewStory } from "./skills/interview-prep";
 export { generateFormAnswer } from "./skills/form-answerer";
-export { compactProfile } from "./client";
+export { compactProfile, mergeProfileChanges } from "./client";
 export { generateGuide, refineGuide, generateGuideOutline, generateGuideSection } from "./skills/guide-generator";
 export type { GuideContent, GuideSection, GuideOutline, RefineResult } from "./skills/guide-generator";
 export { recommendGuides } from "./skills/guide-recommender";

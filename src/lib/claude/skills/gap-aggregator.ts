@@ -66,7 +66,6 @@ TASKS:
 
 1. AGGREGATE GAPS — merge semantically similar gaps across jobs:
    - "Kubernetes experience" and "K8s orchestration" should merge into one gap
-   - "5+ years management" and "People management experience" should merge
    - Use the most descriptive phrasing as the canonical name
    - Include all JD variants in relatedTerms
    - Classify severity: "critical" (3+ jobs), "important" (2 jobs), "specific" (1 job)
@@ -75,7 +74,7 @@ TASKS:
 2. LEVERAGE SCORES — identify which skills to develop for maximum job coverage:
    - For each major gap, estimate how many jobs it would positively impact if filled
    - Consider both direct gaps AND bridgeable skills that would become direct matches
-   - Focus on actionable skills (not "10 years experience" which isn't learnable quickly)
+   - Focus on actionable skills (not years-of-experience gaps)
    - estimatedImpact: "high" (unlocks 3+ jobs), "medium" (2 jobs), "low" (1 job)
    - Sort by jobsUnlocked (highest first)
    - Max 8 entries

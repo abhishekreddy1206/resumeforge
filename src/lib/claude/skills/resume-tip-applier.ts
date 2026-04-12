@@ -22,7 +22,7 @@ export async function applyResumeTips(
   terminologyMap?: Array<{jdTerm: string; resumeSynonyms: string[]}>,
   options?: { model?: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ reply: string; updatedProfile: Record<string, any> }> {
+): Promise<{ reply: string; changes: Record<string, any> }> {
   const historyText =
     history.length > 0
       ? `\nConversation so far:\n${history
@@ -63,9 +63,16 @@ RULES:
 - For recommendations: select only those speaking to skills the job requires; omit irrelevant ones
 - Do NOT fabricate experience or skills; preserve the data shape: ${PROFILE_SCHEMA_RULES}
 
-Return ONLY valid JSON (keep reply field under 500 chars):
+Return JSON with "reply" and "changes". In "changes", include ONLY sections you modified.
+You MAY omit sections that are COMPLETELY UNCHANGED (e.g., if educations didn't change, omit them).
+For sections you DO include, return the COMPLETE updated array/value — not partial diffs.
+
 {
-  "reply": "Brief summary of changes made",
-  "updatedProfile": { /* full modified profile object */ }
+  "reply": "Brief summary of changes made (under 500 chars)",
+  "changes": {
+    "summary": "full new summary text",
+    "experiences": [{"company":"string","title":"string","startDate":"string","endDate":"string","current":true,"bullets":["string"],"skills":["string"]}],
+    "skills": [{"name":"string","category":"string"}]
+  }
 }`, { timeoutMs: 600_000, skill: "resume-tip-applier", model: options?.model });
 }

@@ -1,4 +1,5 @@
-import { askJson, compactProfile, AI_FINGERPRINT_BANNED } from "../client";
+import { askJson, compactProfile } from "../client";
+import { classifyQuestion, projectProfileForQuestion } from "./form-answerer-utils";
 
 interface FormAnswerResult {
   answer: string;
@@ -31,7 +32,7 @@ export async function generateFormAnswer(
   return askJson<FormAnswerResult>(`You are filling out a job application form. Answer the following screening question accurately based on the candidate's real profile.
 
 CANDIDATE PROFILE:
-${JSON.stringify(compactProfile(profile))}
+${JSON.stringify(compactProfile(projectProfileForQuestion(profile, classifyQuestion(question))))}
 
 TARGET JOB:
 ${JSON.stringify(jobAnalysis)}
@@ -49,7 +50,6 @@ ${hasOptions ? "- This is a dropdown/select field. Your answer MUST be copied ve
 - NEVER fabricate credentials, certifications, years of experience, or achievements not in the profile
 - Write naturally as the candidate would, first person
 - No sycophancy, no filler
-${AI_FINGERPRINT_BANNED}
 
 Return ONLY valid JSON:
 {

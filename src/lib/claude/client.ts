@@ -359,6 +359,33 @@ export const AI_FINGERPRINT_BANNED = `Avoid: delve,tapestry,multifaceted,pivotal
 
 export const PROFILE_SCHEMA_RULES = `Preserve data shape exactly. bullets/skills are string[]. category∈{language,framework,tool,database,cloud,soft}. publications:{title,publisher,date,url,doi,description}. certifications:{name,issuer,date,expiryDate,credentialId,url}. recommendations:{recommenderName,recommenderTitle,relationship,text,linkedinUrl}.`;
 
+export const ROLE_ARCHETYPES = `- "backend-engineer" — core services, APIs, distributed systems
+- "frontend-engineer" — UI/UX, web apps, component systems
+- "fullstack-engineer" — end-to-end feature development
+- "platform-engineer" — infrastructure, DevOps, SRE, cloud
+- "ml-engineer" — ML/AI systems, model training, MLOps
+- "data-engineer" — data pipelines, ETL, warehousing
+- "engineering-manager" — people management, technical leadership
+- "technical-pm" — product management with technical depth
+- "solutions-architect" — customer-facing technical design
+- "security-engineer" — security, compliance, threat modeling
+- "other" — if none fits clearly`;
+
+/**
+ * Merge section-level profile changes onto a base profile.
+ * For each key present in `changes`, replaces the corresponding key in `base`.
+ * Keys not present in `changes` are preserved from `base` unchanged.
+ * Used by resume-tip-applier to reconstruct full profiles from section diffs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mergeProfileChanges(base: Record<string, any>, changes: Record<string, any>): Record<string, any> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(changes)) {
+    merged[key] = value;
+  }
+  return merged;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function askJson<T = Record<string, any>>(
   prompt: string,

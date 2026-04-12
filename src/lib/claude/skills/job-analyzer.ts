@@ -1,4 +1,4 @@
-import { askJson } from "../client";
+import { askJson, ROLE_ARCHETYPES } from "../client";
 
 interface RequirementMapping {
   requirement: string;
@@ -56,39 +56,23 @@ ATS KEYWORD EXTRACTION:
 Extract top JD keywords by type for verbatim resume matching (use exact JD terms, not synonyms).
 
 TERMINOLOGY MAPPING:
-For each key technical/domain term in the JD, list 2-4 common resume synonyms a candidate might use instead.
-This helps map the JD's language to equivalent terms a candidate would write on their resume.
-Only map terms where there are meaningful alternative phrasings — skip generic terms.
+Map key JD terms to 2-4 resume synonyms candidates use. Skip generic terms.
 Example: {"jdTerm": "Kubernetes", "resumeSynonyms": ["K8s", "container orchestration", "Kubernetes clusters"]}
-Example: {"jdTerm": "CI/CD pipelines", "resumeSynonyms": ["continuous integration", "build automation", "deployment pipelines", "GitHub Actions"]}
 
 ROLE ARCHETYPE CLASSIFICATION:
 Classify the role into one primary archetype:
-- "backend-engineer" — core services, APIs, distributed systems
-- "frontend-engineer" — UI/UX, web apps, component systems
-- "fullstack-engineer" — end-to-end feature development
-- "platform-engineer" — infrastructure, DevOps, SRE, cloud
-- "ml-engineer" — ML/AI systems, model training, MLOps
-- "data-engineer" — data pipelines, ETL, warehousing
-- "engineering-manager" — people management, technical leadership
-- "technical-pm" — product management with technical depth
-- "solutions-architect" — customer-facing technical design
-- "security-engineer" — security, compliance, threat modeling
-- "other" — if none fits clearly
+${ROLE_ARCHETYPES}
 
 SPONSORSHIP / WORK AUTHORIZATION:
-Check the entire JD for visa sponsorship or work authorization language. Classify as:
+Scan full JD for sponsorship/work authorization. Classify:
 - "unavailable": explicitly states no sponsorship or requires citizenship/Green Card/permanent residency
 - "available": explicitly offers visa sponsorship
 - "unspecified": no mention either way
 If unavailable or available, include sponsorshipNote quoting/paraphrasing the relevant text.
 
 COMPANY NAME NORMALIZATION:
-Use the well-known parent/brand company name, not subsidiaries, legal entities, or recruiting agencies.
-Examples: "Google LLC" → "Google", "Meta Platforms, Inc." → "Meta", "Amazon.com Services LLC" → "Amazon",
-"Microsoft Corporation" → "Microsoft", "Apple Inc." → "Apple", "Alphabet Inc." → "Google".
-Strip suffixes like Inc., LLC, Corp., Ltd., GmbH, etc.
-If the job is posted by a staffing/recruiting agency on behalf of a client, use the client company name.
+Use parent brand name, not subsidiaries/legal entities. Strip Inc., LLC, Corp., Ltd., GmbH. If posted by staffing agency, use client company name.
+Examples: "Google LLC" → "Google", "Meta Platforms, Inc." → "Meta"
 
 Return ONLY valid JSON:
 
