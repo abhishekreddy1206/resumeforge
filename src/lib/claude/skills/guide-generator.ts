@@ -185,5 +185,5 @@ SECTION TO WRITE:
 - Scope: ${sectionPlan.scope}${sourceBlock}
 
 Return ONLY valid JSON:
-${SECTION_SCHEMA}`, { timeoutMs: 300_000, skill: "guide-section", model: options?.model });
+${SECTION_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section", model: options?.model });
 }

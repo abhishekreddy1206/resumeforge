@@ -1,0 +1,161 @@
+<h2>LinkedIn-Style Profile Layout</h2>
+<p class="subtitle">Which layout direction resonates most with what you're imagining?</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f3f2ef;">
+      <!-- LinkedIn Classic mockup -->
+      <div style="background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-family: system-ui; font-size: 11px;">
+        <!-- Banner -->
+        <div style="height: 60px; background: linear-gradient(135deg, #0077b5 0%, #00a0dc 100%); position: relative;">
+          <div style="position: absolute; bottom: -20px; left: 16px; width: 48px; height: 48px; border-radius: 50%; background: #e0e0e0; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #666;">JD</div>
+        </div>
+        <div style="padding: 28px 16px 12px;">
+          <div style="font-weight: 700; font-size: 14px;">Jane Doe</div>
+          <div style="color: #666; font-size: 10px;">Senior Software Engineer</div>
+          <div style="color: #999; font-size: 9px; margin-top: 2px;">San Francisco, CA · 500+ connections</div>
+          <div style="display: flex; gap: 6px; margin-top: 8px;">
+            <span style="background: #0077b5; color: white; padding: 2px 10px; border-radius: 12px; font-size: 9px;">Open to work</span>
+            <span style="border: 1px solid #0077b5; color: #0077b5; padding: 2px 10px; border-radius: 12px; font-size: 9px;">Contact</span>
+          </div>
+        </div>
+      </div>
+      <!-- Content sections -->
+      <div style="margin-top: 8px; background: white; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-family: system-ui;">
+        <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px;">About</div>
+        <div style="font-size: 9px; color: #333; line-height: 1.5;">Passionate engineer with 8+ years building scalable systems...</div>
+      </div>
+      <div style="margin-top: 8px; background: white; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-family: system-ui;">
+        <div style="font-weight: 700; font-size: 12px; margin-bottom: 8px;">Experience</div>
+        <div style="display: flex; gap: 8px; align-items: flex-start;">
+          <div style="width: 28px; height: 28px; background: #f0f0f0; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #999;">Co</div>
+          <div>
+            <div style="font-size: 10px; font-weight: 600;">Senior Software Engineer</div>
+            <div style="font-size: 9px; color: #666;">Google · Full-time</div>
+            <div style="font-size: 8px; color: #999;">Jan 2020 – Present · 6 yrs</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 8px; background: white; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-family: system-ui;">
+        <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px;">Skills</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+          <span style="background: #f3f2ef; padding: 2px 8px; border-radius: 10px; font-size: 8px;">Python</span>
+          <span style="background: #f3f2ef; padding: 2px 8px; border-radius: 10px; font-size: 8px;">React</span>
+          <span style="background: #f3f2ef; padding: 2px 8px; border-radius: 10px; font-size: 8px;">AWS</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Classic LinkedIn</h3>
+      <p>Full-width single column with LinkedIn's signature look: banner image, round avatar, stacked white cards on gray background. Each section (About, Experience, Skills, Education) is its own card.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f8f6f2;">
+      <!-- Hybrid: LinkedIn structure, current warm theme -->
+      <div style="background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-family: system-ui; font-size: 11px;">
+        <!-- Banner with warm gradient -->
+        <div style="height: 60px; background: linear-gradient(135deg, #c44d2b 0%, #e67a4a 50%, #d4956a 100%); position: relative;">
+          <div style="position: absolute; bottom: -20px; left: 16px; width: 48px; height: 48px; border-radius: 50%; background: #f5e6d8; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #c44d2b; font-weight: 600;">JD</div>
+        </div>
+        <div style="padding: 28px 16px 12px;">
+          <div style="font-weight: 700; font-size: 14px; color: #2d1a0e;">Jane Doe</div>
+          <div style="color: #6b4c3b; font-size: 10px;">Senior Software Engineer</div>
+          <div style="color: #99785e; font-size: 9px; margin-top: 2px;">San Francisco, CA</div>
+          <div style="display: flex; gap: 6px; margin-top: 8px;">
+            <span style="background: #c44d2b; color: white; padding: 2px 10px; border-radius: 12px; font-size: 9px;">Profile</span>
+            <span style="border: 1px solid #c44d2b; color: #c44d2b; padding: 2px 10px; border-radius: 12px; font-size: 9px;">Chat</span>
+          </div>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 140px; gap: 8px; margin-top: 8px;">
+        <div>
+          <div style="background: white; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-family: system-ui;">
+            <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px; color: #2d1a0e;">About</div>
+            <div style="font-size: 9px; color: #4a3728; line-height: 1.5;">Passionate engineer building scalable systems...</div>
+          </div>
+          <div style="background: white; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-family: system-ui; margin-top: 8px;">
+            <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px; color: #2d1a0e;">Experience</div>
+            <div style="display: flex; gap: 6px; align-items: flex-start;">
+              <div style="width: 24px; height: 24px; background: #f5e6d8; border-radius: 4px; flex-shrink: 0;"></div>
+              <div>
+                <div style="font-size: 10px; font-weight: 600; color: #2d1a0e;">Senior SWE</div>
+                <div style="font-size: 8px; color: #6b4c3b;">Google · 2020–Present</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="background: white; border-radius: 10px; padding: 10px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-family: system-ui;">
+            <div style="font-weight: 700; font-size: 10px; margin-bottom: 6px; color: #2d1a0e;">Skills</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+              <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 8px; font-size: 7px;">Python</span>
+              <span style="background: #ede9fe; color: #5b21b6; padding: 1px 6px; border-radius: 8px; font-size: 7px;">React</span>
+              <span style="background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 8px; font-size: 7px;">Docker</span>
+            </div>
+          </div>
+          <div style="background: white; border-radius: 10px; padding: 10px 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-family: system-ui; margin-top: 8px;">
+            <div style="font-weight: 700; font-size: 10px; margin-bottom: 4px; color: #2d1a0e;">Actions</div>
+            <div style="font-size: 8px; color: #c44d2b; cursor: pointer;">✨ Enhance</div>
+            <div style="font-size: 8px; color: #c44d2b; cursor: pointer; margin-top: 3px;">🔗 Enrich</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. LinkedIn Structure + Your Theme (Recommended)</h3>
+      <p>LinkedIn's card-based layout and banner header, but using your existing warm vermillion/cream color palette. Keeps the 2-column layout for sidebar (skills, actions). Best of both worlds.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #f8f6f2;">
+      <!-- Single column, immersive -->
+      <div style="font-family: system-ui; font-size: 11px; max-width: 280px; margin: 0 auto;">
+        <!-- Full-width hero -->
+        <div style="background: linear-gradient(135deg, #c44d2b 0%, #e67a4a 100%); border-radius: 10px; padding: 24px 16px 16px; color: white; position: relative;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; flex-shrink: 0;">JD</div>
+            <div>
+              <div style="font-weight: 700; font-size: 16px;">Jane Doe</div>
+              <div style="opacity: 0.85; font-size: 10px;">Senior Software Engineer</div>
+              <div style="opacity: 0.7; font-size: 9px;">San Francisco, CA</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 12px;">
+            <span style="background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 12px; font-size: 9px;">GitHub</span>
+            <span style="background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 12px; font-size: 9px;">LinkedIn</span>
+            <span style="background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 12px; font-size: 9px;">Website</span>
+          </div>
+        </div>
+        <!-- Skills ribbon -->
+        <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; padding: 0 4px;">
+          <span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 8px;">Python</span>
+          <span style="background: #ede9fe; color: #5b21b6; padding: 2px 8px; border-radius: 10px; font-size: 8px;">React</span>
+          <span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 10px; font-size: 8px;">AWS</span>
+          <span style="background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 10px; font-size: 8px;">PostgreSQL</span>
+        </div>
+        <!-- About -->
+        <div style="background: white; border-radius: 10px; padding: 12px 16px; margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px; color: #2d1a0e;">About</div>
+          <div style="font-size: 9px; color: #4a3728; line-height: 1.5;">Passionate engineer with 8+ years of experience...</div>
+        </div>
+        <div style="background: white; border-radius: 10px; padding: 12px 16px; margin-top: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px; color: #2d1a0e;">Experience</div>
+          <div style="display: flex; gap: 6px;">
+            <div style="width: 24px; height: 24px; background: #f5e6d8; border-radius: 4px; flex-shrink: 0;"></div>
+            <div>
+              <div style="font-size: 10px; font-weight: 600;">Senior SWE · Google</div>
+              <div style="font-size: 8px; color: #6b4c3b;">2020–Present</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Single Column Immersive</h3>
+      <p>Full-width single column, no sidebar. Bold hero header with avatar on the gradient. Skills shown as a ribbon below the header. Maximizes content width, moves sidebar content (skills, actions) inline.</p>
+    </div>
+  </div>
+</div>

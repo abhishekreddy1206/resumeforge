@@ -1,0 +1,5 @@
+{"type":"server-started","port":55981,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:55981","screen_dir":"/Users/abhishek/Workspaces/cowork/resumeforge/.superpowers/brainstorm/29962-1775861911/content","state_dir":"/Users/abhishek/Workspaces/cowork/resumeforge/.superpowers/brainstorm/29962-1775861911/state"}
+{"type":"screen-added","file":"/Users/abhishek/Workspaces/cowork/resumeforge/.superpowers/brainstorm/29962-1775861911/content/analytics-layout.html"}
+{"type":"screen-added","file":"/Users/abhishek/Workspaces/cowork/resumeforge/.superpowers/brainstorm/29962-1775861911/content/learn-layout.html"}
+{"type":"screen-added","file":"/Users/abhishek/Workspaces/cowork/resumeforge/.superpowers/brainstorm/29962-1775861911/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

@@ -8,7 +8,7 @@ import { parsePdf } from "@/lib/parsers/pdf";
 import { parseDocx } from "@/lib/parsers/docx";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
-const SECTION_BATCH_SIZE = 2;
+const SECTION_BATCH_SIZE = 1;
 
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -105,8 +105,10 @@ export async function POST(request: NextRequest) {
       model,
     });
 
-    // Build skeleton content with empty sections
-    const skeletonContent: GuideContent = {
+    // Build skeleton content with empty sections.
+    // _sectionPlan preserves original scopes so the resume endpoint can pass
+    // them to generateGuideSection (without it, scope is lost after creation).
+    const skeletonContent = {
       title: outline.title,
       overview: outline.overview,
       estimatedMinutes: outline.estimatedMinutes,
@@ -122,7 +124,8 @@ export async function POST(request: NextRequest) {
         keyTakeaways: [],
       })),
       references: outline.references,
-    };
+      _sectionPlan: outline.sectionPlan,
+    } satisfies GuideContent & { _sectionPlan: typeof outline.sectionPlan };
 
     let slug = slugify(topic);
     const existing = await prisma.guide.findUnique({ where: { slug } });

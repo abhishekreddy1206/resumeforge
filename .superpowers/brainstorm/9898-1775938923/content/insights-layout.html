@@ -1,0 +1,90 @@
+<h2>Insights Page Layout</h2>
+<p class="subtitle">Which layout structure works best for the /insights page?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Single Column — Scrolling Narrative</h3>
+      <p>Full-width sections stacked vertically. Each section tells part of the story: clusters → demand → gaps → learn topics. Like a data report you scroll through.</p>
+      <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:16px; background:rgba(255,255,255,0.03);">
+        <div style="background:rgba(99,102,241,0.15); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Summary Bar</strong> — 12 realistic targets · 2 role profiles · 4 high-demand gaps
+        </div>
+        <div style="background:rgba(99,102,241,0.08); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Job Clusters</strong> — full width cards showing 2-4 clusters
+        </div>
+        <div style="background:rgba(99,102,241,0.08); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Demand Patterns</strong> — full width bar chart
+        </div>
+        <div style="background:rgba(99,102,241,0.08); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Gap Analysis</strong> — full width: gaps vs bridges vs strengths
+        </div>
+        <div style="background:rgba(59,130,246,0.15); border-radius:6px; padding:10px 14px; font-size:13px;">
+          <strong>Study ROI</strong> — recommended topics with "Generate Guide" buttons
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>Simple, no layout decisions</li><li>Each section gets full width</li><li>Natural reading flow (top → bottom)</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Long scroll to reach Study ROI</li><li>Can't see clusters and demand side-by-side</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Dashboard Grid — Clusters Drive Everything</h3>
+      <p>Clusters are the hero section. Clicking a cluster filters demand patterns and gaps below it. Two-column grid for demand + gaps side by side. Study topics at the bottom.</p>
+      <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:16px; background:rgba(255,255,255,0.03);">
+        <div style="background:rgba(99,102,241,0.15); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Summary Bar</strong> — 12 realistic targets · 2 role profiles · 4 high-demand gaps
+        </div>
+        <div style="background:rgba(99,102,241,0.12); border-radius:6px; padding:14px; margin-bottom:8px; font-size:13px;">
+          <strong>🎯 Job Clusters (hero)</strong> — clickable cards, "All" tab + per-cluster tabs
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <div style="flex:1; background:rgba(99,102,241,0.08); border-radius:6px; padding:10px 14px; font-size:13px;">
+            <strong>Demand Patterns</strong><br/>filtered by selected cluster
+          </div>
+          <div style="flex:1; background:rgba(99,102,241,0.08); border-radius:6px; padding:10px 14px; font-size:13px;">
+            <strong>Gap Analysis</strong><br/>filtered by selected cluster
+          </div>
+        </div>
+        <div style="background:rgba(59,130,246,0.15); border-radius:6px; padding:10px 14px; font-size:13px;">
+          <strong>Study ROI</strong> — topics filtered by cluster context
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>Interactive — cluster selection drives the whole page</li><li>Demand + gaps visible together</li><li>Answers "what does THIS type of role want?"</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>More complex state management</li><li>Cluster names need to be good or it's confusing</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Tabbed Sections — One Focus at a Time</h3>
+      <p>Summary bar at top, then tabs: Clusters | Demand | Gaps | Study. Each tab is a focused, full-page view. No scrolling past unrelated sections.</p>
+      <div style="margin-top:12px; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:16px; background:rgba(255,255,255,0.03);">
+        <div style="background:rgba(99,102,241,0.15); border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:13px;">
+          <strong>Summary Bar</strong> — always visible at top
+        </div>
+        <div style="display:flex; gap:4px; margin-bottom:8px;">
+          <div style="background:rgba(99,102,241,0.2); border-radius:6px 6px 0 0; padding:6px 14px; font-size:12px; font-weight:600;">Clusters</div>
+          <div style="background:rgba(99,102,241,0.08); border-radius:6px 6px 0 0; padding:6px 14px; font-size:12px;">Demand</div>
+          <div style="background:rgba(99,102,241,0.08); border-radius:6px 6px 0 0; padding:6px 14px; font-size:12px;">Gaps</div>
+          <div style="background:rgba(99,102,241,0.08); border-radius:6px 6px 0 0; padding:6px 14px; font-size:12px;">Study</div>
+        </div>
+        <div style="background:rgba(99,102,241,0.08); border-radius:0 6px 6px 6px; padding:14px; font-size:13px; min-height:60px;">
+          <strong>Active tab content</strong> — full page for each section
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>Clean, focused view per section</li><li>No scroll fatigue</li><li>Easy to add new tabs later (extensible)</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Can't see relationships between sections</li><li>Clicking between tabs to compare demand vs gaps</li><li>Loses the narrative flow</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

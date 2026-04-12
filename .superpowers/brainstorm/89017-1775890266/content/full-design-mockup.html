@@ -1,0 +1,291 @@
+<h2>LinkedIn-Style Profile Redesign — Full Mockup</h2>
+<p class="subtitle">Here's the complete design. Scroll to see all sections, then let me know what you think.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Profile Page — LinkedIn Structure + Warm Theme</div>
+  <div class="mockup-body" style="background: #f5f1eb; padding: 0; overflow: hidden;">
+
+    <!-- Full-width banner header card -->
+    <div style="background: white; border-radius: 0 0 12px 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 12px;">
+      <!-- Banner gradient -->
+      <div style="height: 100px; background: linear-gradient(135deg, #9a3412 0%, #c2410c 30%, #ea580c 60%, #d4956a 100%); position: relative;">
+        <!-- Action buttons top-right -->
+        <div style="position: absolute; top: 8px; right: 12px; display: flex; gap: 6px;">
+          <span style="background: rgba(255,255,255,0.2); backdrop-filter: blur(4px); color: white; padding: 3px 10px; border-radius: 8px; font-size: 9px; font-family: system-ui; cursor: pointer;">✨ Enhance</span>
+          <span style="background: rgba(255,255,255,0.2); backdrop-filter: blur(4px); color: white; padding: 3px 10px; border-radius: 8px; font-size: 9px; font-family: system-ui; cursor: pointer;">💬 Chat</span>
+        </div>
+      </div>
+
+      <!-- Profile info section -->
+      <div style="padding: 0 24px 16px; position: relative; font-family: system-ui;">
+        <!-- Avatar -->
+        <div style="position: absolute; top: -36px; left: 24px; width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #fef3c7, #fed7aa); border: 4px solid white; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: #9a3412; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">JD</div>
+
+        <div style="padding-top: 44px; display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h1 style="font-size: 20px; font-weight: 700; color: #1c1917; margin: 0; font-family: 'Georgia', serif;">Jane Doe</h1>
+            <p style="font-size: 12px; color: #57534e; margin: 2px 0 0;">Senior Software Engineer · Full Stack</p>
+            <p style="font-size: 10px; color: #a8a29e; margin: 4px 0 0;">📍 San Francisco, CA · 📧 jane@example.com · 📱 (555) 123-4567</p>
+
+            <!-- Social links -->
+            <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
+              <a style="display: inline-flex; align-items: center; gap: 3px; background: #f5f5f4; padding: 3px 10px; border-radius: 14px; font-size: 9px; color: #57534e; text-decoration: none; border: 1px solid #e7e5e4;">
+                <span style="font-size: 10px;">🔗</span> linkedin.com/in/janedoe
+              </a>
+              <a style="display: inline-flex; align-items: center; gap: 3px; background: #f5f5f4; padding: 3px 10px; border-radius: 14px; font-size: 9px; color: #57534e; text-decoration: none; border: 1px solid #e7e5e4;">
+                <span style="font-size: 10px;">💻</span> github.com/janedoe
+              </a>
+              <a style="display: inline-flex; align-items: center; gap: 3px; background: #f5f5f4; padding: 3px 10px; border-radius: 14px; font-size: 9px; color: #57534e; text-decoration: none; border: 1px solid #e7e5e4;">
+                <span style="font-size: 10px;">🌐</span> janedoe.dev
+              </a>
+            </div>
+          </div>
+
+          <!-- Upload / Replace resume -->
+          <div style="display: flex; gap: 6px; flex-shrink: 0;">
+            <span style="background: #c2410c; color: white; padding: 5px 14px; border-radius: 8px; font-size: 10px; font-weight: 600; cursor: pointer;">Upload Resume</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two column layout -->
+    <div style="display: grid; grid-template-columns: 1fr 200px; gap: 12px; padding: 0 0 20px; font-family: system-ui;">
+
+      <!-- LEFT COLUMN -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+
+        <!-- About Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">About</h2>
+          </div>
+          <p style="font-size: 10px; color: #44403c; line-height: 1.7; margin: 0;">Passionate software engineer with 8+ years of experience building scalable distributed systems and leading cross-functional teams. Expertise in cloud architecture, real-time data processing, and developer tooling. Strong track record of shipping products used by millions.</p>
+        </div>
+
+        <!-- Experience Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">💼 Experience</h2>
+            <span style="font-size: 9px; color: #c2410c; cursor: pointer; font-weight: 500;">+ Add</span>
+          </div>
+
+          <!-- Experience entry 1 -->
+          <div style="display: flex; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #f5f5f4; margin-bottom: 14px;">
+            <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #dbeafe, #bfdbfe); border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px;">G</div>
+            <div style="flex: 1;">
+              <div style="font-size: 12px; font-weight: 600; color: #1c1917;">Senior Software Engineer</div>
+              <div style="font-size: 10px; color: #57534e;">Google · Full-time</div>
+              <div style="font-size: 9px; color: #a8a29e; margin-top: 2px;">Jan 2020 – Present · 6 yrs 3 mos</div>
+              <ul style="font-size: 9px; color: #44403c; line-height: 1.6; margin: 8px 0 0; padding-left: 14px;">
+                <li>Led migration of 40+ microservices to Kubernetes, reducing deployment time by 60%</li>
+                <li>Designed real-time analytics pipeline processing 2M events/sec</li>
+              </ul>
+              <div style="display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;">
+                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 6px; font-size: 7px;">Go</span>
+                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 6px; font-size: 7px;">Kubernetes</span>
+                <span style="background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 6px; font-size: 7px;">GCP</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Experience entry 2 -->
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #fce7f3, #fbcfe8); border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px;">A</div>
+            <div style="flex: 1;">
+              <div style="font-size: 12px; font-weight: 600; color: #1c1917;">Software Engineer</div>
+              <div style="font-size: 10px; color: #57534e;">Airbnb · Full-time</div>
+              <div style="font-size: 9px; color: #a8a29e; margin-top: 2px;">Mar 2017 – Dec 2019 · 2 yrs 10 mos</div>
+              <ul style="font-size: 9px; color: #44403c; line-height: 1.6; margin: 8px 0 0; padding-left: 14px;">
+                <li>Built search ranking improvements increasing booking conversion by 12%</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Projects Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">🚀 Projects</h2>
+            <span style="font-size: 9px; color: #c2410c; cursor: pointer; font-weight: 500;">+ Add</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="border: 1px solid #f5f5f4; border-radius: 8px; padding: 10px 12px;">
+              <div style="font-size: 11px; font-weight: 600; color: #1c1917;">CloudDeploy CLI</div>
+              <div style="font-size: 9px; color: #57534e; margin-top: 3px; line-height: 1.5;">Open-source deployment tool for multi-cloud environments</div>
+              <div style="display: flex; gap: 3px; margin-top: 6px;">
+                <span style="background: #dbeafe; color: #1e40af; padding: 1px 5px; border-radius: 4px; font-size: 7px;">Rust</span>
+                <span style="background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 4px; font-size: 7px;">AWS</span>
+              </div>
+            </div>
+            <div style="border: 1px solid #f5f5f4; border-radius: 8px; padding: 10px 12px;">
+              <div style="font-size: 11px; font-weight: 600; color: #1c1917;">DataViz Dashboard</div>
+              <div style="font-size: 9px; color: #57534e; margin-top: 3px; line-height: 1.5;">Real-time metrics visualization with WebSocket streaming</div>
+              <div style="display: flex; gap: 3px; margin-top: 6px;">
+                <span style="background: #ede9fe; color: #5b21b6; padding: 1px 5px; border-radius: 4px; font-size: 7px;">React</span>
+                <span style="background: #dbeafe; color: #1e40af; padding: 1px 5px; border-radius: 4px; font-size: 7px;">TypeScript</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Education Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">🎓 Education</h2>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #d1fae5, #a7f3d0); border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px;">S</div>
+            <div>
+              <div style="font-size: 12px; font-weight: 600; color: #1c1917;">Stanford University</div>
+              <div style="font-size: 10px; color: #57534e;">M.S. Computer Science</div>
+              <div style="font-size: 9px; color: #a8a29e; margin-top: 2px;">2015 – 2017 · GPA 3.9</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Publications Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">📄 Publications</h2>
+            <span style="font-size: 9px; color: #c2410c; cursor: pointer; font-weight: 500;">+ Add</span>
+          </div>
+          <div style="border-left: 2px solid #fed7aa; padding-left: 12px;">
+            <div style="font-size: 11px; font-weight: 600; color: #1c1917;">Scalable Event Processing in Distributed Systems</div>
+            <div style="font-size: 9px; color: #57534e;">IEEE Conference on Distributed Computing · 2021</div>
+            <div style="font-size: 9px; color: #c2410c; margin-top: 3px; cursor: pointer;">View publication →</div>
+          </div>
+        </div>
+
+        <!-- Certifications Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">🏆 Certifications</h2>
+            <span style="font-size: 9px; color: #c2410c; cursor: pointer; font-weight: 500;">+ Add</span>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #fef9c3, #fde68a); border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px;">🏅</div>
+            <div>
+              <div style="font-size: 11px; font-weight: 600; color: #1c1917;">AWS Solutions Architect – Professional</div>
+              <div style="font-size: 9px; color: #57534e;">Amazon Web Services · Issued Jan 2023</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recommendations Card -->
+        <div style="background: white; border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 700; color: #1c1917; margin: 0;">💬 Recommendations</h2>
+            <span style="font-size: 9px; color: #c2410c; cursor: pointer; font-weight: 500;">+ Add</span>
+          </div>
+          <div style="background: #fafaf9; border-radius: 8px; padding: 12px; border-left: 3px solid #c2410c;">
+            <p style="font-size: 10px; color: #44403c; line-height: 1.6; margin: 0; font-style: italic;">"Jane is one of the most talented engineers I've had the pleasure of working with. Her ability to break down complex problems is remarkable."</p>
+            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+              <div style="width: 24px; height: 24px; border-radius: 50%; background: #e7e5e4; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #78716c;">MK</div>
+              <div>
+                <div style="font-size: 9px; font-weight: 600; color: #1c1917;">Mike Kim</div>
+                <div style="font-size: 8px; color: #a8a29e;">Engineering Manager at Google</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT SIDEBAR -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+
+        <!-- Skills Card -->
+        <div style="background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <h3 style="font-size: 13px; font-weight: 700; color: #1c1917; margin: 0 0 10px;">Skills</h3>
+
+          <div style="margin-bottom: 8px;">
+            <div style="font-size: 8px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Languages</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+              <span style="background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 6px; font-size: 8px;">Python</span>
+              <span style="background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 6px; font-size: 8px;">Go</span>
+              <span style="background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 6px; font-size: 8px;">TypeScript</span>
+              <span style="background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 6px; font-size: 8px;">Rust</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 8px;">
+            <div style="font-size: 8px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Frameworks</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+              <span style="background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 6px; font-size: 8px;">React</span>
+              <span style="background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 6px; font-size: 8px;">Next.js</span>
+              <span style="background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 6px; font-size: 8px;">FastAPI</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 8px;">
+            <div style="font-size: 8px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Cloud</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 6px; font-size: 8px;">AWS</span>
+              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 6px; font-size: 8px;">GCP</span>
+              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 6px; font-size: 8px;">K8s</span>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 8px; font-weight: 600; color: #a8a29e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Databases</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+              <span style="background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 6px; font-size: 8px;">PostgreSQL</span>
+              <span style="background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 6px; font-size: 8px;">Redis</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Application Settings (collapsed) -->
+        <div style="background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="font-size: 12px; font-weight: 700; color: #1c1917; margin: 0;">⚙️ Application Settings</h3>
+            <span style="font-size: 14px; color: #a8a29e; cursor: pointer;">›</span>
+          </div>
+          <p style="font-size: 8px; color: #a8a29e; margin: 4px 0 0;">Work auth, salary, preferences</p>
+        </div>
+
+        <!-- AI Enhancements -->
+        <div style="background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #fed7aa;">
+          <h3 style="font-size: 12px; font-weight: 700; color: #1c1917; margin: 0 0 6px;">✨ AI Enhancements</h3>
+          <p style="font-size: 9px; color: #57534e; margin: 0 0 8px;">Get AI suggestions to improve your profile</p>
+          <button style="background: linear-gradient(135deg, #c2410c, #ea580c); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 9px; width: 100%; cursor: pointer; font-weight: 600;">Generate Suggestions</button>
+        </div>
+
+        <!-- Enrich Profile -->
+        <div style="background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+          <h3 style="font-size: 12px; font-weight: 700; color: #1c1917; margin: 0 0 8px;">🔗 Enrich Profile</h3>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #fafaf9; border-radius: 6px; cursor: pointer;">
+              <span style="font-size: 12px;">💻</span>
+              <span style="font-size: 9px; color: #44403c;">Import from GitHub</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #fafaf9; border-radius: 6px; cursor: pointer;">
+              <span style="font-size: 12px;">📊</span>
+              <span style="font-size: 9px; color: #44403c;">Import from StackOverflow</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #fafaf9; border-radius: 6px; cursor: pointer;">
+              <span style="font-size: 12px;">🔗</span>
+              <span style="font-size: 9px; color: #44403c;">Import from LinkedIn</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div style="margin-top: 24px; padding: 16px; background: rgba(194, 65, 12, 0.05); border-radius: 10px; border: 1px solid rgba(194, 65, 12, 0.15);">
+  <h3 style="margin: 0 0 8px; font-size: 14px;">Key Design Changes</h3>
+  <ul style="font-size: 12px; line-height: 1.8; margin: 0; padding-left: 20px; color: #44403c;">
+    <li><strong>Banner header</strong> — Full-width gradient with avatar initials, name, headline, contact, and social link pills</li>
+    <li><strong>Card-per-section</strong> — Each section (About, Experience, Projects, etc.) is its own white card with rounded corners and subtle shadow</li>
+    <li><strong>Company logos</strong> — Colored initial squares next to experience/education entries (like LinkedIn company logos)</li>
+    <li><strong>Skill badges on experience</strong> — Each experience shows its tagged skills as colored badges</li>
+    <li><strong>Warm palette preserved</strong> — Vermillion gradient banner, cream page background, orange accent colors throughout</li>
+    <li><strong>Sidebar intact</strong> — Skills (grouped by category), App Settings, AI Enhancements, and Enrich stay in the right column</li>
+    <li><strong>Existing edit UX preserved</strong> — All add/edit/delete buttons remain, just restyled to match</li>
+  </ul>
+</div>
