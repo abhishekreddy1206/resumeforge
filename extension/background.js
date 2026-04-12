@@ -275,12 +275,18 @@ async function handleMessage(msg) {
           body: JSON.stringify({
             url: extraction.url,
             title: extraction.title || "Untitled",
-            content,
+            fallbackContent: content,
             type,
           }),
         });
         const saved = await res.json();
-        return { success: true, captureType: "article", title: saved.title, id: saved.id };
+        return {
+          success: true,
+          captureType: "article",
+          title: saved.title,
+          id: saved.id,
+          suggestions: saved.suggestions || [],
+        };
       }
 
       throw new Error(`Unknown capture type: ${captureType}`);

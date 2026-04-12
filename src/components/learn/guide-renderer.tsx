@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { SectionBlock } from "./section-block";
 import { ProgressTracker } from "./progress-tracker";
+import { RefinePanel } from "./refine-panel";
+import { Sparkles } from "lucide-react";
 import type { GuideContent } from "@/lib/claude/skills/guide-generator";
 
 interface SectionProgress {
@@ -15,11 +17,15 @@ interface GuideRendererProps {
   content: GuideContent;
   initialProgress: Record<string, SectionProgress>;
   onProgressUpdate: (progress: Record<string, SectionProgress>) => void;
+  existingSources?: Array<{ id: string; type: string; url: string | null; title: string | null; createdAt: string }>;
+  onRefined?: () => void;
 }
 
-export function GuideRenderer({ guideId, content, initialProgress, onProgressUpdate }: GuideRendererProps) {
+export function GuideRenderer({ guideId, content, initialProgress, onProgressUpdate, existingSources, onRefined }: GuideRendererProps) {
   const [progress, setProgress] = useState<Record<string, SectionProgress>>(initialProgress);
   const [activeSection, setActiveSection] = useState(content.sections[0]?.id);
+  const [expandedSection, setExpandedSection] = useState(content.sections[0]?.id ?? "");
+  const [refiningSection, setRefiningSection] = useState<string | null>(null);
 
   const updateProgress = useCallback((newProgress: Record<string, SectionProgress>) => {
     setProgress(newProgress);
@@ -56,6 +62,7 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
 
   const handleSectionClick = (id: string) => {
     setActiveSection(id);
+    setExpandedSection(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -88,9 +95,32 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
               <SectionBlock
                 section={section}
                 guideId={guideId}
+                isExpanded={expandedSection === section.id}
+                onToggle={() => setExpandedSection(prev => prev === section.id ? "" : section.id)}
                 onQuizComplete={handleQuizComplete}
                 onScenarioComplete={handleScenarioComplete}
               />
+              {/* Per-section refine button */}
+              {existingSources && existingSources.length > 0 && onRefined && section.explanation.length > 0 && (
+                <div className="mt-6">
+                  {refiningSection === section.id ? (
+                    <RefinePanel
+                      guideId={guideId}
+                      existingSources={existingSources}
+                      onRefined={() => { setRefiningSection(null); onRefined(); }}
+                      sectionId={section.id}
+                      sectionTitle={section.title}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setRefiningSection(section.id)}
+                      className="label-mono text-muted-foreground/60 hover:text-primary flex items-center gap-1.5 transition-colors"
+                    >
+                      <Sparkles className="w-3 h-3" /> Refine this section
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

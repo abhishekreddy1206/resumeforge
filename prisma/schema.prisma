@@ -309,6 +309,8 @@ model Guide {
   learningPath     LearningPath?  @relation(fields: [learningPathId], references: [id])
   sources          GuideSource[]
   versions         GuideVersion[]
+  lastAsyncError   String?
+  lastAsyncStage   String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
@@ -342,5 +344,9 @@ model SavedSource {
   url       String
   title     String
   content   String
+  captureMethod   String?
+  publisher       String?
+  publishedAt     String?
+  lastRefreshedAt DateTime?
   createdAt DateTime @default(now())
 }

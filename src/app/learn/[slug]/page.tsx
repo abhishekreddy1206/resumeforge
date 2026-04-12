@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GuideRenderer } from "@/components/learn/guide-renderer";
 import { RefinePanel } from "@/components/learn/refine-panel";
 import { ArrowLeft, Clock, Signal, BookOpen, Sparkles, RotateCcw } from "lucide-react";
-import type { GuideContent } from "@/lib/claude/skills/guide-generator";
+import type { GuideContent, SectionGenStatus } from "@/lib/claude/skills/guide-generator";
 
 interface GuideData {
   id: string;
@@ -15,6 +16,8 @@ interface GuideData {
   version: number;
   status: string;
   completionStatus: string;
+  lastAsyncError: string | null;
+  lastAsyncStage: string | null;
   sectionProgress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>;
   sources: Array<{ id: string; type: string; url: string | null; title: string | null; createdAt: string }>;
   versions: Array<{ id: string; version: number; changeDescription: string | null; createdAt: string }>;
@@ -64,11 +67,19 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
           return;
         }
 
-        const readySections = (updated.content as GuideContent).sections.filter(
-          (s: GuideContent["sections"][number]) => s.explanation.length > 0
-        ).length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const statuses: Record<string, string> = (updated.content as any)._sectionStatuses || {};
+        const completedCount = Object.values(statuses).filter((s) => s === "completed").length;
+        const refiningCount = Object.values(statuses).filter((s) => s === "refining").length;
+        // Fallback for legacy guides with no _sectionStatuses: count sections with empty explanation
+        let pendingCount = Object.values(statuses).filter((s) => s === "pending").length;
+        if (Object.keys(statuses).length === 0) {
+          pendingCount = (updated.content as GuideContent).sections.filter(
+            (s) => !s.explanation || s.explanation.length === 0
+          ).length;
+        }
         const totalSections = (updated.content as GuideContent).sections.length;
-        const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
+        const pct = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
 
         if (pct === lastPctRef.current) {
           stalePollsRef.current++;
@@ -78,7 +89,9 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         }
 
         // Auto-resume: if no progress for 4 polls (20s) and not already resuming
-        if (stalePollsRef.current >= 4 && !resumingRef.current) {
+        // Do NOT auto-resume when sections are "refining" — the refine after() is still working
+        // Only resume when there are pending sections (meaning initial generation stalled)
+        if (stalePollsRef.current >= 4 && !resumingRef.current && pendingCount > 0 && refiningCount === 0) {
           resumingRef.current = true;
           setResuming(true);
           setResumeError(null);
@@ -179,7 +192,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
     return (
       <div className="max-w-5xl mx-auto py-8 px-4 text-center">
         <p className="text-muted-foreground">{error || "Guide not found"}</p>
-        <a href="/learn" className="label-mono text-primary hover:text-primary/80 mt-4 inline-block transition-colors">Back to Learn</a>
+        <Link href="/learn" className="label-mono text-primary hover:text-primary/80 mt-4 inline-block transition-colors">Back to Learn</Link>
       </div>
     );
   }
@@ -189,14 +202,15 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
     : guide.content.difficulty === "intermediate"
     ? "text-primary"
     : "text-chart-3";
+  const asyncStageLabel = guide.lastAsyncStage?.replace(/_/g, " ");
 
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-8 anim-fade-up">
-        <a href="/learn" className="label-mono text-muted-foreground hover:text-primary flex items-center gap-1.5 transition-colors">
+        <Link href="/learn" className="label-mono text-muted-foreground hover:text-primary flex items-center gap-1.5 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Learn
-        </a>
+        </Link>
         <span className="label-mono text-muted-foreground/60">v{guide.version}</span>
       </div>
 
@@ -231,11 +245,33 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         <div className="section-divider mt-5" />
       </div>
 
-      {/* Generation progress */}
+      {guide.lastAsyncError && (
+        <div className="mb-6 border border-amber-500/30 bg-amber-500/10 rounded px-4 py-3 anim-fade-up">
+          <p className="text-sm text-foreground">
+            <span className="font-medium">Latest background issue{asyncStageLabel ? ` (${asyncStageLabel})` : ""}:</span>{" "}
+            {guide.lastAsyncError}
+          </p>
+        </div>
+      )}
+
+      {/* Generation progress — per-section status */}
       {guide.status === "generating" && (() => {
-        const readySections = guide.content.sections.filter((s) => s.explanation.length > 0).length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sectionStatuses: Record<string, SectionGenStatus> = (guide.content as any)._sectionStatuses || {};
+        const completedCount = Object.values(sectionStatuses).filter((s) => s === "completed").length;
         const totalSections = guide.content.sections.length;
-        const pct = totalSections > 0 ? Math.round((readySections / totalSections) * 100) : 0;
+        const pct = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
+
+        const statusIcon = (status: SectionGenStatus | undefined) => {
+          switch (status) {
+            case "completed": return <span className="text-chart-3">{"\u2713"}</span>;
+            case "generating": return <span className="text-primary animate-pulse">{"\u25CF"}</span>;
+            case "failed": return <span className="text-destructive">{"\u2717"}</span>;
+            case "refining": return <span className="text-blue-400 animate-pulse">{"\u21BB"}</span>;
+            default: return <span className="text-muted-foreground">{"\u25CB"}</span>;
+          }
+        };
+
         return (
           <div className="mb-8 border border-primary/20 bg-primary/5 rounded px-5 py-4 anim-fade-up">
             <div className="flex items-center gap-2 mb-3">
@@ -251,22 +287,35 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
             </div>
             <div className="flex gap-2 flex-wrap">
               {guide.content.sections.map((s) => {
-                const isReady = s.explanation.length > 0;
+                const status = sectionStatuses[s.id] || "pending";
                 return (
                   <span
                     key={s.id}
-                    className={`label-mono px-2 py-0.5 rounded ${
-                      isReady ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                    className={`label-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                      status === "completed" ? "bg-chart-3/20 text-chart-3" :
+                      status === "generating" ? "bg-primary/20 text-primary" :
+                      status === "failed" ? "bg-destructive/20 text-destructive" :
+                      "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {isReady ? "\u2713" : "\u2022"} {s.title}
+                    {statusIcon(status)} {s.title}
                   </span>
                 );
               })}
             </div>
             <p className="label-mono text-muted-foreground/60 mt-2">
-              {readySections} of {totalSections} sections ready
+              {completedCount} of {totalSections} sections ready
             </p>
+            {!resuming && !resumeError && (
+              <div className="mt-3 pt-3 border-t border-primary/10">
+                <button
+                  onClick={handleResumeGeneration}
+                  className="label-mono text-primary hover:text-primary/80 flex items-center gap-1.5 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" /> Resume Generation
+                </button>
+              </div>
+            )}
             {resuming && (
               <div className="mt-3 pt-3 border-t border-primary/10 flex items-center gap-2">
                 <RotateCcw className="w-3 h-3 text-primary animate-spin" />
@@ -289,24 +338,37 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         );
       })()}
 
-      {/* Failed state — offer retry */}
-      {guide.status === "failed" && guide.content.sections.some((s) => s.explanation.length === 0) && (
-        <div className="mb-8 border border-destructive/20 bg-destructive/5 rounded px-5 py-4 anim-fade-up">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Some sections failed to generate.
-            </span>
-            <button
-              onClick={handleResumeGeneration}
-              disabled={resuming}
-              className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
-              {resuming ? "Retrying..." : "Retry Failed Sections"}
-            </button>
+      {/* Failed state — offer retry with per-section details */}
+      {guide.status === "failed" && (() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const statuses: Record<string, string> = (guide.content as any)._sectionStatuses || {};
+        const failedSections = guide.content.sections.filter((s) => statuses[s.id] === "failed");
+        if (failedSections.length === 0) return null;
+        return (
+          <div className="mb-8 border border-destructive/20 bg-destructive/5 rounded px-5 py-4 anim-fade-up">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">
+                {failedSections.length} section{failedSections.length > 1 ? "s" : ""} failed to generate.
+              </span>
+              <button
+                onClick={handleResumeGeneration}
+                disabled={resuming}
+                className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+              >
+                <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
+                {resuming ? "Retrying..." : "Retry Failed Sections"}
+              </button>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {failedSections.map((s) => (
+                <span key={s.id} className="label-mono px-2 py-0.5 rounded bg-destructive/10 text-destructive">
+                  {s.title}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Guide content */}
       <div className="anim-fade-up-2">
@@ -315,8 +377,42 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
           content={guide.content}
           initialProgress={guide.sectionProgress}
           onProgressUpdate={handleProgressUpdate}
+          existingSources={guide.sources}
+          onRefined={fetchGuide}
         />
       </div>
+
+      {/* Published but with some failed sections — offer retry */}
+      {guide.status === "published" && (() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const statuses: Record<string, string> = (guide.content as any)._sectionStatuses || {};
+        const failedSections = guide.content.sections.filter((s) => statuses[s.id] === "failed");
+        if (failedSections.length === 0) return null;
+        return (
+          <div className="mb-8 border border-yellow-500/20 bg-yellow-500/5 rounded px-5 py-4 anim-fade-up">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">
+                {failedSections.length} section{failedSections.length > 1 ? "s" : ""} could not be generated.
+              </span>
+              <button
+                onClick={handleResumeGeneration}
+                disabled={resuming}
+                className="label-mono text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+              >
+                <RotateCcw className={`w-3 h-3 ${resuming ? "animate-spin" : ""}`} />
+                {resuming ? "Retrying..." : "Retry"}
+              </button>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {failedSections.map((s) => (
+                <span key={s.id} className="label-mono px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+                  {s.title}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Refine panel — hidden during generation to prevent race conditions */}
       <div className="mt-16 anim-fade-up-3">

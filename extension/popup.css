@@ -377,6 +377,32 @@ body {
   color: #92400e;
 }
 
+.capture-suggestions {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(22, 101, 52, 0.16);
+}
+
+.capture-suggestions-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #166534;
+  margin-bottom: 6px;
+}
+
+.capture-suggestion-link {
+  display: block;
+  color: #166534;
+  text-decoration: none;
+  margin-top: 4px;
+}
+
+.capture-suggestion-link:hover {
+  text-decoration: underline;
+}
+
 /* ── Warning ── */
 .warning {
   font-size: 11px;

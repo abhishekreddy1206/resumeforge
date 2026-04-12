@@ -1,5 +1,16 @@
 import { askJson } from "../client";
-import { GUIDE_INSTRUCTIONS, GUIDE_SCHEMA, SECTION_SCHEMA, OUTLINE_SCHEMA, truncateSource } from "./guide-prompts";
+import {
+  GUIDE_INSTRUCTIONS, GUIDE_SCHEMA, SECTION_SCHEMA, OUTLINE_SCHEMA, truncateSource,
+  SECTION_CORE_INSTRUCTIONS, SECTION_CORE_SCHEMA,
+  SECTION_ASSESSMENT_INSTRUCTIONS, SECTION_ASSESSMENT_SCHEMA,
+} from "./guide-prompts";
+
+export type SectionGenStatus = "pending" | "generating" | "completed" | "failed" | "refining";
+
+export interface GuideContentStorage extends GuideContent {
+  _sectionPlan?: Array<{ id: string; title: string; scope: string }>;
+  _sectionStatuses?: Record<string, SectionGenStatus>;
+}
 
 export interface CodeExample {
   language: string;
@@ -108,9 +119,9 @@ export async function refineGuide(
       id: s.id,
       title: s.title,
       keyTakeaways: s.keyTakeaways,
-      hasCode: s.codeExamples.length > 0,
-      checkCount: s.knowledgeChecks.length,
-      scenarioCount: s.interviewScenarios.length,
+      hasCode: (s.codeExamples?.length ?? 0) > 0,
+      checkCount: s.knowledgeChecks?.length ?? 0,
+      scenarioCount: s.interviewScenarios?.length ?? 0,
     })),
   };
 
@@ -160,8 +171,12 @@ ${OUTLINE_SCHEMA}`, { timeoutMs: 120_000, skill: "guide-outline", model: options
 }
 
 /**
- * Generate a single section's full content. Designed to run in parallel
- * with other section generations.
+ * Generate a single section's full content via two sequential calls:
+ * 1. Core: explanation, code examples, key takeaways (~60s)
+ * 2. Assessment: knowledge checks, interview scenarios (~50s)
+ *
+ * If the assessment call fails, returns the section with empty assessments
+ * rather than failing the entire section.
  */
 export async function generateGuideSection(
   topic: string,
@@ -173,8 +188,7 @@ export async function generateGuideSection(
     ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 6000)}`).join("\n\n")}`
     : "";
 
-  return askJson<GuideSection>(`${GUIDE_INSTRUCTIONS}
-
+  const sectionContext = `
 GUIDE TOPIC: ${topic}
 DIFFICULTY: ${context.difficulty}
 OTHER SECTIONS: ${context.siblingTitles.join(", ")}
@@ -182,8 +196,109 @@ OTHER SECTIONS: ${context.siblingTitles.join(", ")}
 SECTION TO WRITE:
 - ID: ${sectionPlan.id}
 - Title: ${sectionPlan.title}
-- Scope: ${sectionPlan.scope}${sourceBlock}
+- Scope: ${sectionPlan.scope}${sourceBlock}`;
+
+  // Call 1: Core content — explanation, code, takeaways
+  const core = await askJson<{
+    id: string;
+    title: string;
+    explanation: string;
+    codeExamples: Array<{ language: string; code: string; caption: string }>;
+    keyTakeaways: string[];
+  }>(`${SECTION_CORE_INSTRUCTIONS}
+${sectionContext}
 
 Return ONLY valid JSON:
-${SECTION_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section", model: options?.model });
+${SECTION_CORE_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-core", model: options?.model });
+
+  // Call 2: Assessment content — quizzes and interview scenarios
+  let knowledgeChecks: GuideSection["knowledgeChecks"] = [];
+  let interviewScenarios: GuideSection["interviewScenarios"] = [];
+
+  try {
+    const assessment = await askJson<{
+      knowledgeChecks: GuideSection["knowledgeChecks"];
+      interviewScenarios: GuideSection["interviewScenarios"];
+    }>(`${SECTION_ASSESSMENT_INSTRUCTIONS}
+
+SECTION EXPLANATION:
+${core.explanation.slice(0, 4000)}
+${sectionContext}
+
+Return ONLY valid JSON:
+${SECTION_ASSESSMENT_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-assessment", model: options?.model });
+
+    knowledgeChecks = assessment.knowledgeChecks || [];
+    interviewScenarios = assessment.interviewScenarios || [];
+  } catch (err) {
+    console.warn(`[guide-section] Assessment call failed for "${sectionPlan.title}", returning core-only section:`, err);
+  }
+
+  return {
+    id: core.id || sectionPlan.id,
+    title: core.title || sectionPlan.title,
+    explanation: core.explanation,
+    codeExamples: core.codeExamples || [],
+    knowledgeChecks,
+    interviewScenarios,
+    keyTakeaways: core.keyTakeaways || [],
+  };
+}
+
+/**
+ * Refine a single section with new source material.
+ * Cheaper than full-guide refine (~$0.10-0.30 vs $2-5).
+ */
+export async function refineGuideSection(
+  topic: string,
+  existingSection: GuideSection,
+  newSources: string[],
+  context: { difficulty: string; siblingTitles: string[] },
+  options?: { instructions?: string; model?: string }
+): Promise<GuideSection> {
+  const sourceBlock = newSources.length > 0
+    ? `\n\nNEW SOURCE MATERIAL:\n${newSources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 6000)}`).join("\n\n")}`
+    : "";
+  const instructionBlock = options?.instructions ? `\nUSER INSTRUCTIONS: ${options.instructions}` : "";
+
+  return askJson<GuideSection>(`${GUIDE_INSTRUCTIONS}
+
+GUIDE TOPIC: ${topic}
+DIFFICULTY: ${context.difficulty}
+OTHER SECTIONS: ${context.siblingTitles.join(", ")}
+
+EXISTING SECTION TO REFINE:
+${JSON.stringify(existingSection)}${sourceBlock}${instructionBlock}
+
+TASK: Enhance this section with new details, examples, nuance from sources. Keep existing good content. Add code examples, quizzes, interview scenarios from new material. Do not remove existing content unless factually wrong. Preserve the section id and title.
+
+Return ONLY valid JSON:
+${SECTION_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-refine", model: options?.model });
+}
+
+/**
+ * Classify which sections are relevant to new source material.
+ * Uses Haiku for fast, cheap classification (~$0.01, ~2s).
+ */
+export async function classifySectionRelevance(
+  sectionPlan: Array<{ id: string; title: string; scope: string }>,
+  sourceTexts: string[],
+  options?: { model?: string }
+): Promise<Array<{ sectionId: string; relevant: boolean; reason: string }>> {
+  const sourceSummary = sourceTexts.map((s, i) =>
+    `Source ${i + 1}: ${truncateSource(s, 2000)}`
+  ).join("\n\n");
+
+  return askJson<Array<{ sectionId: string; relevant: boolean; reason: string }>>(`Classify which guide sections would benefit from refinement using the new source material.
+
+SECTIONS:
+${sectionPlan.map((sp) => `- ${sp.id}: "${sp.title}" — ${sp.scope}`).join("\n")}
+
+NEW SOURCES:
+${sourceSummary}
+
+For each section, determine if the new sources contain information that would meaningfully improve it. Be selective — only mark sections as relevant if the source directly relates to that section's scope.
+
+Return JSON array:
+[{"sectionId": "string", "relevant": true/false, "reason": "1 sentence why"}]`, { timeoutMs: 30_000, skill: "section-relevance", model: options?.model || "haiku" });
 }

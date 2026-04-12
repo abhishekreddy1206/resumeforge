@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { ARTICLE_SOURCE_TYPES } from "@/lib/learn-sources";
+
+function isRefreshableSource(type: string, url: string): boolean {
+  return !!url && (ARTICLE_SOURCE_TYPES.has(type) || type === "article");
+}
 
 export async function GET(
   _request: NextRequest,
@@ -13,7 +18,10 @@ export async function GET(
       return NextResponse.json({ error: "Source not found" }, { status: 404 });
     }
 
-    return NextResponse.json(source);
+    return NextResponse.json({
+      ...source,
+      refreshable: isRefreshableSource(source.type, source.url),
+    });
   } catch (error) {
     console.error("Get saved source error:", error);
     return NextResponse.json({ error: "Failed to get source" }, { status: 500 });

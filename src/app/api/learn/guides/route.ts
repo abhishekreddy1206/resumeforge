@@ -2,10 +2,8 @@ import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateGuideOutline, generateGuideSection, matchGuideToPath } from "@/lib/claude";
-import type { GuideSection, GuideContent } from "@/lib/claude";
-import { scrapeArticleUrl } from "@/lib/parsers/web";
-import { parsePdf } from "@/lib/parsers/pdf";
-import { parseDocx } from "@/lib/parsers/docx";
+import type { GuideContentStorage } from "@/lib/claude";
+import { resolveGuideSources } from "@/lib/learn-sources";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
 const SECTION_BATCH_SIZE = 1;
@@ -62,7 +60,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { topic, sources, difficulty, model } = body as {
       topic: string;
-      sources?: Array<{ type: string; content?: string; url?: string; filename?: string }>;
+      sources?: Array<{ type: string; content?: string; url?: string; filename?: string; savedSourceId?: string }>;
       difficulty?: string;
       model?: string;
     };
@@ -71,31 +69,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    // Parse sources (same as before)
-    const sourceTexts: string[] = [];
-    const sourcesToSave: Array<{ type: string; url?: string; title?: string; content: string }> = [];
-
-    if (sources) {
-      for (const src of sources) {
-        if (src.type === "text" && src.content) {
-          sourceTexts.push(src.content);
-          sourcesToSave.push({ type: "text", content: src.content, title: "Pasted text" });
-        } else if ((src.type === "url" || src.type === "substack" || src.type === "medium") && src.url) {
-          const article = await scrapeArticleUrl(src.url);
-          sourceTexts.push(`${article.title}\n\n${article.text}`);
-          sourcesToSave.push({ type: src.type, url: src.url, title: article.title, content: article.text });
-        } else if (src.type === "pdf" && src.content) {
-          const buffer = Buffer.from(src.content, "base64");
-          const text = await parsePdf(buffer);
-          sourceTexts.push(text);
-          sourcesToSave.push({ type: "pdf", content: text, title: "Uploaded PDF" });
-        } else if (src.type === "docx" && src.content) {
-          const buffer = Buffer.from(src.content, "base64");
-          const text = await parseDocx(buffer);
-          sourceTexts.push(text);
-          sourcesToSave.push({ type: "docx", content: text, title: src.filename || "Uploaded DOCX" });
-        }
-      }
+    const { sourceTexts, sourcesToSave } = await resolveGuideSources(profile.id, sources);
+    if (sources && sources.length > 0 && sourceTexts.length === 0) {
+      return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
     }
 
     // Generate outline (~15s) instead of full guide (~8 min)
@@ -108,7 +84,13 @@ export async function POST(request: NextRequest) {
     // Build skeleton content with empty sections.
     // _sectionPlan preserves original scopes so the resume endpoint can pass
     // them to generateGuideSection (without it, scope is lost after creation).
-    const skeletonContent = {
+    // _sectionStatuses tracks per-section generation progress.
+    const sectionStatuses: Record<string, "pending" | "generating" | "completed" | "failed" | "refining"> = {};
+    for (const sp of outline.sectionPlan) {
+      sectionStatuses[sp.id] = "pending";
+    }
+
+    const skeletonContent: GuideContentStorage = {
       title: outline.title,
       overview: outline.overview,
       estimatedMinutes: outline.estimatedMinutes,
@@ -125,7 +107,8 @@ export async function POST(request: NextRequest) {
       })),
       references: outline.references,
       _sectionPlan: outline.sectionPlan,
-    } satisfies GuideContent & { _sectionPlan: typeof outline.sectionPlan };
+      _sectionStatuses: sectionStatuses,
+    };
 
     let slug = slugify(topic);
     const existing = await prisma.guide.findUnique({ where: { slug } });
@@ -144,6 +127,8 @@ export async function POST(request: NextRequest) {
           category: outline.difficulty,
           tags: JSON.stringify([]),
           profileId: profile.id,
+          lastAsyncError: null,
+          lastAsyncStage: null,
         },
       });
 
@@ -163,69 +148,91 @@ export async function POST(request: NextRequest) {
     });
 
     // Use after() to keep the runtime alive for background section generation.
-    // This is the optimistic path — if after() fails, the client auto-resumes
-    // via the /resume endpoint which generates sections synchronously.
+    // Generates sections in parallel batches of SECTION_BATCH_SIZE.
+    // If after() fails mid-way, the client auto-resumes via /resume endpoint.
     after(async () => {
       try {
-        console.log(`[guide-create] after() callback STARTED for guide ${guide.id} (${outline.sectionPlan.length} sections)`);
+        console.log(`[guide-create] after() started for guide ${guide.id} (${outline.sectionPlan.length} sections, batch=${SECTION_BATCH_SIZE})`);
         const siblingTitles = outline.sectionPlan.map((sp) => sp.title);
         let completedCount = 0;
         let failedCount = 0;
 
+        // Load sources from DB (consistent with resume endpoint)
+        const guideSources = await prisma.guideSource.findMany({ where: { guideId: guide.id } });
+        const sources = guideSources.map((s) => s.content);
+
         for (let i = 0; i < outline.sectionPlan.length; i += SECTION_BATCH_SIZE) {
           const batch = outline.sectionPlan.slice(i, i + SECTION_BATCH_SIZE);
-          console.log(`[guide-create] Starting batch ${Math.floor(i / SECTION_BATCH_SIZE) + 1}: ${batch.map((s) => s.title).join(", ")}`);
+          const batchNum = Math.floor(i / SECTION_BATCH_SIZE) + 1;
+          console.log(`[guide-create] Batch ${batchNum}: ${batch.map((s) => s.title).join(", ")}`);
 
+          // Mark batch sections as "generating" before starting
+          const preUpdate = await prisma.guide.findUnique({ where: { id: guide.id } });
+          if (preUpdate) {
+            const preContent = JSON.parse(preUpdate.content) as GuideContentStorage;
+            for (const sp of batch) {
+              if (preContent._sectionStatuses) preContent._sectionStatuses[sp.id] = "generating";
+            }
+            await prisma.guide.update({
+              where: { id: guide.id },
+              data: { content: JSON.stringify(preContent) },
+            });
+          }
+
+          // Fire batch in parallel
           const results = await Promise.allSettled(
             batch.map((sp) =>
               generateGuideSection(topic, sp, { difficulty: outline.difficulty, siblingTitles }, {
-                sources: sourceTexts.length > 0 ? sourceTexts : undefined,
+                sources: sources.length > 0 ? sources : undefined,
                 model,
               })
             )
           );
 
-          console.log(`[guide-create] Batch ${Math.floor(i / SECTION_BATCH_SIZE) + 1} results: ${results.map((r, j) => `${batch[j].title}: ${r.status}`).join(", ")}`);
+          console.log(`[guide-create] Batch ${batchNum} results: ${results.map((r, j) => `${batch[j].title}: ${r.status}`).join(", ")}`);
 
-          // Merge completed sections into the stored guide
-          const completedSections: Array<{ id: string; section: GuideSection }> = [];
-          for (let j = 0; j < results.length; j++) {
-            const result = results[j];
-            if (result.status === "fulfilled") {
-              completedSections.push({ id: batch[j].id, section: result.value });
-              completedCount++;
-            } else {
-              console.error(`[guide-create] Section "${batch[j].title}" failed:`, result.reason);
-              failedCount++;
-            }
-          }
-
-          if (completedSections.length > 0) {
-            const current = await prisma.guide.findUnique({ where: { id: guide.id } });
-            if (current) {
-              const currentContent = JSON.parse(current.content) as GuideContent;
-              for (const { id, section } of completedSections) {
-                const idx = currentContent.sections.findIndex((s) => s.id === id);
-                if (idx !== -1) {
-                  currentContent.sections[idx] = section;
-                }
+          // Merge results into stored guide with per-section status updates
+          const current = await prisma.guide.findUnique({ where: { id: guide.id } });
+          if (current) {
+            const currentContent = JSON.parse(current.content) as GuideContentStorage;
+            for (let j = 0; j < results.length; j++) {
+              const result = results[j];
+              const sectionId = batch[j].id;
+              if (result.status === "fulfilled") {
+                const idx = currentContent.sections.findIndex((s) => s.id === sectionId);
+                if (idx !== -1) currentContent.sections[idx] = result.value;
+                if (currentContent._sectionStatuses) currentContent._sectionStatuses[sectionId] = "completed";
+                completedCount++;
+              } else {
+                console.error(`[guide-create] Section "${batch[j].title}" failed:`, result.reason);
+                if (currentContent._sectionStatuses) currentContent._sectionStatuses[sectionId] = "failed";
+                failedCount++;
               }
-              await prisma.guide.update({
-                where: { id: guide.id },
-                data: { content: JSON.stringify(currentContent) },
-              });
             }
+            await prisma.guide.update({
+              where: { id: guide.id },
+              data: { content: JSON.stringify(currentContent) },
+            });
           }
         }
 
-        // Set final status
+        // Final status: any completed -> published, all failed -> failed
         const finalStatus = completedCount === 0 ? "failed" : "published";
+        const lastAsyncError = failedCount > 0
+          ? completedCount === 0
+            ? `Guide generation failed. ${failedCount} sections could not be generated.`
+            : `${failedCount} section${failedCount === 1 ? "" : "s"} failed to generate. Use Resume Generation to retry.`
+          : null;
         await prisma.guide.update({
           where: { id: guide.id },
-          data: { status: finalStatus },
+          data: {
+            status: finalStatus,
+            lastAsyncError,
+            lastAsyncStage: failedCount > 0 ? "create_sections" : null,
+          },
         });
 
-        console.log(`[guide-create] Guide ${guide.id} complete: ${completedCount} sections, ${failedCount} failed → ${finalStatus}`);
+        console.log(`[guide-create] Guide ${guide.id} done: ${completedCount} ok, ${failedCount} failed -> ${finalStatus}`);
 
         // Auto-link to matching learning path
         try {
@@ -261,15 +268,15 @@ export async function POST(request: NextRequest) {
                 });
                 if (matchedPath) {
                   const order = JSON.parse(matchedPath.guideOrder) as string[];
-                  order.push(guide.id);
-                  await prisma.learningPath.update({
-                    where: { id: match.pathId },
-                    data: { guideOrder: JSON.stringify(order) },
-                  });
+                  if (!order.includes(guide.id)) {
+                    order.push(guide.id);
+                    await prisma.learningPath.update({
+                      where: { id: match.pathId },
+                      data: { guideOrder: JSON.stringify(order) },
+                    });
+                  }
                   console.log(`[guide-create] Auto-linked to path "${matchedPath.title}" (confidence: ${match.confidence})`);
                 }
-              } else {
-                console.log(`[guide-create] No matching path (best: ${match.pathId ? match.confidence.toFixed(2) : "none"})`);
               }
             }
           }
@@ -284,7 +291,11 @@ export async function POST(request: NextRequest) {
         console.error("[guide-create] Background generation crashed:", err);
         await prisma.guide.update({
           where: { id: guide.id },
-          data: { status: "failed" },
+          data: {
+            status: "failed",
+            lastAsyncError: err instanceof Error ? err.message.slice(0, 500) : "Guide generation crashed",
+            lastAsyncStage: "create_sections",
+          },
         }).catch(() => {});
       }
     });

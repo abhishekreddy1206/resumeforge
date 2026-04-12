@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw } from "lucide-react";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 
@@ -47,6 +47,11 @@ interface SavedSourceItem {
   url: string;
   title: string;
   createdAt: string;
+  captureMethod?: string | null;
+  publisher?: string | null;
+  publishedAt?: string | null;
+  lastRefreshedAt?: string | null;
+  refreshable?: boolean;
 }
 
 let sourceIdCounter = 0;
@@ -84,6 +89,7 @@ function LearnPageContent() {
   const [savedSources, setSavedSources] = useState<SavedSourceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
 
   const searchLower = search.toLowerCase().trim();
   const filteredGuides = searchLower
@@ -99,7 +105,14 @@ function LearnPageContent() {
       )
     : paths;
 
-  const fetchData = () => {
+  const fetchSavedSources = useCallback(() => {
+    fetch("/api/learn/sources")
+      .then((r) => (r.ok ? r.json() : { sources: [] }))
+      .then((data) => setSavedSources(data.sources || []))
+      .catch(() => setSavedSources([]));
+  }, []);
+
+  const fetchData = useCallback(() => {
     // Fast: guides + paths (~9ms) — unblocks page immediately
     Promise.all([
       fetch("/api/learn/guides").then((r) => (r.ok ? r.json() : [])),
@@ -116,13 +129,10 @@ function LearnPageContent() {
       .finally(() => setRecsLoading(false));
 
     // Saved sources from extension captures
-    fetch("/api/learn/sources")
-      .then((r) => (r.ok ? r.json() : { sources: [] }))
-      .then((data) => setSavedSources(data.sources || []))
-      .catch(() => setSavedSources([]));
-  };
+    fetchSavedSources();
+  }, [fetchSavedSources]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // Pre-fill topic from query param (e.g. from insights gaps-tab "Study this" links)
   useEffect(() => {
@@ -139,7 +149,8 @@ function LearnPageContent() {
       if (sources.length > 0) {
         payload.sources = sources.map((s) => {
           if (s.type === "url") return { type: "url", url: s.url };
-          if (s.type === "text" || s.type === "saved") return { type: "text", content: s.content };
+          if (s.type === "text") return { type: "text", content: s.content };
+          if (s.type === "saved") return { type: "saved", savedSourceId: s.savedSourceId };
           return { type: s.type, content: s.content, encoding: "base64", filename: s.filename };
         });
       }
@@ -198,21 +209,35 @@ function LearnPageContent() {
     }]);
   };
 
-  const addSavedSource = async (saved: SavedSourceItem) => {
+  const addSavedSource = (saved: SavedSourceItem) => {
     // Check if already added
     if (sources.some((s) => s.savedSourceId === saved.id)) return;
-    // Fetch full content
-    const res = await fetch(`/api/learn/sources/${saved.id}`);
-    if (!res.ok) return;
-    const full = await res.json();
     setSources((prev) => [...prev, {
       id: String(++sourceIdCounter),
       type: "saved",
-      content: full.content,
       url: saved.url,
       label: saved.title,
       savedSourceId: saved.id,
     }]);
+  };
+
+  const refreshSavedSource = async (savedSourceId: string) => {
+    setRefreshingSourceId(savedSourceId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/learn/sources/${savedSourceId}/refresh`, { method: "POST" });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        setError(errData?.error || "Failed to refresh saved source.");
+        return;
+      }
+      fetchSavedSources();
+    } catch (err) {
+      console.error("Saved source refresh failed:", err);
+      setError("Failed to refresh saved source.");
+    } finally {
+      setRefreshingSourceId(null);
+    }
   };
 
   const removeSource = (id: string) => {
@@ -406,25 +431,40 @@ function LearnPageContent() {
                     {savedSources.map((s) => {
                       const alreadyAdded = sources.some((src) => src.savedSourceId === s.id);
                       return (
-                        <button
+                        <div
                           key={s.id}
-                          onClick={() => addSavedSource(s)}
-                          disabled={alreadyAdded}
                           className={`w-full flex items-center gap-2 px-3 py-2 rounded text-left text-sm transition-all ${
                             alreadyAdded
                               ? "bg-muted/50 text-muted-foreground opacity-60"
                               : "bg-background border border-input hover:border-primary hover:bg-primary/5"
                           }`}
                         >
-                          <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <div className="truncate font-medium">{s.title}</div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                          <button
+                            onClick={() => addSavedSource(s)}
+                            disabled={alreadyAdded}
+                            className="flex items-center gap-2 flex-1 min-w-0 text-left disabled:cursor-not-allowed"
+                          >
+                            <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate font-medium">{s.title}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                                {s.captureMethod === "dom_fallback" ? " · needs refresh" : ""}
+                              </div>
                             </div>
-                          </div>
+                          </button>
+                          {s.refreshable && (
+                            <button
+                              onClick={() => refreshSavedSource(s.id)}
+                              disabled={refreshingSourceId === s.id}
+                              className="shrink-0 p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                              title="Refresh saved source"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${refreshingSourceId === s.id ? "animate-spin" : ""}`} />
+                            </button>
+                          )}
                           {alreadyAdded && <span className="text-xs text-muted-foreground shrink-0">Added</span>}
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

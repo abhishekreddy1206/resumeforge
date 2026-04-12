@@ -267,7 +267,23 @@ async function captureCurrentPage(captureType) {
       if (captureType === "job") {
         captureResult.textContent = `Job imported! "${result.title}" is being analyzed.`;
       } else {
-        captureResult.textContent = `Article saved: "${result.title}"`;
+        const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
+        if (suggestions.length > 0) {
+          const apiBase = apiUrlInput.value.trim().replace(/\/+$/, "");
+          captureResult.innerHTML = `
+            <div>Article saved: "${escapeHtml(result.title)}"</div>
+            <div class="capture-suggestions">
+              <div class="capture-suggestions-title">Suggested guides</div>
+              ${suggestions.map((suggestion) => `
+                <a class="capture-suggestion-link" href="${apiBase}/learn/${suggestion.guideSlug}" target="_blank" rel="noopener noreferrer">
+                  ${escapeHtml(suggestion.guideTopic)}
+                </a>
+              `).join("")}
+            </div>
+          `;
+        } else {
+          captureResult.textContent = `Article saved: "${result.title}"`;
+        }
       }
     }
   } catch (err) {
@@ -293,6 +309,15 @@ function showError(msg) {
 
 function hideError() {
   errorBar.classList.add("hidden");
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ── Start ──
