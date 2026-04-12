@@ -50,3 +50,6 @@ next-env.d.ts
 prisma/dev.db
 prisma/dev.db-journal
 github-profile-README.md
+
+# worktrees
+.worktrees
