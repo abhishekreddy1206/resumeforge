@@ -57,6 +57,9 @@ github-profile-README.md
 # brainstorming session artifacts
 .superpowers/
 
+# generated planning/spec docs
+docs/superpowers/
+
 # claude runtime state and agent memory
 .claude/email-scan-state.json
 .claude/agent-memory/
