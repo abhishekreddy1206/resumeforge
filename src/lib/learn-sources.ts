@@ -186,6 +186,32 @@ function isSavedSourceHeadBlockedForGuide(source: {
   );
 }
 
+/**
+ * Search SavedSourceVersion history for the best non-degraded version.
+ * Returns the version ID with the highest word count that passes quality checks,
+ * or null if no acceptable version exists.
+ */
+async function findBestSavedSourceVersion(savedSourceId: string): Promise<string | null> {
+  const versions = await prisma.savedSourceVersion.findMany({
+    where: { savedSourceId },
+    select: {
+      id: true,
+      wordCount: true,
+      reviewFlags: true,
+      content: true,
+    },
+    orderBy: { wordCount: "desc" },
+  });
+
+  for (const v of versions) {
+    if (!isSavedSourceHeadBlockedForGuide({ reviewFlags: v.reviewFlags ?? "[]", content: v.content })) {
+      return v.id;
+    }
+  }
+
+  return null;
+}
+
 async function restoreOrCreateSavedSourceFromPrepared(
   profileId: string,
   requestedType: string,
@@ -395,11 +421,35 @@ export async function resolveGuideSources(
 
   for (const src of sources) {
     if (src.type === "saved" && src.savedSourceId) {
-      const resolved = await resolveSavedSourceInput(
-        profileId,
-        src.savedSourceId,
-        src.savedSourceVersionId
-      );
+      // If caller specified an explicit version, trust it
+      if (src.savedSourceVersionId) {
+        const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId, src.savedSourceVersionId);
+        sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
+        sourcesToSave.push(resolved);
+        continue;
+      }
+
+      // Check if HEAD is blocked before resolving
+      const headSource = await prisma.savedSource.findFirst({
+        where: { id: src.savedSourceId, profileId },
+        select: { reviewFlags: true, content: true },
+      });
+
+      if (headSource && isSavedSourceHeadBlockedForGuide(headSource)) {
+        const bestVersionId = await findBestSavedSourceVersion(src.savedSourceId);
+        if (bestVersionId) {
+          const fallback = await resolveSavedSourceInput(profileId, src.savedSourceId, bestVersionId);
+          sourceTexts.push(buildGuideModelText(fallback.title, fallback.content));
+          sourcesToSave.push(fallback);
+          continue;
+        }
+        throw new GuideSourceResolutionError(
+          "This saved article extract looks incomplete for guide generation. Replace it from the Chrome extension or refresh it after improving the capture.",
+          422
+        );
+      }
+
+      const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId);
       sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
       sourcesToSave.push(resolved);
       continue;
