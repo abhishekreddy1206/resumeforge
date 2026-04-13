@@ -53,3 +53,20 @@ github-profile-README.md
 
 # worktrees
 .worktrees
+
+# brainstorming session artifacts
+.superpowers/
+
+# claude runtime state and agent memory
+.claude/email-scan-state.json
+.claude/agent-memory/
+
+# unused Next.js boilerplate assets
+public/file.svg
+public/globe.svg
+public/next.svg
+public/vercel.svg
+public/window.svg
+
+# dead files
+claude_setup.jpeg
