@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { dequeueJob, completeJob, failJob, recoverStaleJobs, getGroupCompletion, enqueueJob } from "@/lib/job-queue";
 import type { JobRecord } from "@/lib/job-queue";
 import {

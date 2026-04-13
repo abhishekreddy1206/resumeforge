@@ -10,7 +10,7 @@
     "start:tailscale": "next start -H 127.0.0.1 -p 3000",
     "lint": "eslint",
     "worker": "npx tsx src/worker.ts",
-    "dev:all": "npx concurrently --names next,worker --prefix-colors blue,green \"npm run dev\" \"npm run worker\""
+    "dev:all": "npx concurrently --kill-others-on-fail --names next,worker --prefix-colors blue,green \"npm run dev\" \"npm run worker\""
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -49,6 +49,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.7",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
