@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { Toaster } from "@/components/ui/sonner";
@@ -35,6 +35,26 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "ResumeForge",
   description: "AI-powered resume builder for software engineers",
+  applicationName: "ResumeForge",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ResumeForge",
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#b04520" },
+    { media: "(prefers-color-scheme: dark)", color: "#c87840" },
+  ],
 };
 
 export default function RootLayout({

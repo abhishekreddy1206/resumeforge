@@ -71,6 +71,17 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+For private remote access from your phone or another device on your tailnet, the repo now also includes:
+
+```bash
+# Development over Tailscale Serve
+npm run dev:tailscale
+
+# Production over Tailscale Serve
+npm run build
+npm run start:tailscale
+```
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -82,6 +93,44 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GMAIL_REFRESH_TOKEN` | No | Google OAuth2 refresh token for Gmail email scanning |
 
 AI features run through the **Claude Code CLI** (`claude -p`) as a subprocess. The CLI uses your Claude Code subscription directly — no `ANTHROPIC_API_KEY` is needed.
+
+## Remote Access With Tailscale
+
+The safest low-maintenance setup for this app is to keep the database, uploads, resumes, and Claude CLI on your laptop and expose the web UI privately through [Tailscale Serve](https://tailscale.com/docs/concepts/local-team-server).
+
+### Recommended flow
+
+1. Install Tailscale on the laptop that runs ResumeForge and on the phone or remote device you want to use.
+2. Sign both devices into the same tailnet.
+3. Start the app locally:
+
+```bash
+npm run build
+npm run start:tailscale
+```
+
+4. Publish the local app privately to your tailnet:
+
+```bash
+tailscale serve --bg 3000
+tailscale serve status
+```
+
+5. Open the HTTPS URL shown by `tailscale serve status` from your phone browser and, if you want an app-like experience, add it to your home screen.
+
+### Why the Tailscale scripts bind to `127.0.0.1`
+
+The default `dev` and `start` scripts are unchanged for normal local work. The new `*:tailscale` variants explicitly bind the Next.js server to localhost so Tailscale Serve can front it with tailnet-only HTTPS, instead of exposing the app directly on every network interface.
+
+### Chrome extension note
+
+The Chrome extension remains desktop-only. If you want the extension to talk to a Tailscale-hosted ResumeForge instance from another desktop browser, set the extension API URL to the HTTPS Tailscale URL shown by `tailscale serve status`; the extension already requests host permission for custom API origins.
+
+### Important limitations
+
+- Mobile browser access works well for the web app itself.
+- Chrome extension capture and ATS auto-fill do not run on mobile browsers.
+- Because the app currently uses local SQLite, local file storage, and a local Claude CLI process, the laptop running ResumeForge must stay online for remote access to work.
 
 ## Project Structure
 
