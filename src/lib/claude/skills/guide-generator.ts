@@ -132,7 +132,7 @@ const MIN_SECTION_KEY_TAKEAWAYS = 2;
 const MAX_OUTLINE_ATTEMPTS = 2;
 const DEFAULT_SECTION_ATTEMPTS = 2;
 const MAX_SECTION_ATTEMPTS = 3;
-const SECTION_TIMEOUT_MS = 300_000;
+const SECTION_TIMEOUT_MS = 900_000;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/u).filter(Boolean).length;
@@ -249,7 +249,7 @@ export async function generateGuide(
 TOPIC: ${topic}${difficultyHint}${sourceBlock}
 
 Return ONLY valid JSON matching this structure:
-${GUIDE_SCHEMA}`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+${GUIDE_SCHEMA}`, { timeoutMs: 1_200_000, skill: "guide-generator", model: options?.model });
   const issues = validateGuideContent(guide);
   if (issues.length > 0) {
     throw new GuideContentValidationError(`Generated guide "${topic}" is incomplete.`, issues);
@@ -298,7 +298,7 @@ Return ONLY valid JSON:
 {
   "content": ${GUIDE_SCHEMA},
   "changeDescription": "string — summarize what changed"
-}`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+}`, { timeoutMs: 1_200_000, skill: "guide-generator", model: options?.model });
   const issues = validateGuideContent(result.content);
   if (issues.length > 0) {
     throw new GuideContentValidationError("Refined guide content is incomplete.", issues);

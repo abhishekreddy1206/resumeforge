@@ -2,7 +2,7 @@ import { spawn, execSync } from "child_process";
 import { createLogger } from "@/lib/logger";
 
 const DEFAULT_TIMEOUT_MS = 480_000; // 8 minutes
-const MAX_TIMEOUT_MS = 600_000; // 10 minutes
+const MAX_TIMEOUT_MS = 1_800_000; // 30 minutes
 
 // Resolve the full path to claude CLI at startup so spawned subprocesses can find it
 const CLAUDE_PATH = (() => {
