@@ -422,3 +422,30 @@ model SavedSourceVersion {
   @@unique([savedSourceId, version])
   @@index([savedSourceId, createdAt])
 }
+
+model BackgroundJob {
+  id          String    @id @default(cuid())
+  type        String
+  status      String    @default("pending")
+  payload     String
+  result      String?
+  error       String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  priority    Int       @default(0)
+  lockedAt    DateTime?
+  lockedBy    String?
+  parentJobId String?
+  groupKey    String?
+  entityId    String?
+  entityType  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([status, priority, createdAt])
+  @@index([entityId, entityType, status])
+  @@index([parentJobId])
+  @@index([groupKey])
+  @@index([lockedAt])
+}
