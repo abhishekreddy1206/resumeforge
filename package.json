@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:tailscale": "next dev -H 127.0.0.1 -p 3000",
     "build": "next build",
     "start": "next start",
+    "start:tailscale": "next start -H 127.0.0.1 -p 3000",
     "lint": "eslint"
   },
   "dependencies": {
