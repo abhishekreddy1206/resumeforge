@@ -32,6 +32,10 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Screening Question Answers** — AI generates answers for job application screening questions, grounded in your real profile data; answers are cached per job.
 - **Learned Answers** — The Chrome extension observes form fills and corrections over time, building a cross-site answer library (`LearnedAnswer`) that improves auto-fill accuracy without manual pinning.
 - **Email Job Scanning** — Connect Gmail via OAuth to automatically scan job alert emails from LinkedIn, Glassdoor, and Indeed; AI extracts job URLs, filters by your location and work mode preference, and imports qualifying jobs in bulk.
+- **Market Insights** — AI clusters your matched jobs into role profiles, surfaces skill demand patterns, identifies gaps and bridges, and recommends study topics ranked by cross-cluster frequency.
+- **Saved Sources** — Capture articles, Medium posts, and Substack pieces as versioned saved sources; each capture records content hash, word count, capture method (server scrape vs. DOM fallback), and review flags. Source versions are snapshotted on replace or refresh so guide refinements reference specific content states.
+- **Source Detail View** — Review individual saved sources, inspect capture diagnostics, see which guides use each source, and identify stale guide attachments that need re-refinement.
+- **Curriculum Planner** — AI generates an ordered learning curriculum from your skill gaps, mapping topics to difficulty levels and suggested guides.
 
 ## Tech Stack
 
@@ -99,6 +103,11 @@ resumeforge/
     │   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility
     │   ├── generate/page.tsx           # Generate tailored resumes
     │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
+    │   ├── insights/page.tsx           # Market insights: job clusters, demand patterns, gap analysis
+    │   ├── learn/page.tsx              # Learn tab: guides, paths, sources
+    │   ├── learn/[slug]/page.tsx       # Individual guide view
+    │   ├── learn/paths/[id]/page.tsx   # Learning path detail
+    │   ├── learn/sources/[id]/page.tsx # Saved source detail and version history
     │   └── api/
     │       ├── profile/
     │       │   ├── route.ts            # Profile CRUD
@@ -129,7 +138,9 @@ resumeforge/
     │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
     │       │   ├── applied/            # Toggle job application status (applied/not applied)
     │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
-    │       │   ├── chat/               # Per-job resume advisory chat (tips, apply, rescore)
+    │       │   ├── chat/               # Per-job resume advisory chat
+    │       │   │   ├── apply-tips/     # Apply AI-suggested tips to profile
+    │       │   │   └── rescore/        # Rescore profile-job compatibility after applying tips
     │       │   └── scan-emails/        # Scan Gmail job alerts and import qualifying jobs
     │       ├── resume/                 # Resume generation + download + critique
     │       ├── coverletter/
@@ -140,31 +151,61 @@ resumeforge/
     │       │   ├── route.ts            # Skills listing
     │       │   └── chat/               # Conversational skills editor (POST + apply)
     │       ├── analytics/              # Token usage and cost analytics
+    │       ├── insights/               # Market insights: job clustering, demand patterns, gap analysis
+    │       ├── learn/
+    │       │   ├── guides/             # Guide CRUD and listing
+    │       │   │   └── [id]/
+    │       │   │       ├── route.ts                  # Single guide CRUD
+    │       │   │       ├── refine/                   # Add sources and AI-refine guide
+    │       │   │       ├── evaluate/                 # AI-evaluate open-ended answers
+    │       │   │       └── sections/[sectionId]/refine/ # Refine individual guide section
+    │       │   ├── paths/              # Learning path CRUD
+    │       │   │   └── [id]/
+    │       │   │       ├── route.ts    # Single learning path management
+    │       │   │       ├── cross-link/ # AI cross-link suggestions between guides in a path
+    │       │   │       └── generate/   # AI-generate guides for a learning path
+    │       │   ├── recommendations/    # AI-suggested study topics from gap analysis
+    │       │   └── sources/            # Saved source CRUD and listing
+    │       │       └── [id]/
+    │       │           ├── route.ts    # Single saved source CRUD
+    │       │           ├── refresh/    # Re-scrape and update saved source content
+    │       │           └── replace/    # Replace saved source content with new URL/capture
     │       └── chats/                  # Chat session CRUD (list/get/delete by id)
     ├── lib/
     │   ├── gmail.ts                    # Gmail API client (OAuth2) for email job scanning
+    │   ├── capture-constants.ts        # Shared constants for article capture (max chars, etc.)
+    │   ├── saved-sources.ts            # Saved source capture, review, versioning logic
+    │   ├── learn-sources.ts            # Guide source ingestion and suggestion helpers
+    │   ├── learn-cache.ts              # Caching helpers for gaps and recommendations
     │   ├── claude/                     # AI modules
     │   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
     │   │   ├── index.ts               # Re-exports all AI modules
     │   │   └── skills/
-    │   │       ├── resume-parser.ts   # Parse resume text → structured data
-    │   │       ├── job-analyzer.ts    # Analyze job description → requirements
-    │   │       ├── resume-writer.ts   # Generate ATS-optimized tailored resume
-    │   │       ├── resume-critic.ts   # Critique resume against job description
-    │   │       ├── profile-enricher.ts # Merge external source data into profile
-    │   │       ├── profile-editor.ts  # Conversational profile editing via chat
-    │   │       ├── profile-enhancer.ts # AI suggestions from optimization history
-    │   │       ├── profile-matcher.ts # Score profile-job compatibility
-    │   │       ├── resume-advisor.ts  # Per-job resume improvement advice
-    │   │       ├── resume-tip-applier.ts # Apply AI-suggested tips to profile data
-    │   │       ├── skills-editor.ts   # Conversational skills editing via chat
+    │   │       ├── skill-prompts.ts        # Shared AI prompt constants (re-used across skills)
+    │   │       ├── resume-parser.ts        # Parse resume text → structured data
+    │   │       ├── job-analyzer.ts         # Analyze job description → requirements
+    │   │       ├── resume-writer.ts        # Generate ATS-optimized tailored resume
+    │   │       ├── resume-critic.ts        # Critique resume against job description
+    │   │       ├── profile-enricher.ts     # Merge external source data into profile
+    │   │       ├── profile-editor.ts       # Conversational profile editing via chat
+    │   │       ├── profile-enhancer.ts     # AI suggestions from optimization history
+    │   │       ├── profile-matcher.ts      # Score profile-job compatibility
+    │   │       ├── resume-advisor.ts       # Per-job resume improvement advice
+    │   │       ├── resume-tip-applier.ts   # Apply AI-suggested tips to profile data
+    │   │       ├── skills-editor.ts        # Conversational skills editing via chat
     │   │       ├── experience-discoverer.ts # Generate discovery questions from job gaps
-    │   │       ├── gap-aggregator.ts  # Aggregate cross-job gaps and leverage scores
+    │   │       ├── gap-aggregator.ts       # Aggregate cross-job gaps and leverage scores
     │   │       ├── certification-parser.ts # AI parse of certification text
     │   │       ├── recommendation-parser.ts # AI parse of recommendation text
     │   │       ├── cover-letter-writer.ts  # Generate tailored cover letter
     │   │       ├── interview-prep.ts       # Generate STAR+R interview stories
-    │   │       └── form-answerer.ts        # Generate answers for screening questions
+    │   │       ├── form-answerer.ts        # Generate answers for screening questions
+    │   │       ├── guide-generator.ts      # Generate or refine structured study guides
+    │   │       ├── guide-recommender.ts    # Suggest study topics from gap analysis
+    │   │       ├── curriculum-planner.ts   # Plan an ordered learning curriculum from skill gaps
+    │   │       ├── source-cross-linker.ts  # Suggest cross-links between guide sources in a path
+    │   │       ├── path-matcher.ts         # Match an existing guide to a learning path
+    │   │       └── job-clusterer.ts        # Cluster matched jobs into role profiles for Insights
     │   ├── parsers/
     │   │   ├── pdf.ts                 # PDF text extraction
     │   │   ├── docx.ts                # DOCX text extraction
@@ -251,6 +292,8 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `ApplicationProfile` | 1:1 with Profile; stores work authorization, salary range, relocation preference, notice period, preferred work mode, earliest start date, EEO fields (voluntary), and other auto-fill defaults |
 | `ApplicationAnswer` | Per-job cached screening question answer with source tracking (`auto`, `ai`, `manual`, `pinned`, `reused`, `profile`); unique on job + question |
 | `LearnedAnswer` | Cross-site form field answer library built from Chrome extension observations; stores normalized question, answer, field type, confidence score, and use count |
+| `SavedSource` | Versioned article/post saved for guide refinement; stores content hash, word count, capture method, review flags, and capture diagnostics; unique per profile + URL |
+| `SavedSourceVersion` | Content snapshot of a `SavedSource` created on each replace or refresh; records change type (`initial`, `replace`, `refresh`, `migrated`) and full capture metadata |
 
 ## Workflow
 
@@ -264,4 +307,5 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
 9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
 10. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
-11. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI
+11. **Insights** (optional) — Visit `/insights` to see AI-clustered job role profiles, skill demand patterns, gap analysis, and prioritized study topic recommendations across all matched jobs
+12. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI
