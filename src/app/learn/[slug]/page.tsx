@@ -57,8 +57,6 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
   const [error, setError] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
-  const lastPctRef = useRef(0);
-  const stalePollsRef = useRef(0);
   const resumingRef = useRef(false);
 
   const fetchGuide = useCallback(async () => {
@@ -75,86 +73,59 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
 
   useEffect(() => { fetchGuide(); }, [fetchGuide]);
 
-  // Poll for updates while guide is generating; auto-resume when stalled
+  // SSE for real-time progress while guide is generating
   useEffect(() => {
     if (!guide || guide.status !== "generating") return;
-    stalePollsRef.current = 0;
-    lastPctRef.current = 0;
 
-    const interval = setInterval(async () => {
+    const es = new EventSource(`/api/learn/guides/${guide.id}/progress`);
+
+    es.onmessage = (event) => {
       try {
-        const res = await fetch(`/api/learn/guides/${slug}`);
-        if (!res.ok) return;
-        const updated = await res.json();
-        setGuide(updated);
+        const data = JSON.parse(event.data);
 
-        if (updated.status !== "generating" || updated.generationState === "complete") {
-          clearInterval(interval);
-          stalePollsRef.current = 0;
+        if (data.error) {
+          es.close();
           return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const statuses: Record<string, string> = (updated.content as any)._sectionStatuses || {};
-        const completedCount = Object.values(statuses).filter((s) => s === "completed").length;
-        const refiningCount = Object.values(statuses).filter((s) => s === "refining").length;
-        // Fallback for legacy guides with no _sectionStatuses: count sections with empty explanation
-        let pendingCount = Object.values(statuses).filter((s) => s === "pending").length;
-        if (Object.keys(statuses).length === 0) {
-          pendingCount = (updated.content as GuideContent).sections.filter(
-            (s) => !s.explanation || s.explanation.length === 0
-          ).length;
-        }
-        const totalSections = (updated.content as GuideContent).sections.length;
-        const pct = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
+        // Update guide state with SSE data
+        setGuide((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            status: data.status,
+            content: {
+              ...prev.content,
+              _sectionStatuses: data.sectionStatuses,
+              _sectionErrors: data.sectionErrors,
+            },
+          };
+        });
 
-        if (pct === lastPctRef.current) {
-          stalePollsRef.current++;
-        } else {
-          stalePollsRef.current = 0;
-          lastPctRef.current = pct;
-        }
-
-        // Auto-resume: if no progress for 4 polls (20s) and not already resuming
-        // Do NOT auto-resume when sections are "refining" — the refine after() is still working
-        // Only resume when there are pending sections (meaning initial generation stalled)
-        if (stalePollsRef.current >= 4 && !resumingRef.current && pendingCount > 0 && refiningCount === 0) {
-          resumingRef.current = true;
-          setResuming(true);
-          setResumeError(null);
-          try {
-            const resumeRes = await fetch(`/api/learn/guides/${updated.id}/resume`, { method: "POST" });
-            if (resumeRes.ok) {
-              stalePollsRef.current = 0;
-              lastPctRef.current = 0;
-              // Re-fetch immediately to pick up changes
-              const freshRes = await fetch(`/api/learn/guides/${slug}`);
-              if (freshRes.ok) setGuide(await freshRes.json());
-            } else {
-              const data = await resumeRes.json().catch(() => null);
-              setResumeError(data?.error || "Resume failed");
-            }
-          } catch {
-            setResumeError("Failed to resume generation");
-          } finally {
-            resumingRef.current = false;
-            setResuming(false);
-          }
+        if (data.done) {
+          es.close();
+          // Full refresh to get final content (sections, versions, etc.)
+          fetchGuide();
         }
       } catch {
-        // ignore polling errors
+        // Ignore parse errors
       }
-    }, 5000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are intentionally narrow; we restart only on status/id/slug change, not every content update
-  }, [guide?.status, guide?.id, slug]);
+    };
+
+    es.onerror = () => {
+      es.close();
+      // On disconnect, re-fetch guide state — if still generating, useEffect will re-open SSE
+      setTimeout(() => fetchGuide(), 2000);
+    };
+
+    return () => es.close();
+  }, [guide?.status, guide?.id, fetchGuide]);
 
   const handleResumeGeneration = useCallback(async () => {
     if (!guide || resumingRef.current) return;
     resumingRef.current = true;
     setResuming(true);
     setResumeError(null);
-    stalePollsRef.current = 0;
     try {
       const res = await fetch(`/api/learn/guides/${guide.id}/resume`, { method: "POST" });
       if (res.ok) {
