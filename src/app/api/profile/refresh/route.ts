@@ -5,6 +5,9 @@ import {
   fetchStackOverflowProfile,
 } from "@/lib/parsers/web";
 import { enrichFromExternalSource } from "@/lib/claude";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("profile-refresh");
 
 const STALE_HOURS = 24;
 
@@ -137,10 +140,10 @@ export async function POST() {
             mergeEnrichedData(profile.id, enriched as Record<string, unknown>)
           )
           .then(() => {
-            console.log(`[refresh] GitHub refresh complete for ${githubUsername}`);
+            log.info("github_refresh_complete", { username: githubUsername });
           })
           .catch((err) => {
-            console.error(`[refresh] GitHub refresh failed:`, err);
+            log.error("github_refresh_failed", { error: err });
           })
       );
     }
@@ -155,12 +158,10 @@ export async function POST() {
             mergeEnrichedData(profile.id, enriched as Record<string, unknown>)
           )
           .then(() => {
-            console.log(
-              `[refresh] StackOverflow refresh complete for ${profile.stackoverflowId}`
-            );
+            log.info("stackoverflow_refresh_complete", { stackoverflowId: profile.stackoverflowId });
           })
           .catch((err) => {
-            console.error(`[refresh] StackOverflow refresh failed:`, err);
+            log.error("stackoverflow_refresh_failed", { error: err });
           })
       );
     }
@@ -173,7 +174,7 @@ export async function POST() {
           data: { lastEnrichedAt: new Date() },
         })
       )
-      .catch(console.error);
+      .catch((err) => log.error("refresh_timestamp_update_failed", { error: err }));
 
     // Return immediately — the refresh happens in the background
     return NextResponse.json({
@@ -181,7 +182,7 @@ export async function POST() {
       sources,
     });
   } catch (error) {
-    console.error("Profile refresh error:", error);
+    log.error("profile_refresh_failed", { error });
     return NextResponse.json(
       { error: "Failed to refresh profile" },
       { status: 500 }

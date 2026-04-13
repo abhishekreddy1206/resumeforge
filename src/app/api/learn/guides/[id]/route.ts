@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("guide");
 
 export async function GET(
   _request: NextRequest,
@@ -89,7 +92,7 @@ export async function GET(
       }),
     });
   } catch (error) {
-    console.error("Guide get error:", error);
+    log.error("guide_get_failed", { error });
     return NextResponse.json({ error: "Failed to get guide" }, { status: 500 });
   }
 }
@@ -113,7 +116,7 @@ export async function PUT(
     const guide = await prisma.guide.update({ where: { id }, data });
     return NextResponse.json(guide);
   } catch (error) {
-    console.error("Guide update error:", error);
+    log.error("guide_update_failed", { error });
     return NextResponse.json({ error: "Failed to update guide" }, { status: 500 });
   }
 }
@@ -128,12 +131,12 @@ export async function DELETE(
 
     // Eagerly refresh recommendations cache (guide topics changed)
     refreshRecommendationsCache().catch((err) =>
-      console.error("[guide-delete] Recommendation refresh failed:", err)
+      log.error("recommendation_refresh_failed", { error: err })
     );
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Guide delete error:", error);
+    log.error("guide_delete_failed", { error });
     return NextResponse.json({ error: "Failed to delete guide" }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { matchProfileToJob, applyResumeTips, generateTailoredResume, mergeProfil
 import { serializeProfile } from "@/lib/utils/profile-diff";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { generatePdf } from "@/lib/generators/pdf";
+import { createTaskLogger } from "@/lib/logger";
 import fs from "fs/promises";
 import path from "path";
 
@@ -28,6 +29,8 @@ const sanitize = (s: string) =>
  * Silently no-ops if no profile exists.
  */
 export async function runAutoPipeline(jobId: string): Promise<void> {
+  const task = createTaskLogger("auto-pipeline", jobId);
+
   // --- Step 1: Load data and run match ---
   const [profile, job] = await Promise.all([
     prisma.profile.findFirst({
@@ -47,7 +50,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
 
   // Skip jobs that don't offer sponsorship — no point spending tokens
   if (job.sponsorship === "unavailable") {
-    console.log(`[auto-pipeline] Skipping job ${jobId} — no sponsorship`);
+    task.step("skipped_no_sponsorship");
     return;
   }
 
@@ -81,13 +84,13 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     },
   });
 
-  console.log(`[auto-pipeline] Match complete for job ${jobId}: ${match.overallScore}%`);
+  task.step("match_complete", { score: match.overallScore });
 
   // Everything after match persistence should trigger a recommendation refresh on exit
   try {
     // Gate: only continue if score >= 65
     if (match.overallScore < 65) {
-      console.log(`[auto-pipeline] Score ${match.overallScore}% < 65 — stopping pipeline for job ${jobId}`);
+      task.step("below_threshold", { score: match.overallScore, threshold: 65 });
       return;
     }
 
@@ -99,7 +102,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       );
 
       if (groundedTips.length === 0) {
-        console.log(`[auto-pipeline] No grounded tips for job ${jobId} — stopping pipeline`);
+        task.step("no_grounded_tips");
         return;
       }
 
@@ -118,9 +121,9 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       );
 
       updatedProfile = mergeProfileChanges(profileData, tipResult.changes);
-      console.log(`[auto-pipeline] Tips applied for job ${jobId}: ${tipResult.reply}`);
+      task.step("tips_applied", { changeCount: tipResult.changes?.length ?? 0, replyLength: tipResult.reply?.length ?? 0 });
     } catch (err) {
-      console.error(`[auto-pipeline] Tip application failed for job ${jobId}:`, err);
+      task.fail(err, { phase: "tip_application" });
       return;
     }
 
@@ -130,11 +133,11 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       const newScore = newMatch.overallScore;
       const delta = newScore - match.overallScore;
 
-      console.log(`[auto-pipeline] Rescore for job ${jobId}: ${match.overallScore}% → ${newScore}% (delta: ${delta > 0 ? "+" : ""}${delta})`);
+      task.step("rescore_complete", { previousScore: match.overallScore, newScore, delta });
 
       // Only save if score improved
       if (newScore <= match.overallScore) {
-        console.log(`[auto-pipeline] No improvement after tips for job ${jobId} — stopping pipeline`);
+        task.step("no_improvement", { previousScore: match.overallScore, newScore });
         return;
       }
 
@@ -159,11 +162,11 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         },
       });
 
-      console.log(`[auto-pipeline] Profile version saved: ${version.id} (${newScore}%, +${delta})`);
+      task.step("version_saved", { versionId: version.id, score: newScore, delta });
 
       // Gate: only generate PDF if score >= 75
       if (newScore < 75) {
-        console.log(`[auto-pipeline] Rescored ${newScore}% < 75 — skipping PDF for job ${jobId}`);
+        task.step("below_pdf_threshold", { score: newScore, threshold: 75 });
         return;
       }
 
@@ -195,17 +198,17 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
           },
         });
 
-        console.log(`[auto-pipeline] PDF generated for job ${jobId}: ${filePath}`);
+        task.complete({ phase: "pdf_generated", filePath });
       } catch (err) {
-        console.error(`[auto-pipeline] PDF generation failed for job ${jobId}:`, err);
+        task.fail(err, { phase: "pdf_generation" });
       }
     } catch (err) {
-      console.error(`[auto-pipeline] Rescore failed for job ${jobId}:`, err);
+      task.fail(err, { phase: "rescore" });
     }
   } finally {
     // Eagerly refresh recommendations cache after match data changed
     refreshRecommendationsCache().catch((err) =>
-      console.error("[auto-pipeline] Recommendation refresh failed:", err)
+      task.fail(err, { phase: "recommendation_refresh" })
     );
   }
 }

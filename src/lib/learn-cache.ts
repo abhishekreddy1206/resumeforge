@@ -2,6 +2,9 @@ import { prisma } from "@/lib/db";
 import { aggregateGaps, recommendGuides } from "@/lib/claude";
 import type { GapAggregation } from "@/lib/claude/skills/gap-aggregator";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("learn-cache");
 
 /**
  * Simple string hash for cache fingerprints.
@@ -143,7 +146,7 @@ export async function refreshRecommendationsCache(): Promise<GuideRecommendation
   // Fast path: full cache hit
   const cachedRecs = await getCachedRecommendations(profile.id, recsFp);
   if (cachedRecs) {
-    console.log("[recommendations] Cache hit — returning cached recommendations");
+    log.debug("recommendations_cache_hit");
     return cachedRecs;
   }
 
@@ -179,9 +182,9 @@ export async function refreshRecommendationsCache(): Promise<GuideRecommendation
   // Check if gaps are still cached (only guide topics changed)
   let gapResult = await getCachedGaps(profile.id, gapsFp);
   if (gapResult) {
-    console.log("[recommendations] Gaps cache hit — only re-running recommendGuides");
+    log.debug("gaps_cache_hit");
   } else {
-    console.log("[recommendations] Gaps cache miss — running aggregateGaps + recommendGuides");
+    log.debug("gaps_cache_miss", { jobCount: jobMatchData.length });
     gapResult = await aggregateGaps(jobMatchData, {});
     await setCachedGaps(profile.id, gapResult, gapsFp);
   }

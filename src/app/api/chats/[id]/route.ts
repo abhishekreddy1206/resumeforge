@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("chats");
 
 export async function GET(
   _request: NextRequest,
@@ -21,7 +24,7 @@ export async function GET(
       messages: JSON.parse(session.messages),
     });
   } catch (error) {
-    console.error("Get chat error:", error);
+    log.error("chat_get_failed", { error });
     return NextResponse.json(
       { error: "Failed to get chat session" },
       { status: 500 }
@@ -60,7 +63,7 @@ export async function PUT(
       messages: JSON.parse(session.messages),
     });
   } catch (error) {
-    console.error("Update chat error:", error);
+    log.error("chat_update_failed", { error });
     return NextResponse.json(
       { error: "Failed to update chat session" },
       { status: 500 }
@@ -77,7 +80,7 @@ export async function DELETE(
     await prisma.chatSession.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Delete chat error:", error);
+    log.error("chat_delete_failed", { error });
     return NextResponse.json(
       { error: "Failed to delete chat session" },
       { status: 500 }

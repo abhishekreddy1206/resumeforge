@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import { createLogger } from "@/lib/logger";
 
 const DEFAULT_TIMEOUT_MS = 480_000; // 8 minutes
 const MAX_TIMEOUT_MS = 600_000; // 10 minutes
@@ -12,14 +13,7 @@ const CLAUDE_PATH = (() => {
   }
 })();
 
-const log = {
-  info: (msg: string, data?: Record<string, unknown>) =>
-    console.log(`[claude-client] ${msg}`, data ? JSON.stringify(data, null, 2) : ""),
-  error: (msg: string, data?: Record<string, unknown>) =>
-    console.error(`[claude-client] ERROR: ${msg}`, data ? JSON.stringify(data, null, 2) : ""),
-  warn: (msg: string, data?: Record<string, unknown>) =>
-    console.warn(`[claude-client] WARN: ${msg}`, data ? JSON.stringify(data, null, 2) : ""),
-};
+const log = createLogger("claude");
 
 export interface AskOptions {
   timeoutMs?: number;
@@ -38,7 +32,6 @@ function buildClaudeEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface CLIEnvelope {
   result?: string;
   duration_ms?: number;
@@ -137,10 +130,7 @@ export function extractJson(text: string): Record<string, unknown> {
   const jsonMatch = fenceMatch || bareMatch;
 
   if (!jsonMatch) {
-    log.error("Failed to extract JSON from Claude response", {
-      responseLength: text.length,
-      responsePreview: text.slice(0, 500),
-    });
+    log.error("json_extract_failed", { responseLength: text.length });
     throw new Error("Could not parse JSON from response");
   }
 
@@ -158,17 +148,13 @@ export function extractJson(text: string): Record<string, unknown> {
       // Attempt to repair truncated JSON by closing open strings/braces
       const repaired = repairJson(sanitized);
       if (repaired) {
-        log.warn("Repaired truncated JSON", {
-          originalLength: raw.length,
-        });
+        log.warn("json_repaired", { originalLength: raw.length, method: "sanitized" });
         return repaired;
       }
       // Last resort: try repairing the original (sanitize might have confused things)
       const repairedRaw = repairJson(raw);
       if (repairedRaw) {
-        log.warn("Repaired truncated JSON (raw)", {
-          originalLength: raw.length,
-        });
+        log.warn("json_repaired", { originalLength: raw.length, method: "raw" });
         return repairedRaw;
       }
       throw new Error(`JSON parse failed: ${raw.slice(0, 200)}`);
@@ -234,8 +220,8 @@ function repairJson(raw: string): Record<string, unknown> | null {
 export async function ask(prompt: string, options?: AskOptions): Promise<string> {
   const timeoutMs = Math.min(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const model = options?.model ?? "sonnet";
-  const promptPreview = prompt.slice(0, 100).replace(/\n/g, " ");
-  log.info(`Sending prompt (${prompt.length} chars, model=${model}): "${promptPreview}..."`);
+  const skill = options?.skill;
+  log.info("ai_call_start", { skill, model, promptLength: prompt.length });
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -252,7 +238,8 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
     let stderr = "";
 
     const timer = setTimeout(() => {
-      log.error("Claude CLI timed out", { timeoutMs, promptPreview });
+      const durationMs = Date.now() - startTime;
+      log.error("ai_timeout", { skill, model, timeoutMs, durationMs });
       proc.kill("SIGTERM");
       reject(new Error("Claude CLI timed out after " + timeoutMs + "ms"));
     }, timeoutMs);
@@ -267,10 +254,7 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
 
     proc.on("error", (err) => {
       clearTimeout(timer);
-      log.error("Failed to spawn claude CLI", {
-        claudePath: CLAUDE_PATH,
-        error: err.message,
-      });
+      log.error("ai_spawn_failed", { claudePath: CLAUDE_PATH, error: err });
       reject(
         new Error(
           `Failed to start claude CLI. Is Claude Code installed? ${err.message}`
@@ -283,13 +267,12 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
       const elapsed = Date.now() - startTime;
 
       if (code !== 0) {
-        log.error("Claude CLI failed", {
+        log.error("ai_cli_failed", {
+          skill,
+          model,
           exitCode: code,
-          elapsed: `${elapsed}ms`,
-          stderr: stderr.slice(0, 500),
-          stdout: stdout.slice(0, 500),
-          claudePath: CLAUDE_PATH,
-          promptPreview,
+          durationMs: elapsed,
+          stderrPreview: stderr.slice(0, 200),
         });
         reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout}`));
         return;
@@ -302,17 +285,26 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
         result = envelope.result || stdout.trim();
 
         const usage = envelope.usage;
-        log.info(`Claude responded (model=${model}, ${elapsed}ms, in=${usage?.input_tokens ?? "?"}tok, out=${usage?.output_tokens ?? "?"}tok, cost=$${envelope.total_cost_usd?.toFixed(4) ?? "?"})`);
+        log.info("ai_call_complete", {
+          skill,
+          model,
+          durationMs: elapsed,
+          inputTokens: usage?.input_tokens,
+          outputTokens: usage?.output_tokens,
+          cacheReadTokens: usage?.cache_read_input_tokens,
+          costUsd: envelope.total_cost_usd,
+          responseLength: result.length,
+        });
 
         // Fire-and-forget token logging
-        if (options?.skill) {
-          logTokenUsage(options.skill, envelope).catch((err) =>
-            log.warn("Token logging failed", { error: (err as Error).message })
+        if (skill) {
+          logTokenUsage(skill, envelope).catch((err) =>
+            log.warn("token_logging_failed", { error: err })
           );
         }
       } catch {
         // Fallback: if JSON parse fails, treat as raw text
-        log.warn("Failed to parse CLI JSON envelope, falling back to raw text");
+        log.warn("cli_envelope_parse_failed", { stdoutLength: stdout.length });
         result = stdout.trim();
       }
 
@@ -324,7 +316,6 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 /**
  * Strip Prisma metadata (ids, timestamps, foreign keys) from profile objects
  * to reduce prompt size sent to Claude. Keeps only semantically relevant fields.
@@ -396,19 +387,18 @@ export async function askJson<T = Record<string, any>>(
   const text = await ask(enforced, options);
   try {
     return extractJson(text) as T;
-  } catch (firstErr) {
+  } catch {
     // Retry once by re-running the same prompt — simpler and more reliable
     // than asking the model to reconstruct from a truncated fragment
-    log.warn("JSON parse failed, retrying original prompt", {
-      responsePreview: text.slice(0, 300),
-    });
+    log.warn("json_parse_failed_retrying", { skill: options?.skill, responseLength: text.length });
     const retryText = await ask(enforced, options);
     try {
       return extractJson(retryText) as T;
     } catch (retryErr) {
-      log.error("JSON parsing failed after retry", {
-        error: (retryErr as Error).message,
-        responsePreview: retryText.slice(0, 500),
+      log.error("json_parse_failed_after_retry", {
+        skill: options?.skill,
+        responseLength: retryText.length,
+        error: retryErr,
       });
       throw retryErr;
     }

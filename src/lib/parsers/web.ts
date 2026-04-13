@@ -1,5 +1,8 @@
 import * as cheerio from "cheerio";
 import { MAX_ARTICLE_CAPTURE_CHARS } from "@/lib/capture-constants";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("web-scraper");
 
 const BLOCKED_IP_PATTERNS = [
   /^localhost$/i,
@@ -40,7 +43,7 @@ const BROWSER_HEADERS = {
 
 async function fetchWithRedirects(url: string): Promise<{ html: string; finalUrl: string }> {
   validateExternalUrl(url);
-  console.log(`[web-scraper] Fetching URL: ${url}`);
+  log.debug("fetch_start", { hostname: new URL(url).hostname });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -65,7 +68,7 @@ async function fetchWithRedirects(url: string): Promise<{ html: string; finalUrl
   }
 
   const html = await response.text();
-  console.log(`[web-scraper] Fetched ${html.length} chars of HTML`);
+  log.debug("fetch_complete", { htmlLength: html.length, hostname: new URL(finalUrl).hostname });
   return { html, finalUrl };
 }
 
@@ -97,7 +100,7 @@ function extractJobText(html: string): string {
     .find((t) => t.length > 100);
 
   if (jsonLdText) {
-    console.log(`[web-scraper] Extracted JSON-LD job posting (${jsonLdText.length} chars)`);
+    log.debug("extract_method", { method: "json-ld", contentLength: jsonLdText.length });
     return jsonLdText.slice(0, 15000);
   }
 
@@ -123,7 +126,7 @@ function extractJobText(html: string): string {
     .find((t) => t.length > 100);
 
   if (spaDataText) {
-    console.log(`[web-scraper] Extracted SPA data (${spaDataText.length} chars)`);
+    log.debug("extract_method", { method: "spa-data", contentLength: spaDataText.length });
     return spaDataText.slice(0, 15000);
   }
 
@@ -148,7 +151,7 @@ function extractJobText(html: string): string {
     if (el.length) {
       const text = el.text().replace(/\s+/g, " ").trim();
       if (text.length > 100) {
-        console.log(`[web-scraper] Matched selector "${selector}" (${text.length} chars)`);
+        log.debug("extract_method", { method: "selector", selector, contentLength: text.length });
         return text.slice(0, 15000);
       }
     }
@@ -156,7 +159,7 @@ function extractJobText(html: string): string {
 
   // Fallback: body text
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
-  console.log(`[web-scraper] Falling back to body text (${bodyText.length} chars)`);
+  log.debug("extract_method", { method: "body-fallback", contentLength: bodyText.length });
   return bodyText.slice(0, 15000);
 }
 
@@ -300,7 +303,7 @@ export async function scrapeJobUrlResolved(url: string): Promise<{ text: string;
   if (isAggregator) {
     const employerUrl = extractEmployerUrl(html, finalUrl);
     if (employerUrl) {
-      console.log(`[web-scraper] Two-hop: resolved to employer URL: ${employerUrl}`);
+      log.info("two_hop_resolved", { employerHostname: new URL(employerUrl).hostname });
       // Hop 2: scrape the employer's ATS page
       const text = await scrapeJobUrl(employerUrl);
       return { text, canonicalUrl: employerUrl };
@@ -355,7 +358,7 @@ async function fetchSubstackArticle(url: string): Promise<{
   const $ = cheerio.load(data.body_html || "");
   const text = $.text().replace(/\s+/g, " ").trim();
 
-  console.log(`[web-scraper] Fetched Substack article "${data.title}" (${text.length} chars)`);
+  log.info("substack_fetched", { titleLength: data.title?.length ?? 0, contentLength: text.length });
 
   return {
     title: data.title || "Untitled",
@@ -425,7 +428,7 @@ async function fetchMediumArticle(url: string): Promise<{
     throw new Error("Could not extract full article — Medium cookies may have expired");
   }
 
-  console.log(`[web-scraper] Fetched Medium article "${title}" (${text.length} chars)`);
+  log.info("medium_fetched", { titleLength: title.length, contentLength: text.length });
 
   return {
     title,
@@ -456,7 +459,7 @@ export async function scrapeArticleUrl(url: string): Promise<{
         finalUrl: result.finalUrl || url,
       };
     } catch (err) {
-      console.log(`[web-scraper] Substack API failed, falling back to HTML scraping: ${err}`);
+      log.warn("substack_api_fallback", { error: err instanceof Error ? err : new Error(String(err)) });
       // Fall through to regular scraping
     }
   }
@@ -471,7 +474,7 @@ export async function scrapeArticleUrl(url: string): Promise<{
         finalUrl: result.finalUrl || url,
       };
     } catch (err) {
-      console.log(`[web-scraper] Medium auth failed, falling back to HTML scraping: ${err}`);
+      log.warn("medium_auth_fallback", { error: err instanceof Error ? err : new Error(String(err)) });
       // Fall through to regular scraping
     }
   }

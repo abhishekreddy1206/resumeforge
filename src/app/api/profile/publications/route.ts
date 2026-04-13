@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("publications");
 
 export async function GET() {
   try {
@@ -13,7 +16,7 @@ export async function GET() {
     });
     return NextResponse.json(publications);
   } catch (error) {
-    console.error("Publications fetch error:", error);
+    log.error("publications_fetch_failed", { error });
     return NextResponse.json({ error: "Failed to fetch publications" }, { status: 500 });
   }
 }
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(publication);
   } catch (error) {
-    console.error("Publication create error:", error);
+    log.error("publication_create_failed", { error });
     return NextResponse.json({ error: "Failed to create publication" }, { status: 500 });
   }
 }
@@ -65,7 +68,7 @@ export async function PUT(request: NextRequest) {
     });
     return NextResponse.json(publication);
   } catch (error) {
-    console.error("Publication update error:", error);
+    log.error("publication_update_failed", { error });
     return NextResponse.json({ error: "Failed to update publication" }, { status: 500 });
   }
 }
@@ -79,7 +82,7 @@ export async function DELETE(request: NextRequest) {
     await prisma.publication.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Publication delete error:", error);
+    log.error("publication_delete_failed", { error });
     return NextResponse.json({ error: "Failed to delete publication" }, { status: 500 });
   }
 }

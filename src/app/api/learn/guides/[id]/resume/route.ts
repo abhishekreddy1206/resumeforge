@@ -3,6 +3,9 @@ import { prisma } from "@/lib/db";
 import { generateGuideSection } from "@/lib/claude";
 import type { GuideContentStorage, SectionGenStatus } from "@/lib/claude";
 import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("guide-resume");
 
 const RESUME_BATCH_SIZE = 1;
 
@@ -33,7 +36,7 @@ export async function POST(
           : "pending";
       }
       content._sectionStatuses = statuses;
-      console.log(`[guide-resume] Backfilled _sectionStatuses for guide ${id}: ${JSON.stringify(statuses)}`);
+      log.info("backfilled_section_statuses", { guideId: id, statuses });
     }
 
     // Stall detection: reset sections stuck in "generating" for too long
@@ -93,7 +96,7 @@ export async function POST(
       },
     });
 
-    console.log(`[guide-resume] Generating ${batch.length} sections for guide ${id}: ${batch.map((s) => s.title).join(", ")}`);
+    log.info("generating_sections", { guideId: id, batchSize: batch.length, sections: batch.map((s) => s.title) });
 
     // Generate batch in parallel
     const results = await Promise.allSettled(
@@ -128,7 +131,7 @@ export async function POST(
         currentStatuses[sectionId] = "completed";
         generatedCount++;
       } else {
-        console.error(`[guide-resume] Section "${batch[j].title}" failed:`, result.reason);
+        log.error("section_generation_failed", { guideId: id, sectionTitle: batch[j].title, error: result.reason });
         currentStatuses[sectionId] = "failed";
       }
     }
@@ -190,7 +193,7 @@ export async function POST(
       }
     });
 
-    console.log(`[guide-resume] Guide ${id}: ${generatedCount}/${batch.length} ok, ${remaining} remaining -> ${newStatus}`);
+    log.info("generation_progress", { guideId: id, generated: generatedCount, batchSize: batch.length, remaining, status: newStatus });
 
     return NextResponse.json({
       status: newStatus,
@@ -198,7 +201,7 @@ export async function POST(
       generated: generatedCount,
     });
   } catch (error) {
-    console.error("Guide resume error:", error);
+    log.error("guide_resume_failed", { error });
     const { id } = await params;
     await prisma.guide.update({
       where: { id },

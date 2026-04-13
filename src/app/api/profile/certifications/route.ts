@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("certifications");
 
 export async function GET() {
   try {
@@ -13,7 +16,7 @@ export async function GET() {
     });
     return NextResponse.json(certifications);
   } catch (error) {
-    console.error("Certifications fetch error:", error);
+    log.error("certifications_fetch_failed", { error });
     return NextResponse.json({ error: "Failed to fetch certifications" }, { status: 500 });
   }
 }
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(certification);
   } catch (error) {
-    console.error("Certification create error:", error);
+    log.error("certification_create_failed", { error });
     return NextResponse.json({ error: "Failed to create certification" }, { status: 500 });
   }
 }
@@ -65,7 +68,7 @@ export async function PUT(request: NextRequest) {
     });
     return NextResponse.json(certification);
   } catch (error) {
-    console.error("Certification update error:", error);
+    log.error("certification_update_failed", { error });
     return NextResponse.json({ error: "Failed to update certification" }, { status: 500 });
   }
 }
@@ -79,7 +82,7 @@ export async function DELETE(request: NextRequest) {
     await prisma.certification.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Certification delete error:", error);
+    log.error("certification_delete_failed", { error });
     return NextResponse.json({ error: "Failed to delete certification" }, { status: 500 });
   }
 }

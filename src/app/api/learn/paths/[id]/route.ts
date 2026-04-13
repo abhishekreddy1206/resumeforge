@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("learn-path");
 
 export async function GET(
   _request: NextRequest,
@@ -43,7 +46,7 @@ export async function GET(
       guides: [...orderedGuides, ...unordered],
     });
   } catch (error) {
-    console.error("Path get error:", error);
+    log.error("path_get_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to get learning path" }, { status: 500 });
   }
 }
@@ -81,7 +84,7 @@ export async function PUT(
 
     return NextResponse.json(path);
   } catch (error) {
-    console.error("Path update error:", error);
+    log.error("path_update_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to update learning path" }, { status: 500 });
   }
 }
@@ -99,7 +102,7 @@ export async function DELETE(
     await prisma.learningPath.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Path delete error:", error);
+    log.error("path_delete_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to delete learning path" }, { status: 500 });
   }
 }

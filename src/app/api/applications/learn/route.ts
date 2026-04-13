@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("app-learn");
 
 function normalizeQuestion(q: string): string {
   return q.toLowerCase().replace(/[''""]/g, "'").replace(/\s+/g, " ").trim();
@@ -91,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ learned });
   } catch (error) {
-    console.error("Learn answers error:", error);
+    log.error("learn_answers_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to learn answers" }, { status: 500 });
   }
 }
@@ -118,7 +121,7 @@ export async function GET() {
 
     return NextResponse.json(answers);
   } catch (error) {
-    console.error("List learned answers error:", error);
+    log.error("list_learned_answers_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to list learned answers" }, { status: 500 });
   }
 }
@@ -137,7 +140,7 @@ export async function DELETE(request: NextRequest) {
     await prisma.learnedAnswer.delete({ where: { id } });
     return NextResponse.json({ deleted: true });
   } catch (error) {
-    console.error("Delete learned answer error:", error);
+    log.error("delete_learned_answer_failed", { error: error instanceof Error ? error : new Error(String(error)) });
     return NextResponse.json({ error: "Failed to delete learned answer" }, { status: 500 });
   }
 }

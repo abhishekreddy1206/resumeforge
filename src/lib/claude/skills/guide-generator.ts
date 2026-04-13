@@ -4,6 +4,9 @@ import {
   SECTION_CORE_INSTRUCTIONS, SECTION_CORE_SCHEMA,
   SECTION_ASSESSMENT_INSTRUCTIONS, SECTION_ASSESSMENT_SCHEMA,
 } from "./guide-prompts";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("guide-generator");
 
 export type SectionGenStatus = "pending" | "generating" | "completed" | "failed" | "refining";
 
@@ -231,7 +234,7 @@ ${SECTION_ASSESSMENT_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-asses
     knowledgeChecks = assessment.knowledgeChecks || [];
     interviewScenarios = assessment.interviewScenarios || [];
   } catch (err) {
-    console.warn(`[guide-section] Assessment call failed for "${sectionPlan.title}", returning core-only section:`, err);
+    log.warn("section_assessment_failed", { sectionId: sectionPlan.id, sectionTitle: sectionPlan.title, error: err instanceof Error ? err : new Error(String(err)) });
   }
 
   return {
