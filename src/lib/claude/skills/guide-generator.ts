@@ -1,18 +1,20 @@
 import { askJson } from "../client";
 import {
   GUIDE_INSTRUCTIONS, GUIDE_SCHEMA, SECTION_SCHEMA, OUTLINE_SCHEMA, truncateSource,
-  SECTION_CORE_INSTRUCTIONS, SECTION_CORE_SCHEMA,
-  SECTION_ASSESSMENT_INSTRUCTIONS, SECTION_ASSESSMENT_SCHEMA,
+  SECTION_SESSION_INSTRUCTIONS,
 } from "./guide-prompts";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("guide-generator");
 
 export type SectionGenStatus = "pending" | "generating" | "completed" | "failed" | "refining";
+export type GuideGenerationState = "running" | "blocked" | "complete";
 
 export interface GuideContentStorage extends GuideContent {
   _sectionPlan?: Array<{ id: string; title: string; scope: string }>;
   _sectionStatuses?: Record<string, SectionGenStatus>;
+  _sectionErrors?: Record<string, string>;
+  _sectionAttempts?: Record<string, number>;
 }
 
 export interface CodeExample {
@@ -82,6 +84,150 @@ export interface RefineResult {
   changeDescription: string;
 }
 
+export interface GeneratedGuideSectionResult {
+  section: GuideSection;
+  attempts: number;
+}
+
+export class GuideOutlineValidationError extends Error {
+  attempts: number;
+  issues: string[];
+
+  constructor(issues: string[], attempts: number) {
+    super(`Guide outline validation failed: ${issues.join("; ")}`);
+    this.name = "GuideOutlineValidationError";
+    this.attempts = attempts;
+    this.issues = issues;
+  }
+}
+
+export class GuideSectionValidationError extends Error {
+  attempts: number;
+  issues: string[];
+  causeValue?: unknown;
+
+  constructor(message: string, issues: string[], attempts: number, causeValue?: unknown) {
+    super(message);
+    this.name = "GuideSectionValidationError";
+    this.attempts = attempts;
+    this.issues = issues;
+    this.causeValue = causeValue;
+  }
+}
+
+export class GuideContentValidationError extends Error {
+  issues: string[];
+
+  constructor(message: string, issues: string[]) {
+    super(message);
+    this.name = "GuideContentValidationError";
+    this.issues = issues;
+  }
+}
+
+const MIN_SECTION_EXPLANATION_WORDS = 120;
+const MIN_SECTION_KNOWLEDGE_CHECKS = 2;
+const MIN_SECTION_INTERVIEW_SCENARIOS = 1;
+const MIN_SECTION_KEY_TAKEAWAYS = 2;
+const MAX_OUTLINE_ATTEMPTS = 2;
+const DEFAULT_SECTION_ATTEMPTS = 2;
+const MAX_SECTION_ATTEMPTS = 3;
+const SECTION_TIMEOUT_MS = 300_000;
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/u).filter(Boolean).length;
+}
+
+function normalizeGuideSection(
+  section: Partial<GuideSection>,
+  fallback: { id: string; title: string }
+): GuideSection {
+  return {
+    id: (section.id || fallback.id || "").trim(),
+    title: (section.title || fallback.title || "").trim(),
+    explanation: typeof section.explanation === "string" ? section.explanation.trim() : "",
+    codeExamples: Array.isArray(section.codeExamples) ? section.codeExamples : [],
+    knowledgeChecks: Array.isArray(section.knowledgeChecks) ? section.knowledgeChecks : [],
+    interviewScenarios: Array.isArray(section.interviewScenarios) ? section.interviewScenarios : [],
+    keyTakeaways: Array.isArray(section.keyTakeaways) ? section.keyTakeaways : [],
+  };
+}
+
+export function validateGuideOutline(outline: GuideOutline): string[] {
+  const issues: string[] = [];
+  const plan = Array.isArray(outline.sectionPlan) ? outline.sectionPlan : [];
+
+  if (!outline.title?.trim()) {
+    issues.push("missing guide title");
+  }
+  if (!outline.overview?.trim()) {
+    issues.push("missing guide overview");
+  }
+  if (plan.length < 4 || plan.length > 8) {
+    issues.push(`expected 4-8 sections, got ${plan.length}`);
+  }
+
+  const seenIds = new Set<string>();
+  for (const [index, section] of plan.entries()) {
+    const id = section.id?.trim() || "";
+    const title = section.title?.trim() || "";
+    const scope = section.scope?.trim() || "";
+    if (!id) issues.push(`section ${index + 1} is missing an id`);
+    if (!title) issues.push(`section ${index + 1} is missing a title`);
+    if (!scope) issues.push(`section "${title || id || index + 1}" is missing a scope`);
+    if (id) {
+      if (seenIds.has(id)) {
+        issues.push(`duplicate section id "${id}"`);
+      }
+      seenIds.add(id);
+    }
+  }
+
+  return issues;
+}
+
+export function validateGuideSection(section: GuideSection): string[] {
+  const issues: string[] = [];
+  if (!section.id?.trim()) issues.push("missing section id");
+  if (!section.title?.trim()) issues.push("missing section title");
+  if (countWords(section.explanation) < MIN_SECTION_EXPLANATION_WORDS) {
+    issues.push("explanation is too short");
+  }
+  if ((section.knowledgeChecks?.length ?? 0) < MIN_SECTION_KNOWLEDGE_CHECKS) {
+    issues.push("knowledge checks are missing or incomplete");
+  }
+  if ((section.interviewScenarios?.length ?? 0) < MIN_SECTION_INTERVIEW_SCENARIOS) {
+    issues.push("interview scenarios are missing");
+  }
+  if ((section.keyTakeaways?.length ?? 0) < MIN_SECTION_KEY_TAKEAWAYS) {
+    issues.push("key takeaways are missing");
+  }
+  return issues;
+}
+
+export function validateGuideContent(content: GuideContent): string[] {
+  const issues: string[] = [];
+  if (!content.title?.trim()) issues.push("missing guide title");
+  if (!content.overview?.trim()) issues.push("missing guide overview");
+  if (!Array.isArray(content.sections) || content.sections.length < 4 || content.sections.length > 8) {
+    issues.push(`expected 4-8 sections, got ${Array.isArray(content.sections) ? content.sections.length : 0}`);
+    return issues;
+  }
+
+  const seenIds = new Set<string>();
+  content.sections.forEach((section, index) => {
+    if (seenIds.has(section.id)) {
+      issues.push(`duplicate section id "${section.id}"`);
+    }
+    seenIds.add(section.id);
+    for (const issue of validateGuideSection(section)) {
+      issues.push(`section ${index + 1} (${section.title || section.id}): ${issue}`);
+    }
+  });
+
+  return issues;
+}
+
 /**
  * Skill: Guide Generator
  *
@@ -98,12 +244,17 @@ export async function generateGuide(
     : "";
   const difficultyHint = options?.difficulty ? `\nTarget difficulty: ${options.difficulty}` : "";
 
-  return askJson<GuideContent>(`${GUIDE_INSTRUCTIONS}
+  const guide = await askJson<GuideContent>(`${GUIDE_INSTRUCTIONS}
 
 TOPIC: ${topic}${difficultyHint}${sourceBlock}
 
 Return ONLY valid JSON matching this structure:
 ${GUIDE_SCHEMA}`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+  const issues = validateGuideContent(guide);
+  if (issues.length > 0) {
+    throw new GuideContentValidationError(`Generated guide "${topic}" is incomplete.`, issues);
+  }
+  return guide;
 }
 
 export async function refineGuide(
@@ -128,7 +279,7 @@ export async function refineGuide(
     })),
   };
 
-  return askJson<RefineResult>(`${GUIDE_INSTRUCTIONS}
+  const result = await askJson<RefineResult>(`${GUIDE_INSTRUCTIONS}
 
 REFINE EXISTING GUIDE:
 ${JSON.stringify(existingSummary)}
@@ -148,6 +299,11 @@ Return ONLY valid JSON:
   "content": ${GUIDE_SCHEMA},
   "changeDescription": "string — summarize what changed"
 }`, { timeoutMs: 600_000, skill: "guide-generator", model: options?.model });
+  const issues = validateGuideContent(result.content);
+  if (issues.length > 0) {
+    throw new GuideContentValidationError("Refined guide content is incomplete.", issues);
+  }
+  return result;
 }
 
 /**
@@ -163,7 +319,10 @@ export async function generateGuideOutline(
     : "";
   const difficultyHint = options?.difficulty ? `\nTarget difficulty: ${options.difficulty}` : "";
 
-  return askJson<GuideOutline>(`${GUIDE_INSTRUCTIONS}
+  let lastIssues: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_OUTLINE_ATTEMPTS; attempt++) {
+    const outline = await askJson<GuideOutline>(`${GUIDE_INSTRUCTIONS}
 
 TOPIC: ${topic}${difficultyHint}${sourceBlock}
 
@@ -171,25 +330,34 @@ Plan 4-8 sections that progressively build understanding. Do NOT write section c
 
 Return ONLY valid JSON:
 ${OUTLINE_SCHEMA}`, { timeoutMs: 120_000, skill: "guide-outline", model: options?.model });
+
+    const issues = validateGuideOutline(outline);
+    if (issues.length === 0) {
+      return outline;
+    }
+    lastIssues = issues;
+    log.warn("invalid_outline", { topic, attempt, issues: issues.join("; ") });
+  }
+
+  throw new GuideOutlineValidationError(lastIssues, MAX_OUTLINE_ATTEMPTS);
 }
 
 /**
- * Generate a single section's full content via two sequential calls:
- * 1. Core: explanation, code examples, key takeaways (~60s)
- * 2. Assessment: knowledge checks, interview scenarios (~50s)
- *
- * If the assessment call fails, returns the section with empty assessments
- * rather than failing the entire section.
+ * Generate a single validated guide section in one pass.
  */
 export async function generateGuideSection(
   topic: string,
   sectionPlan: { id: string; title: string; scope: string },
   context: { difficulty: string; siblingTitles: string[] },
-  options?: { sources?: string[]; model?: string }
-): Promise<GuideSection> {
+  options?: { sources?: string[]; model?: string; maxAttempts?: number }
+): Promise<GeneratedGuideSectionResult> {
   const sourceBlock = options?.sources?.length
     ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 6000)}`).join("\n\n")}`
     : "";
+  const maxAttempts = Math.max(
+    1,
+    Math.min(options?.maxAttempts ?? DEFAULT_SECTION_ATTEMPTS, MAX_SECTION_ATTEMPTS)
+  );
 
   const sectionContext = `
 GUIDE TOPIC: ${topic}
@@ -201,51 +369,40 @@ SECTION TO WRITE:
 - Title: ${sectionPlan.title}
 - Scope: ${sectionPlan.scope}${sourceBlock}`;
 
-  // Call 1: Core content — explanation, code, takeaways
-  const core = await askJson<{
-    id: string;
-    title: string;
-    explanation: string;
-    codeExamples: Array<{ language: string; code: string; caption: string }>;
-    keyTakeaways: string[];
-  }>(`${SECTION_CORE_INSTRUCTIONS}
+  let lastIssues: string[] = [];
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const candidate = await askJson<GuideSection>(`${SECTION_SESSION_INSTRUCTIONS}
 ${sectionContext}
 
 Return ONLY valid JSON:
-${SECTION_CORE_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-core", model: options?.model });
+${SECTION_SCHEMA}`, { timeoutMs: SECTION_TIMEOUT_MS, skill: "guide-section", model: options?.model });
 
-  // Call 2: Assessment content — quizzes and interview scenarios
-  let knowledgeChecks: GuideSection["knowledgeChecks"] = [];
-  let interviewScenarios: GuideSection["interviewScenarios"] = [];
+      const normalized = normalizeGuideSection(candidate, sectionPlan);
+      const issues = validateGuideSection(normalized);
+      if (issues.length === 0) {
+        return {
+          section: normalized,
+          attempts: attempt,
+        };
+      }
 
-  try {
-    const assessment = await askJson<{
-      knowledgeChecks: GuideSection["knowledgeChecks"];
-      interviewScenarios: GuideSection["interviewScenarios"];
-    }>(`${SECTION_ASSESSMENT_INSTRUCTIONS}
-
-SECTION EXPLANATION:
-${core.explanation.slice(0, 4000)}
-${sectionContext}
-
-Return ONLY valid JSON:
-${SECTION_ASSESSMENT_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-assessment", model: options?.model });
-
-    knowledgeChecks = assessment.knowledgeChecks || [];
-    interviewScenarios = assessment.interviewScenarios || [];
-  } catch (err) {
-    log.warn("section_assessment_failed", { sectionId: sectionPlan.id, sectionTitle: sectionPlan.title, error: err instanceof Error ? err : new Error(String(err)) });
+      lastIssues = issues;
+      log.warn("invalid_section", { sectionTitle: sectionPlan.title, attempt, issues: issues.join("; ") });
+    } catch (error) {
+      lastError = error;
+      log.warn("section_generation_attempt_failed", { sectionTitle: sectionPlan.title, attempt, error: error instanceof Error ? error : new Error(String(error)) });
+    }
   }
 
-  return {
-    id: core.id || sectionPlan.id,
-    title: core.title || sectionPlan.title,
-    explanation: core.explanation,
-    codeExamples: core.codeExamples || [],
-    knowledgeChecks,
-    interviewScenarios,
-    keyTakeaways: core.keyTakeaways || [],
-  };
+  throw new GuideSectionValidationError(
+    `Could not generate a complete interactive section for "${sectionPlan.title}".`,
+    lastIssues.length > 0 ? lastIssues : ["section generation failed"],
+    maxAttempts,
+    lastError
+  );
 }
 
 /**
@@ -264,7 +421,7 @@ export async function refineGuideSection(
     : "";
   const instructionBlock = options?.instructions ? `\nUSER INSTRUCTIONS: ${options.instructions}` : "";
 
-  return askJson<GuideSection>(`${GUIDE_INSTRUCTIONS}
+  const result = await askJson<GuideSection>(`${GUIDE_INSTRUCTIONS}
 
 GUIDE TOPIC: ${topic}
 DIFFICULTY: ${context.difficulty}
@@ -277,6 +434,16 @@ TASK: Enhance this section with new details, examples, nuance from sources. Keep
 
 Return ONLY valid JSON:
 ${SECTION_SCHEMA}`, { timeoutMs: 480_000, skill: "guide-section-refine", model: options?.model });
+  const normalized = normalizeGuideSection(result, existingSection);
+  const issues = validateGuideSection(normalized);
+  if (issues.length > 0) {
+    throw new GuideSectionValidationError(
+      `Refined section "${existingSection.title}" is incomplete.`,
+      issues,
+      1
+    );
+  }
+  return normalized;
 }
 
 /**

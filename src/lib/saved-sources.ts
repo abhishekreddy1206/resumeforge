@@ -62,6 +62,7 @@ export interface PreparedSavedArticleCapture extends SavedSourceReviewResult {
   captureDiagnostics: SavedSourceCaptureDiagnostics;
   publisher: string | null;
   publishedAt: string | null;
+  previewLike: boolean;
 }
 
 export interface SavedSourceVersionComparable {
@@ -74,6 +75,11 @@ export interface SavedSourceVersionComparable {
   wordCount: number;
   reviewFlags: string;
   reviewSummary: string | null;
+}
+
+export interface SavedSourceRefreshDegradationAssessment {
+  rejected: boolean;
+  reasons: string[];
 }
 
 interface ArticleCaptureCandidate extends SavedSourceReviewResult {
@@ -234,6 +240,10 @@ function looksPreviewLike(normalizedText: string): boolean {
   return PREVIEW_MARKERS.some((marker) => openingText.includes(marker));
 }
 
+export function isPreviewLikeSavedSourceText(content: string): boolean {
+  return looksPreviewLike(normalizeSavedSourceText(content));
+}
+
 function clampArticleCaptureContent(text: string): string {
   return text.trim().slice(0, MAX_ARTICLE_CAPTURE_CHARS);
 }
@@ -342,6 +352,7 @@ function chooseCaptureCandidate(options: {
     captureDiagnostics: diagnostics,
     publisher: selected.publisher,
     publishedAt: selected.publishedAt,
+    previewLike: selected.previewLike,
     normalizedText: selected.normalizedText,
     contentHash: selected.contentHash,
     wordCount: selected.wordCount,
@@ -400,6 +411,64 @@ export function shouldCreateSavedSourceVersion(
     current.reviewFlags !== stringifyReviewFlags(next.reviewFlags) ||
     (current.reviewSummary || null) !== (next.reviewSummary || null)
   );
+}
+
+export function isPreparedSavedSourceLowQuality(
+  prepared: PreparedSavedArticleCapture
+): boolean {
+  return (
+    prepared.reviewFlags.includes("too_short") ||
+    prepared.reviewFlags.includes("boilerplate_heavy") ||
+    prepared.previewLike
+  );
+}
+
+export function getSavedSourceQualityBlockReason(
+  prepared: PreparedSavedArticleCapture
+): string {
+  if (prepared.previewLike) {
+    return "This article extract still looks like a teaser or preview. Save or replace it from the Chrome extension first.";
+  }
+  if (prepared.reviewFlags.includes("too_short")) {
+    return "This article extract is too short for reliable guide generation. Save or replace it from the Chrome extension first.";
+  }
+  if (prepared.reviewFlags.includes("boilerplate_heavy")) {
+    return "This article extract looks too boilerplate-heavy for reliable guide generation. Save or replace it from the Chrome extension first.";
+  }
+  return "This article extract is not clean enough for reliable guide generation yet.";
+}
+
+export function assessRefreshDegradation(
+  current: SavedSourceVersionComparable,
+  next: PreparedSavedArticleCapture
+): SavedSourceRefreshDegradationAssessment {
+  const reasons: string[] = [];
+  const currentFlags = new Set(parseReviewFlags(current.reviewFlags));
+  const currentLooksClean =
+    !currentFlags.has("too_short") &&
+    !currentFlags.has("boilerplate_heavy");
+
+  if (next.previewLike) {
+    reasons.push("preview_like");
+  }
+  if (next.reviewFlags.includes("too_short")) {
+    reasons.push("too_short");
+  }
+  if (next.reviewFlags.includes("boilerplate_heavy")) {
+    reasons.push("boilerplate_heavy");
+  }
+  if (
+    currentLooksClean &&
+    current.wordCount >= 150 &&
+    next.wordCount < Math.floor(current.wordCount * 0.75)
+  ) {
+    reasons.push("materially_shorter_than_head");
+  }
+
+  return {
+    rejected: reasons.length > 0,
+    reasons,
+  };
 }
 
 export async function prepareSavedArticleCapture(options: {

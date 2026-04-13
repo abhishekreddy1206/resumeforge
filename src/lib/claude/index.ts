@@ -35,8 +35,27 @@ export type { InterviewPrep, InterviewStory } from "./skills/interview-prep";
 export { generateFormAnswer, generateFormAnswerBatch } from "./skills/form-answerer";
 export type { FormAnswerResult } from "./skills/form-answerer";
 export { compactProfile, mergeProfileChanges } from "./client";
-export { generateGuide, refineGuide, generateGuideOutline, generateGuideSection, refineGuideSection, classifySectionRelevance } from "./skills/guide-generator";
-export type { GuideContent, GuideSection, GuideOutline, RefineResult, SectionGenStatus, GuideContentStorage } from "./skills/guide-generator";
+export {
+  generateGuide,
+  refineGuide,
+  generateGuideOutline,
+  generateGuideSection,
+  refineGuideSection,
+  classifySectionRelevance,
+  GuideOutlineValidationError,
+  GuideSectionValidationError,
+  GuideContentValidationError,
+} from "./skills/guide-generator";
+export type {
+  GuideContent,
+  GuideSection,
+  GuideOutline,
+  RefineResult,
+  SectionGenStatus,
+  GuideContentStorage,
+  GuideGenerationState,
+  GeneratedGuideSectionResult,
+} from "./skills/guide-generator";
 export { recommendGuides } from "./skills/guide-recommender";
 export type { GuideRecommendation } from "./skills/guide-recommender";
 export { checkSourceCrossLinks } from "./skills/source-cross-linker";

@@ -75,6 +75,20 @@ interface SavedSourceDetail {
   impactedGuides: ImpactedGuideItem[];
 }
 
+interface RefreshOutcome {
+  status: "updated" | "unchanged" | "rejected_degradation";
+  message?: string;
+  rejectionReasons?: string[];
+  candidate?: {
+    wordCount: number;
+    captureMethod: string | null;
+    captureDecisionReason: string | null;
+    reviewFlags: string[];
+    reviewSummary: string | null;
+    captureDiagnostics: SavedSourceDetail["captureDiagnostics"] | null;
+  };
+}
+
 export default function LearnSourceReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [source, setSource] = useState<SavedSourceDetail | null>(null);
@@ -82,6 +96,7 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
 
   const loadSource = useCallback(async () => {
     try {
@@ -106,12 +121,28 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
   const handleRefresh = async () => {
     if (!source?.refreshable || refreshing) return;
     setRefreshing(true);
+    setRefreshOutcome(null);
     try {
       const res = await fetch(`/api/learn/sources/${source.id}/refresh`, { method: "POST" });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Refresh failed");
       }
+      if (data?.status === "rejected_degradation") {
+        setRefreshOutcome({
+          status: "rejected_degradation",
+          message: data.message,
+          rejectionReasons: data.rejectionReasons,
+          candidate: data.candidate,
+        });
+        return;
+      }
+      setRefreshOutcome({
+        status: data?.status === "unchanged" ? "unchanged" : "updated",
+        message: data?.status === "unchanged"
+          ? "Refresh completed, but the saved extract did not materially change."
+          : "Refresh completed and the saved extract was updated.",
+      });
       await loadSource();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh failed");
@@ -235,6 +266,37 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
         {error && (
           <div className="mt-4 border border-destructive/20 bg-destructive/5 rounded px-4 py-3 text-sm text-destructive">
             {error}
+          </div>
+        )}
+        {refreshOutcome && (
+          <div
+            className={`mt-4 rounded px-4 py-3 text-sm ${
+              refreshOutcome.status === "rejected_degradation"
+                ? "border border-amber-500/30 bg-amber-500/10 text-foreground"
+                : "border border-primary/20 bg-primary/5 text-foreground"
+            }`}
+          >
+            <p>{refreshOutcome.message}</p>
+            {refreshOutcome.rejectionReasons && refreshOutcome.rejectionReasons.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Rejection reasons: {refreshOutcome.rejectionReasons.join(", ")}
+              </p>
+            )}
+            {refreshOutcome.candidate && (
+              <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                <div>Candidate words: {refreshOutcome.candidate.wordCount}</div>
+                <div>Candidate capture: {refreshOutcome.candidate.captureMethod || "unknown"}</div>
+                {refreshOutcome.candidate.captureDecisionReason && (
+                  <div>Candidate decision: {refreshOutcome.candidate.captureDecisionReason}</div>
+                )}
+                {refreshOutcome.candidate.reviewFlags.length > 0 && (
+                  <div>Candidate flags: {refreshOutcome.candidate.reviewFlags.join(", ")}</div>
+                )}
+                {refreshOutcome.candidate.captureDiagnostics?.selectedSelector && (
+                  <div>Candidate selector: {refreshOutcome.candidate.captureDiagnostics.selectedSelector}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>

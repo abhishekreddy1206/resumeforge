@@ -54,46 +54,25 @@ export const SECTION_SCHEMA = `{
   "keyTakeaways": ["string"]
 }`;
 
-// --- Split prompts for two-call section generation ---
-
-export const SECTION_CORE_INSTRUCTIONS = `Write a detailed technical section for a senior SWE study guide.
+export const SECTION_SESSION_INSTRUCTIONS = `Write a focused technical learning session for a senior SWE study guide.
 
 INCLUDE:
-1. Explanation — markdown prose with concrete examples from real systems (Google/Netflix/Uber). Teach "why" not just "what". 3+ paragraphs.
-2. Code examples — production-quality, compilable Python/Go/Java/TS. No pseudocode. Include edge cases. 1-3 examples.
-3. Key takeaways — 2-4 bullets summarizing the most important concepts.
-
-QUALITY: FAANG-prep level. Real code (no syntax errors). Teaching explanations.`;
-
-export const SECTION_CORE_SCHEMA = `{
-  "id": "string (kebab-case)",
-  "title": "string",
-  "explanation": "string (markdown, 3+ paragraphs)",
-  "codeExamples": [{"language":"string","code":"string","caption":"string"}],
-  "keyTakeaways": ["string"]
-}`;
-
-export const SECTION_ASSESSMENT_INSTRUCTIONS = `Generate assessment content for a senior SWE study guide section.
-Given the section explanation below, create knowledge checks and interview scenarios that test deep understanding.
-
-INCLUDE:
-1. Knowledge checks (2-4 total, mix of types):
+1. Explanation — concise but complete markdown prose that teaches the idea, trade-offs, and one or two real-system examples. Aim for a session-sized section, not a giant essay.
+2. Code examples — optional but encouraged when they clarify the concept. Use real compilable code, not pseudocode.
+3. Knowledge checks (2-4 total, mix of types):
    - quiz: 4 options, correct answer index (0-based), explanation of WHY each wrong answer fails
    - open_ended: "Explain X as if..." prompt + detailed evaluation rubric
-2. Interview scenarios (1-2):
+4. Interview scenarios (1-2):
    - setup: "You're in a system design interview asked to..."
    - hints: 3-4 progressive hints (subtle to direct)
    - sampleAnswer: strong candidate response with specific technical details
+5. Key takeaways — 2-4 bullets summarizing the most important concepts.
 
-QUALITY: FAANG-prep level. Questions should test understanding, not memorization.`;
-
-export const SECTION_ASSESSMENT_SCHEMA = `{
-  "knowledgeChecks": [
-    {"type":"quiz","question":"string","options":["string","string","string","string"],"answer":0,"explanation":"string"},
-    {"type":"open_ended","prompt":"string","rubric":"string"}
-  ],
-  "interviewScenarios": [{"setup":"string","hints":["string"],"sampleAnswer":"string"}]
-}`;
+QUALITY:
+- FAANG-prep level, but readable in one sitting
+- Prefer depth over filler
+- Do not omit quizzes or interview scenarios
+- Return the whole section in one response`;
 
 export const OUTLINE_SCHEMA = `{
   "title": "string",

@@ -151,12 +151,21 @@ export function RefinePanel({ guideId, existingSources, onRefined, sectionId, se
     setStatusMessage(null);
     try {
       const res = await fetch(`/api/learn/sources/${savedSourceId}/refresh`, { method: "POST" });
+      const refreshed = await res.json().catch(() => null);
       if (!res.ok) {
-        const errData = await res.json().catch(() => null);
+        const errData = refreshed;
         setError(errData?.error || "Failed to refresh saved source.");
         return;
       }
-      const refreshed = await res.json();
+      if (refreshed?.status === "rejected_degradation") {
+        setStatusMessage(refreshed.message || "Refresh candidate was rejected because it looked worse than the current saved extract.");
+        return;
+      }
+      setStatusMessage(
+        refreshed?.status === "unchanged"
+          ? "Saved source refresh completed with no material change."
+          : "Saved source refreshed."
+      );
       loadSavedSources();
       if (selectedSaved?.id === savedSourceId) {
         setSelectedSaved(refreshed);

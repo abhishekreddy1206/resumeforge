@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { refineGuide, refineGuideSection, classifySectionRelevance } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
 import { GuideSourceResolutionError, type GuideSourcePayload, getActiveGuideSourceTexts, getGuideVersionSourceRefs, persistGuideSources, resolveGuideSources, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
+import { ensureGuideContentTracking } from "@/lib/learn-guides";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 
@@ -51,7 +52,7 @@ export const POST = withLogging(async (
     return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
   }
 
-  const existingContent = JSON.parse(guide.content) as GuideContentStorage;
+  const existingContent = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
 
   // Smart source routing: classify which sections benefit from new sources
   const sectionPlan = existingContent._sectionPlan || existingContent.sections.map((s) => ({
@@ -79,19 +80,13 @@ export const POST = withLogging(async (
     });
   }
 
-  // Initialize _sectionStatuses if missing (guides created before this feature)
-  if (!existingContent._sectionStatuses) {
-    existingContent._sectionStatuses = {};
-    for (const s of existingContent.sections) {
-      existingContent._sectionStatuses[s.id] = "completed";
-    }
-  }
-
   // Mark relevant sections as "refining"
   if (!shouldFullRefine) {
+    const sectionStatuses = existingContent._sectionStatuses || {};
     for (const sId of relevantSectionIds) {
-      existingContent._sectionStatuses[sId] = "refining";
+      sectionStatuses[sId] = "refining";
     }
+    existingContent._sectionStatuses = sectionStatuses;
   }
 
   // Save sources and update guide status in one transaction
@@ -103,8 +98,6 @@ export const POST = withLogging(async (
       data: {
         content: JSON.stringify(existingContent),
         status: "generating",
-        lastAsyncError: null,
-        lastAsyncStage: null,
       },
     });
   });
@@ -117,15 +110,7 @@ export const POST = withLogging(async (
 
       const currentGuide = await prisma.guide.findUnique({ where: { id: guide.id } });
       if (!currentGuide) return;
-      const currentContent = JSON.parse(currentGuide.content) as GuideContentStorage;
-
-      // Initialize _sectionStatuses if missing (guides created before this feature)
-      if (!currentContent._sectionStatuses) {
-        currentContent._sectionStatuses = {};
-        for (const s of currentContent.sections) {
-          currentContent._sectionStatuses[s.id] = "completed";
-        }
-      }
+      const currentContent = ensureGuideContentTracking(JSON.parse(currentGuide.content) as GuideContentStorage);
 
       let resultContent: GuideContentStorage;
       let changeDescription: string;
@@ -135,16 +120,21 @@ export const POST = withLogging(async (
       if (shouldFullRefine) {
         task.step("full_refine_start", { guideId: id });
         const result = await refineGuide(currentContent, allSourceTexts, { instructions, model });
-        resultContent = {
+        resultContent = ensureGuideContentTracking({
           ...result.content,
           _sectionPlan: currentContent._sectionPlan,
           _sectionStatuses: currentContent._sectionStatuses,
-        };
+          _sectionErrors: currentContent._sectionErrors,
+          _sectionAttempts: currentContent._sectionAttempts,
+        });
         changeDescription = result.changeDescription;
         if (resultContent._sectionStatuses) {
           for (const s of resultContent.sections) {
             resultContent._sectionStatuses[s.id] = "completed";
           }
+        }
+        if (resultContent._sectionErrors) {
+          resultContent._sectionErrors = {};
         }
       } else {
         // Per-section refine in batches
@@ -172,7 +162,7 @@ export const POST = withLogging(async (
           // Merge batch results into DB immediately (so polling picks them up)
           const latestGuide = await prisma.guide.findUnique({ where: { id: guide.id } });
           if (!latestGuide) return;
-          const latestContent = JSON.parse(latestGuide.content) as GuideContentStorage;
+          const latestContent = ensureGuideContentTracking(JSON.parse(latestGuide.content) as GuideContentStorage);
 
           for (let j = 0; j < results.length; j++) {
             const result = results[j];
@@ -181,10 +171,17 @@ export const POST = withLogging(async (
               const idx = latestContent.sections.findIndex((s) => s.id === sectionId);
               if (idx !== -1) latestContent.sections[idx] = result.value;
               if (latestContent._sectionStatuses) latestContent._sectionStatuses[sectionId] = "completed";
+              if (latestContent._sectionErrors) delete latestContent._sectionErrors[sectionId];
               refinedSections.push(sectionId);
             } else {
               task.step("section_refine_failed", { sectionId, error: result.reason instanceof Error ? result.reason : new Error(String(result.reason)) });
               if (latestContent._sectionStatuses) latestContent._sectionStatuses[sectionId] = "completed"; // restore original
+              if (latestContent._sectionErrors) {
+                const message = result.reason instanceof Error
+                  ? result.reason.message
+                  : "Section refinement failed";
+                latestContent._sectionErrors[sectionId] = message.slice(0, 500);
+              }
               failedSections++;
             }
           }
@@ -201,8 +198,20 @@ export const POST = withLogging(async (
         // Re-read final state for version snapshot
         const finalGuide = await prisma.guide.findUnique({ where: { id: guide.id } });
         if (finalGuide) {
-          resultContent = JSON.parse(finalGuide.content) as GuideContentStorage;
+          resultContent = ensureGuideContentTracking(JSON.parse(finalGuide.content) as GuideContentStorage);
         }
+      }
+
+      if (refinedSections.length === 0 && failedSections > 0) {
+        await prisma.guide.update({
+          where: { id: guide.id },
+          data: {
+            status: "published",
+            lastAsyncError: `${failedSections} section${failedSections === 1 ? "" : "s"} could not be refined. Existing content was preserved.`,
+            lastAsyncStage: "refine_sections",
+          },
+        });
+        return;
       }
 
       // Save version history and mark as published

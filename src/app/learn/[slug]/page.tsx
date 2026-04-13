@@ -15,9 +15,12 @@ interface GuideData {
   content: GuideContent;
   version: number;
   status: string;
+  generationState: "running" | "blocked" | "complete";
   completionStatus: string;
   lastAsyncError: string | null;
   lastAsyncStage: string | null;
+  failedSectionIds: string[];
+  sectionErrors: Record<string, string>;
   sectionProgress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>;
   sources: Array<{
     id: string;
@@ -85,7 +88,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         const updated = await res.json();
         setGuide(updated);
 
-        if (updated.status !== "generating") {
+        if (updated.status !== "generating" || updated.generationState === "complete") {
           clearInterval(interval);
           stalePollsRef.current = 0;
           return;
@@ -319,6 +322,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         const completedCount = Object.values(sectionStatuses).filter((s) => s === "completed").length;
         const totalSections = guide.content.sections.length;
         const pct = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
+        const isBlocked = guide.generationState === "blocked";
 
         const statusIcon = (status: SectionGenStatus | undefined) => {
           switch (status) {
@@ -331,15 +335,17 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         };
 
         return (
-          <div className="mb-8 border border-primary/20 bg-primary/5 rounded px-5 py-4 anim-fade-up">
+          <div className={`mb-8 rounded px-5 py-4 anim-fade-up ${isBlocked ? "border border-amber-500/25 bg-amber-500/10" : "border border-primary/20 bg-primary/5"}`}>
             <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-              <span className="text-sm font-medium text-foreground">Generating sections...</span>
-              <span className="label-mono text-primary ml-auto">{pct}%</span>
+              <Sparkles className={`w-4 h-4 ${isBlocked ? "text-amber-600" : "text-primary animate-pulse"}`} />
+              <span className="text-sm font-medium text-foreground">
+                {isBlocked ? "Generation blocked" : "Generating sections..."}
+              </span>
+              <span className={`label-mono ml-auto ${isBlocked ? "text-amber-700" : "text-primary"}`}>{pct}%</span>
             </div>
             <div className="bg-muted rounded-full h-1.5 overflow-hidden mb-3">
               <div
-                className="h-full rounded-full transition-all duration-700 ease-out bg-primary"
+                className={`h-full rounded-full transition-all duration-700 ease-out ${isBlocked ? "bg-amber-500" : "bg-primary"}`}
                 style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%` }}
               />
             </div>
@@ -364,8 +370,22 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
             <p className="label-mono text-muted-foreground/60 mt-2">
               {completedCount} of {totalSections} sections ready
             </p>
+            {isBlocked && guide.failedSectionIds.length > 0 && (
+              <div className="mt-3 space-y-2 border-t border-amber-500/15 pt-3">
+                {guide.failedSectionIds.map((sectionId) => {
+                  const section = guide.content.sections.find((item) => item.id === sectionId);
+                  const error = guide.sectionErrors[sectionId];
+                  return (
+                    <div key={sectionId} className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{section?.title || sectionId}:</span>{" "}
+                      {error || "Generation stalled for this section."}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {!resuming && !resumeError && (
-              <div className="mt-3 pt-3 border-t border-primary/10">
+              <div className={`mt-3 pt-3 ${isBlocked ? "border-t border-amber-500/15" : "border-t border-primary/10"}`}>
                 <button
                   onClick={handleResumeGeneration}
                   className="label-mono text-primary hover:text-primary/80 flex items-center gap-1.5 transition-colors"
@@ -375,7 +395,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
               </div>
             )}
             {resuming && (
-              <div className="mt-3 pt-3 border-t border-primary/10 flex items-center gap-2">
+              <div className={`mt-3 pt-3 flex items-center gap-2 ${isBlocked ? "border-t border-amber-500/15" : "border-t border-primary/10"}`}>
                 <RotateCcw className="w-3 h-3 text-primary animate-spin" />
                 <span className="text-xs text-muted-foreground">Generating next batch of sections...</span>
               </div>

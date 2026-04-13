@@ -3,7 +3,16 @@ import { prisma } from "@/lib/db";
 import { checkSourceCrossLinks } from "@/lib/claude";
 import { parseDocx } from "@/lib/parsers/docx";
 import { parsePdf } from "@/lib/parsers/pdf";
-import { scrapeArticleUrl } from "@/lib/parsers/web";
+import {
+  getSavedSourceQualityBlockReason,
+  isPreparedSavedSourceLowQuality,
+  isPreviewLikeSavedSourceText,
+  parseReviewFlags,
+  prepareSavedArticleCapture,
+  stringifyCaptureDiagnostics,
+  stringifyReviewFlags,
+  type PreparedSavedArticleCapture,
+} from "@/lib/saved-sources";
 import { normalizeArticleUrl } from "@/lib/utils/normalize-url";
 
 const STOP_WORDS = new Set([
@@ -62,6 +71,21 @@ export class GuideSourceResolutionError extends Error {
     this.name = "GuideSourceResolutionError";
     this.status = status;
   }
+}
+
+function inferArticleSourceType(requestedType: string, url: string): string {
+  if (requestedType !== "url") {
+    return requestedType;
+  }
+
+  const normalizedUrl = url.toLowerCase();
+  if (/medium\.com|towardsdatascience\.com|betterprogramming\.pub|levelup\.gitconnected\.com/.test(normalizedUrl)) {
+    return "medium";
+  }
+  if (/\.substack\.com\/p\//.test(normalizedUrl)) {
+    return "substack";
+  }
+  return "article";
 }
 
 function extractKeywords(text: string): Set<string> {
@@ -149,6 +173,215 @@ async function resolveSavedSourceInput(
   };
 }
 
+function isSavedSourceHeadBlockedForGuide(source: {
+  reviewFlags: string;
+  content: string;
+}): boolean {
+  const flags = parseReviewFlags(source.reviewFlags);
+  return (
+    flags.includes("too_short") ||
+    flags.includes("boilerplate_heavy") ||
+    isPreviewLikeSavedSourceText(source.content) ||
+    source.content.trim().length < 50
+  );
+}
+
+async function restoreOrCreateSavedSourceFromPrepared(
+  profileId: string,
+  requestedType: string,
+  prepared: PreparedSavedArticleCapture
+): Promise<GuideSourcePayload> {
+  const reviewFlags = stringifyReviewFlags(prepared.reviewFlags);
+  const captureDiagnostics = stringifyCaptureDiagnostics(prepared.captureDiagnostics);
+  const normalizedType = inferArticleSourceType(requestedType, prepared.finalUrl);
+
+  const source = await prisma.$transaction(async (tx) => {
+    const existing = await tx.savedSource.findFirst({
+      where: {
+        profileId,
+        url: prepared.canonicalUrl,
+      },
+      select: {
+        id: true,
+        type: true,
+        url: true,
+        title: true,
+        version: true,
+        content: true,
+        contentHash: true,
+        wordCount: true,
+        reviewFlags: true,
+        reviewSummary: true,
+        captureMethod: true,
+        publisher: true,
+        publishedAt: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!existing) {
+      const created = await tx.savedSource.create({
+        data: {
+          profileId,
+          type: normalizedType,
+          url: prepared.canonicalUrl,
+          title: prepared.title,
+          content: prepared.content,
+          version: 1,
+          contentHash: prepared.contentHash,
+          wordCount: prepared.wordCount,
+          reviewFlags,
+          reviewSummary: prepared.reviewSummary,
+          captureMethod: prepared.captureMethod,
+          captureDecisionReason: prepared.captureDecisionReason,
+          captureDiagnostics,
+          publisher: prepared.publisher,
+          publishedAt: prepared.publishedAt,
+        },
+        select: {
+          id: true,
+          type: true,
+          url: true,
+          title: true,
+          version: true,
+        },
+      });
+
+      await tx.savedSourceVersion.create({
+        data: {
+          savedSourceId: created.id,
+          version: 1,
+          url: prepared.canonicalUrl,
+          title: prepared.title,
+          content: prepared.content,
+          contentHash: prepared.contentHash,
+          captureMethod: prepared.captureMethod,
+          captureDecisionReason: prepared.captureDecisionReason,
+          captureDiagnostics,
+          publisher: prepared.publisher,
+          publishedAt: prepared.publishedAt,
+          wordCount: prepared.wordCount,
+          reviewFlags,
+          reviewSummary: prepared.reviewSummary,
+          changeType: "initial",
+        },
+      });
+
+      return created;
+    }
+
+    const nextVersion = existing.version + 1;
+    const changed =
+      existing.contentHash !== prepared.contentHash ||
+      existing.title !== prepared.title ||
+      existing.url !== prepared.canonicalUrl ||
+      existing.type !== normalizedType ||
+      existing.captureMethod !== prepared.captureMethod ||
+      existing.publisher !== prepared.publisher ||
+      existing.publishedAt !== prepared.publishedAt ||
+      existing.wordCount !== prepared.wordCount ||
+      existing.reviewFlags !== reviewFlags ||
+      existing.reviewSummary !== prepared.reviewSummary;
+
+    if (changed) {
+      await tx.savedSourceVersion.create({
+        data: {
+          savedSourceId: existing.id,
+          version: nextVersion,
+          url: prepared.canonicalUrl,
+          title: prepared.title,
+          content: prepared.content,
+          contentHash: prepared.contentHash,
+          captureMethod: prepared.captureMethod,
+          captureDecisionReason: prepared.captureDecisionReason,
+          captureDiagnostics,
+          publisher: prepared.publisher,
+          publishedAt: prepared.publishedAt,
+          wordCount: prepared.wordCount,
+          reviewFlags,
+          reviewSummary: prepared.reviewSummary,
+          changeType: "refresh",
+        },
+      });
+    }
+
+    return tx.savedSource.update({
+      where: { id: existing.id },
+      data: {
+        type: normalizedType,
+        url: prepared.canonicalUrl,
+        title: prepared.title,
+        content: changed ? prepared.content : existing.content,
+        version: changed ? nextVersion : existing.version,
+        contentHash: changed ? prepared.contentHash : existing.contentHash,
+        wordCount: changed ? prepared.wordCount : existing.wordCount,
+        reviewFlags: changed ? reviewFlags : existing.reviewFlags,
+        reviewSummary: changed ? prepared.reviewSummary : existing.reviewSummary,
+        captureMethod: changed ? prepared.captureMethod : existing.captureMethod,
+        captureDecisionReason: changed
+          ? prepared.captureDecisionReason
+          : existing.captureMethod
+          ? undefined
+          : prepared.captureDecisionReason,
+        captureDiagnostics: changed ? captureDiagnostics : undefined,
+        publisher: changed ? prepared.publisher : existing.publisher,
+        publishedAt: changed ? prepared.publishedAt : existing.publishedAt,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        type: true,
+        url: true,
+        title: true,
+        version: true,
+      },
+    });
+  });
+
+  return resolveSavedSourceInput(profileId, source.id);
+}
+
+async function resolveUrlBackedSourceInput(
+  profileId: string,
+  src: GuideInputSource
+): Promise<GuideSourcePayload> {
+  const normalizedUrl = normalizeArticleUrl(src.url || "");
+  const existing = await prisma.savedSource.findFirst({
+    where: {
+      profileId,
+      url: normalizedUrl,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      reviewFlags: true,
+      content: true,
+    },
+  });
+
+  if (existing) {
+    if (isSavedSourceHeadBlockedForGuide(existing)) {
+      throw new GuideSourceResolutionError(
+        "This saved article extract looks incomplete for guide generation. Replace it from the Chrome extension or refresh it after improving the capture.",
+        422
+      );
+    }
+    return resolveSavedSourceInput(profileId, existing.id);
+  }
+
+  const prepared = await prepareSavedArticleCapture({
+    url: src.url || "",
+    title: null,
+    allowFallback: false,
+  });
+
+  if (isPreparedSavedSourceLowQuality(prepared)) {
+    throw new GuideSourceResolutionError(getSavedSourceQualityBlockReason(prepared), 422);
+  }
+
+  return restoreOrCreateSavedSourceFromPrepared(profileId, src.type, prepared);
+}
+
 export async function resolveGuideSources(
   profileId: string,
   sources: GuideInputSource[] | undefined
@@ -181,18 +414,9 @@ export async function resolveGuideSources(
     }
 
     if ((src.type === "url" || ARTICLE_SOURCE_TYPES.has(src.type)) && src.url) {
-      const article = await scrapeArticleUrl(src.url);
-      const title = article.title?.trim() || "Untitled";
-      const content = article.text.trim();
-      if (!content) continue;
-      const canonicalUrl = normalizeArticleUrl(article.finalUrl || src.url);
-      sourceTexts.push(buildGuideModelText(title, content));
-      sourcesToSave.push({
-        type: src.type === "url" ? "article" : src.type,
-        url: canonicalUrl,
-        title,
-        content,
-      });
+      const resolved = await resolveUrlBackedSourceInput(profileId, src);
+      sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
+      sourcesToSave.push(resolved);
       continue;
     }
 

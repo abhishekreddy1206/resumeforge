@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { refineGuideSection } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
 import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
+import { ensureGuideContentTracking } from "@/lib/learn-guides";
 
 export async function POST(
   request: NextRequest,
@@ -16,7 +17,7 @@ export async function POST(
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
     }
 
-    const content = JSON.parse(guide.content) as GuideContentStorage;
+    const content = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
     const section = content.sections.find((s) => s.id === sectionId);
 
     if (!section) {
@@ -41,8 +42,6 @@ export async function POST(
       where: { id },
       data: {
         content: JSON.stringify(content),
-        lastAsyncError: null,
-        lastAsyncStage: null,
       },
     });
 
@@ -64,10 +63,11 @@ export async function POST(
         return NextResponse.json({ error: "Guide disappeared" }, { status: 404 });
       }
 
-      const currentContent = JSON.parse(currentGuide.content) as GuideContentStorage;
+      const currentContent = ensureGuideContentTracking(JSON.parse(currentGuide.content) as GuideContentStorage);
       const idx = currentContent.sections.findIndex((s) => s.id === sectionId);
       if (idx !== -1) currentContent.sections[idx] = refined;
       if (currentContent._sectionStatuses) currentContent._sectionStatuses[sectionId] = "completed";
+      if (currentContent._sectionErrors) delete currentContent._sectionErrors[sectionId];
 
       const newVersion = guide.version + 1;
       const sourceRefs = await getGuideVersionSourceRefs(guide.id);
@@ -99,19 +99,27 @@ export async function POST(
       // Restore status on failure
       const fallback = await prisma.guide.findUnique({ where: { id } });
       if (fallback) {
-        const fallbackContent = JSON.parse(fallback.content) as GuideContentStorage;
+        const fallbackContent = ensureGuideContentTracking(JSON.parse(fallback.content) as GuideContentStorage);
         if (fallbackContent._sectionStatuses) fallbackContent._sectionStatuses[sectionId] = "completed";
+        if (fallbackContent._sectionErrors) {
+          fallbackContent._sectionErrors[sectionId] = err instanceof Error
+            ? err.message.slice(0, 500)
+            : "Section refinement failed";
+        }
         await prisma.guide.update({
           where: { id },
           data: {
             content: JSON.stringify(fallbackContent),
-            lastAsyncError: "Section refinement failed",
+            lastAsyncError: err instanceof Error ? err.message.slice(0, 500) : "Section refinement failed",
             lastAsyncStage: "refine_section",
           },
         });
       }
       console.error(`[section-refine] Failed for section "${sectionId}":`, err);
-      return NextResponse.json({ error: "Section refine failed" }, { status: 500 });
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Section refine failed" },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error("Section refine error:", error);

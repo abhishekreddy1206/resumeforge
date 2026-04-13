@@ -27,6 +27,10 @@ export function SectionBlock({ section, guideId, isExpanded, onToggle, onQuizCom
   if (codeCount > 0) summaryParts.push(`${codeCount} code example${codeCount > 1 ? "s" : ""}`);
   if (checkCount > 0) summaryParts.push(`${checkCount} quiz${checkCount > 1 ? "zes" : ""}`);
   if (scenarioCount > 0) summaryParts.push(`${scenarioCount} scenario${scenarioCount > 1 ? "s" : ""}`);
+  const healthFlags: string[] = [];
+  if ((section.explanation || "").trim().length === 0) healthFlags.push("explanation missing");
+  if (checkCount === 0) healthFlags.push("interactive checks missing");
+  if (scenarioCount === 0) healthFlags.push("interview scenario missing");
 
   return (
     <div id={section.id} className="scroll-mt-28">
@@ -51,12 +55,29 @@ export function SectionBlock({ section, guideId, isExpanded, onToggle, onQuizCom
               {summaryParts.join(" · ")}
             </p>
           )}
+          {healthFlags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {healthFlags.map((flag) => (
+                <span
+                  key={flag}
+                  className="label-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700"
+                >
+                  {flag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </button>
 
       {/* Collapsible content */}
       <div className={`grid transition-all duration-300 ${isExpanded ? "grid-rows-[1fr] opacity-100 mt-6" : "grid-rows-[0fr] opacity-0 mt-0"}`}>
         <div className="overflow-hidden">
+          {healthFlags.length > 0 && (
+            <div className="mb-6 rounded border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+              This section is missing some interactive learning content.
+            </div>
+          )}
           {/* Explanation prose — optimized for reading */}
           <div className="mb-8 space-y-4" style={{ maxWidth: "42rem" }}>
             {(section.explanation || "").split("\n\n").map((block, bi) => {

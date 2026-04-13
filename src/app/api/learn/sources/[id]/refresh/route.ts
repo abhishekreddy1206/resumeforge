@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { buildSavedSourceReviewUrl, isRefreshableArticleSource, parseCaptureDiagnostics, parseReviewFlags, prepareSavedArticleCapture, shouldCreateSavedSourceVersion, stringifyCaptureDiagnostics, stringifyReviewFlags } from "@/lib/saved-sources";
+import {
+  assessRefreshDegradation,
+  buildSavedSourceReviewUrl,
+  isRefreshableArticleSource,
+  parseCaptureDiagnostics,
+  parseReviewFlags,
+  prepareSavedArticleCapture,
+  shouldCreateSavedSourceVersion,
+  stringifyCaptureDiagnostics,
+  stringifyReviewFlags,
+} from "@/lib/saved-sources";
 import { suggestGuidesForSourceBestEffort } from "@/lib/learn-sources";
 
 function duplicateResponse(source: {
@@ -53,9 +63,14 @@ export async function POST(
         reviewFlags: true,
         reviewSummary: true,
         captureMethod: true,
+        captureDecisionReason: true,
+        captureDiagnostics: true,
         publisher: true,
         publishedAt: true,
+        lastRefreshedAt: true,
         deletedAt: true,
+        content: true,
+        createdAt: true,
       },
     });
 
@@ -101,6 +116,46 @@ export async function POST(
       fallbackDiagnostics,
       allowFallback: typeof fallbackContent === "string" && fallbackContent.trim().length >= 50,
     });
+    const degradation = assessRefreshDegradation(source, prepared);
+    const candidateReviewFlags = stringifyReviewFlags(prepared.reviewFlags);
+    const candidateDiagnostics = stringifyCaptureDiagnostics(prepared.captureDiagnostics);
+
+    if (degradation.rejected) {
+      return NextResponse.json({
+        id: source.id,
+        type: source.type,
+        url: source.url,
+        title: source.title,
+        version: source.version,
+        wordCount: source.wordCount,
+        captureMethod: source.captureMethod,
+        captureDecisionReason: source.captureDecisionReason,
+        captureDiagnostics: parseCaptureDiagnostics(source.captureDiagnostics),
+        publisher: source.publisher,
+        publishedAt: source.publishedAt,
+        lastRefreshedAt: source.lastRefreshedAt,
+        reviewFlags: parseReviewFlags(source.reviewFlags),
+        reviewSummary: source.reviewSummary,
+        createdAt: source.createdAt,
+        deletedAt: source.deletedAt,
+        reviewUrl: buildSavedSourceReviewUrl(source.id),
+        refreshable: true,
+        unchanged: true,
+        status: "rejected_degradation",
+        message: "Refresh candidate was rejected because it looked worse than the current saved extract.",
+        rejectionReasons: degradation.reasons,
+        candidate: {
+          title: prepared.title,
+          url: prepared.canonicalUrl,
+          wordCount: prepared.wordCount,
+          captureMethod: prepared.captureMethod,
+          captureDecisionReason: prepared.captureDecisionReason,
+          captureDiagnostics: parseCaptureDiagnostics(candidateDiagnostics),
+          reviewFlags: parseReviewFlags(candidateReviewFlags),
+          reviewSummary: prepared.reviewSummary,
+        },
+      });
+    }
 
     const refreshedAt = new Date();
     const refreshed = await prisma.$transaction(async (tx) => {
@@ -125,8 +180,6 @@ export async function POST(
       }
 
       const shouldVersion = shouldCreateSavedSourceVersion(source, prepared);
-      const reviewFlags = stringifyReviewFlags(prepared.reviewFlags);
-      const captureDiagnostics = stringifyCaptureDiagnostics(prepared.captureDiagnostics);
 
       if (shouldVersion) {
         const nextVersion = source.version + 1;
@@ -141,11 +194,11 @@ export async function POST(
             contentHash: prepared.contentHash,
             captureMethod: prepared.captureMethod,
             captureDecisionReason: prepared.captureDecisionReason,
-            captureDiagnostics,
+            captureDiagnostics: candidateDiagnostics,
             publisher: prepared.publisher,
             publishedAt: prepared.publishedAt,
             wordCount: prepared.wordCount,
-            reviewFlags,
+            reviewFlags: candidateReviewFlags,
             reviewSummary: prepared.reviewSummary,
             changeType: "refresh",
           },
@@ -160,11 +213,11 @@ export async function POST(
             version: nextVersion,
             contentHash: prepared.contentHash,
             wordCount: prepared.wordCount,
-            reviewFlags,
+            reviewFlags: candidateReviewFlags,
             reviewSummary: prepared.reviewSummary,
             captureMethod: prepared.captureMethod,
             captureDecisionReason: prepared.captureDecisionReason,
-            captureDiagnostics,
+            captureDiagnostics: candidateDiagnostics,
             publisher: prepared.publisher,
             publishedAt: prepared.publishedAt,
             lastRefreshedAt: refreshedAt,
@@ -198,7 +251,7 @@ export async function POST(
         data: {
           lastRefreshedAt: refreshedAt,
           captureDecisionReason: prepared.captureDecisionReason,
-          captureDiagnostics,
+          captureDiagnostics: candidateDiagnostics,
         },
         select: {
           id: true,
@@ -253,6 +306,7 @@ export async function POST(
       reviewUrl: buildSavedSourceReviewUrl(refreshed.source.id),
       refreshable: true,
       unchanged: refreshed.unchanged,
+      status: refreshed.unchanged ? "unchanged" : "updated",
       suggestions,
     });
   } catch (error) {

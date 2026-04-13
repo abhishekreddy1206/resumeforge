@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
+import type { GuideContentStorage } from "@/lib/claude";
+import { deriveGuideGenerationSnapshot, ensureGuideContentTracking } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("guide");
@@ -46,6 +48,9 @@ export async function GET(
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
     }
 
+    const parsedContent = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
+    const generationSnapshot = deriveGuideGenerationSnapshot(parsedContent, guide.status);
+
     const staleGuideSources = await prisma.guideSource.findMany({
       where: {
         guideId: guide.id,
@@ -72,9 +77,13 @@ export async function GET(
 
     return NextResponse.json({
       ...guide,
-      content: JSON.parse(guide.content),
+      content: parsedContent,
       tags: JSON.parse(guide.tags),
       sectionProgress: JSON.parse(guide.sectionProgress),
+      generationState: generationSnapshot.generationState,
+      failedSectionIds: generationSnapshot.failedSectionIds,
+      sectionErrors: parsedContent._sectionErrors || {},
+      sectionAttempts: parsedContent._sectionAttempts || {},
       staleSources: staleGuideSources.map((source) => {
         const attachedVersion = source.savedSourceVersion?.version ?? null;
         const headVersion = source.savedSource?.version ?? attachedVersion ?? null;

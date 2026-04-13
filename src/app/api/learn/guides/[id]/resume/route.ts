@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateGuideSection } from "@/lib/claude";
-import type { GuideContentStorage, SectionGenStatus } from "@/lib/claude";
+import { GuideSectionValidationError, generateGuideSection } from "@/lib/claude";
+import type { GuideContentStorage } from "@/lib/claude";
 import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
+import { deriveGuideGenerationSnapshot, ensureGuideContentTracking } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("guide-resume");
 
 const RESUME_BATCH_SIZE = 1;
+const SECTION_ATTEMPTS_PER_RUN = 2;
 
 export async function POST(
   _request: NextRequest,
@@ -22,22 +24,11 @@ export async function POST(
 
     // Already done — nothing to resume
     if (guide.status === "published") {
-      return NextResponse.json({ status: "published", remaining: 0 });
+      return NextResponse.json({ status: "published", generationState: "complete", remaining: 0, generated: 0, failedSectionIds: [] });
     }
 
-    const content = JSON.parse(guide.content) as GuideContentStorage;
+    const content = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
     const statuses = content._sectionStatuses || {};
-
-    // Backfill _sectionStatuses for guides created before status tracking was added
-    if (Object.keys(statuses).length === 0 && content.sections.length > 0) {
-      for (const section of content.sections) {
-        statuses[section.id] = section.explanation && section.explanation.length > 0
-          ? "completed"
-          : "pending";
-      }
-      content._sectionStatuses = statuses;
-      log.info("backfilled_section_statuses", { guideId: id, statuses });
-    }
 
     // Stall detection: reset sections stuck in "generating" for too long
     // Do NOT reset "refining" sections — those are being handled by the refine endpoint's after()
@@ -54,26 +45,31 @@ export async function POST(
     );
 
     if (eligibleSections.length === 0) {
-      // All sections are either completed, generating, or refining
-      const allDone = content.sections.every((s) => statuses[s.id] === "completed" || statuses[s.id] === "refining");
-      if (allDone) {
-        // If some are refining, don't change status — refine's after() will handle it
-        const hasRefining = content.sections.some((s) => statuses[s.id] === "refining");
-        if (!hasRefining) {
-          await prisma.guide.update({
-            where: { id },
-            data: {
-              status: "published",
-              lastAsyncError: null,
-              lastAsyncStage: null,
-            },
-          });
-          return NextResponse.json({ status: "published", remaining: 0 });
-        }
-        // Refining in progress — nothing for resume to do
-        return NextResponse.json({ status: "generating", remaining: 0, generated: 0 });
+      const snapshot = deriveGuideGenerationSnapshot(content, guide.status);
+      if (snapshot.generationState === "complete") {
+        await prisma.guide.update({
+          where: { id },
+          data: {
+            status: "published",
+            lastAsyncError: null,
+            lastAsyncStage: null,
+          },
+        });
+        return NextResponse.json({
+          status: "published",
+          generationState: "complete",
+          remaining: 0,
+          generated: 0,
+          failedSectionIds: [],
+        });
       }
-      return NextResponse.json({ status: "generating", remaining: 0, generated: 0 });
+      return NextResponse.json({
+        status: "generating",
+        generationState: snapshot.generationState,
+        remaining: snapshot.remainingCount,
+        generated: 0,
+        failedSectionIds: snapshot.failedSectionIds,
+      });
     }
 
     // Pick up to RESUME_BATCH_SIZE sections to generate
@@ -107,7 +103,10 @@ export async function POST(
           guide.topic,
           { id: section.id, title: section.title, scope },
           { difficulty: content.difficulty, siblingTitles },
-          { sources: sourceTexts.length > 0 ? sourceTexts : undefined }
+          {
+            sources: sourceTexts.length > 0 ? sourceTexts : undefined,
+            maxAttempts: SECTION_ATTEMPTS_PER_RUN,
+          }
         );
       })
     );
@@ -118,7 +117,7 @@ export async function POST(
       return NextResponse.json({ error: "Guide disappeared" }, { status: 404 });
     }
 
-    const currentContent = JSON.parse(currentGuide.content) as GuideContentStorage;
+    const currentContent = ensureGuideContentTracking(JSON.parse(currentGuide.content) as GuideContentStorage);
     const currentStatuses = currentContent._sectionStatuses || {};
     let generatedCount = 0;
 
@@ -127,30 +126,47 @@ export async function POST(
       const sectionId = batch[j].id;
       if (result.status === "fulfilled") {
         const idx = currentContent.sections.findIndex((s) => s.id === sectionId);
-        if (idx !== -1) currentContent.sections[idx] = result.value;
+        if (idx !== -1) currentContent.sections[idx] = result.value.section;
         currentStatuses[sectionId] = "completed";
+        if (currentContent._sectionErrors) delete currentContent._sectionErrors[sectionId];
+        if (currentContent._sectionAttempts) {
+          currentContent._sectionAttempts[sectionId] =
+            (currentContent._sectionAttempts[sectionId] || 0) + result.value.attempts;
+        }
         generatedCount++;
       } else {
         log.error("section_generation_failed", { guideId: id, sectionTitle: batch[j].title, error: result.reason });
         currentStatuses[sectionId] = "failed";
+        if (currentContent._sectionAttempts) {
+          currentContent._sectionAttempts[sectionId] =
+            (currentContent._sectionAttempts[sectionId] || 0) +
+            (result.reason instanceof GuideSectionValidationError ? result.reason.attempts : 1);
+        }
+        if (currentContent._sectionErrors) {
+          const message = result.reason instanceof GuideSectionValidationError
+            ? result.reason.issues.join("; ")
+            : result.reason instanceof Error
+            ? result.reason.message
+            : "Section generation failed";
+          currentContent._sectionErrors[sectionId] = message.slice(0, 500);
+        }
       }
     }
 
     currentContent._sectionStatuses = currentStatuses;
 
-    // Derive overall status from section statuses
-    const allStatuses = Object.values(currentStatuses) as SectionGenStatus[];
-    const allCompleted = allStatuses.every((s) => s === "completed");
-    const failedCount = allStatuses.filter((s) => s === "failed").length;
-    const allFailed = allStatuses.every((s) => s === "failed");
-    const remaining = allStatuses.filter((s) => s === "pending" || s === "failed").length;
-
-    const newStatus = allCompleted ? "published" : allFailed ? "failed" : "generating";
-    const lastAsyncError = failedCount > 0
-      ? allFailed
-        ? "Guide generation failed. Resume generation to retry."
-        : `${failedCount} section${failedCount === 1 ? "" : "s"} failed to generate. Resume generation to retry.`
-      : null;
+    const snapshot = deriveGuideGenerationSnapshot(currentContent, guide.status);
+    const newStatus = snapshot.generationState === "complete" ? "published" : "generating";
+    const lastAsyncError = snapshot.generationState === "complete"
+      ? null
+      : snapshot.failedSectionIds.length > 0
+      ? `${snapshot.failedSectionIds.length} section${snapshot.failedSectionIds.length === 1 ? "" : "s"} blocked. Resume generation to retry.`
+      : currentGuide.lastAsyncError;
+    const lastAsyncStage = snapshot.generationState === "complete"
+      ? null
+      : snapshot.failedSectionIds.length > 0
+      ? "create_sections"
+      : currentGuide.lastAsyncStage;
 
     const sourceRefs = newStatus === "published"
       ? await getGuideVersionSourceRefs(guide.id)
@@ -163,7 +179,7 @@ export async function POST(
           content: JSON.stringify(currentContent),
           status: newStatus,
           lastAsyncError,
-          lastAsyncStage: failedCount > 0 ? "create_sections" : null,
+          lastAsyncStage,
         },
       });
 
@@ -193,12 +209,15 @@ export async function POST(
       }
     });
 
+    const remaining = snapshot.remainingCount;
     log.info("generation_progress", { guideId: id, generated: generatedCount, batchSize: batch.length, remaining, status: newStatus });
 
     return NextResponse.json({
       status: newStatus,
+      generationState: snapshot.generationState,
       remaining,
       generated: generatedCount,
+      failedSectionIds: snapshot.failedSectionIds,
     });
   } catch (error) {
     log.error("guide_resume_failed", { error });
