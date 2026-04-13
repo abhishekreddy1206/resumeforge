@@ -5,6 +5,7 @@ import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
 import type { GuideContentStorage } from "@/lib/claude";
 import { deriveGuideGenerationSnapshot, ensureGuideContentTracking } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
+import { cancelJobsByEntity } from "@/lib/job-queue";
 
 const log = createLogger("guide");
 
@@ -136,6 +137,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    // Cancel any pending background jobs for this guide
+    await cancelJobsByEntity(id, "guide");
     await prisma.guide.delete({ where: { id } });
 
     // Eagerly refresh recommendations cache (guide topics changed)
