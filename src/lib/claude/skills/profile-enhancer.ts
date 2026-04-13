@@ -1,4 +1,5 @@
 import { askJson, compactProfile } from "../client";
+import { ENHANCEMENT_INSTRUCTIONS, ENHANCEMENT_SCHEMA } from "./skill-prompts";
 
 export interface EnhanceSuggestion {
   category: "summary" | "experience" | "skills" | "education" | "projects" | "publications" | "certifications" | "recommendations";
@@ -70,7 +71,12 @@ export async function enhanceProfileFromHistory(
   const compact = compactProfile(currentProfile);
   const recentVersions = versionHistory.slice(0, 6);
 
-  return askJson(`You are a senior career strategist analyzing a professional's resume optimization history across multiple job applications.
+  return askJson(`${ENHANCEMENT_INSTRUCTIONS}
+
+Return ONLY valid JSON:
+${ENHANCEMENT_SCHEMA}
+
+---
 
 CURRENT BASE PROFILE:
 ${JSON.stringify(compact)}
@@ -83,20 +89,5 @@ ${JSON.stringify(
     improvement: v.delta,
     optimized: extractSnapshotEssentials(v.snapshot),
   }))
-)}
-
-Analyze patterns across ALL optimized versions to find UNIVERSAL improvements — changes that strengthen the base profile regardless of which job the candidate applies to.
-
-Look for: summary elements from highest-scoring versions, experience bullet phrasings that consistently score higher, skills consistently highlighted, elements optimized versions add that base lacks, structural improvements, publications/certifications included in high-scoring versions, recommendations consistently selected.
-
-RULES:
-- Every suggestion must be grounded in real experience — never fabricate
-- Focus on universal improvements (not job-specific); show exact before/after text
-- Max 8 suggestions ordered by cross-job impact
-
-Return ONLY valid JSON:
-{
-  "suggestions": [{"category":"string","field":"string","current":"string","suggested":"string","reasoning":"string","impactEstimate":"high|medium|low"}],
-  "overallInsight": "string"
-}`, { timeoutMs: 600_000, skill: "profile-enhancer" });
+)}`, { timeoutMs: 600_000, skill: "profile-enhancer" });
 }

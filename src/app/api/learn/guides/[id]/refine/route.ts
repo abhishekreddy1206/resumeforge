@@ -2,7 +2,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { refineGuide, refineGuideSection, classifySectionRelevance } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
-import { resolveGuideSources } from "@/lib/learn-sources";
+import { GuideSourceResolutionError, type GuideSourcePayload, getActiveGuideSourceTexts, getGuideVersionSourceRefs, persistGuideSources, resolveGuideSources, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
 
 const REFINE_BATCH_SIZE = 2;
 
@@ -23,7 +23,7 @@ export async function POST(
 
     const body = await request.json();
     const { sources, instructions, model } = body as {
-      sources: Array<{ type: string; content?: string; url?: string; filename?: string; savedSourceId?: string }>;
+      sources: Array<{ type: string; content?: string; url?: string; filename?: string; savedSourceId?: string; savedSourceVersionId?: string }>;
       instructions?: string;
       model?: string;
     };
@@ -32,7 +32,18 @@ export async function POST(
       return NextResponse.json({ error: "At least one source is required" }, { status: 400 });
     }
 
-    const { sourceTexts: newSourceTexts, sourcesToSave } = await resolveGuideSources(guide.profileId, sources);
+    let newSourceTexts: string[];
+    let sourcesToSave: GuideSourcePayload[];
+    try {
+      const resolved = await resolveGuideSources(guide.profileId, sources);
+      newSourceTexts = resolved.sourceTexts;
+      sourcesToSave = resolved.sourcesToSave;
+    } catch (error) {
+      if (error instanceof GuideSourceResolutionError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
     if (newSourceTexts.length === 0) {
       return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
     }
@@ -82,17 +93,7 @@ export async function POST(
 
     // Save sources and update guide status in one transaction
     await prisma.$transaction(async (tx) => {
-      for (const src of sourcesToSave) {
-        await tx.guideSource.create({
-          data: {
-            guideId: guide.id,
-            type: src.type,
-            url: src.url || null,
-            title: src.title || null,
-            content: src.content,
-          },
-        });
-      }
+      await persistGuideSources(tx, guide.id, sourcesToSave);
 
       await tx.guide.update({
         where: { id: guide.id },
@@ -108,9 +109,7 @@ export async function POST(
     // Run actual refinement in the background via after()
     after(async () => {
       try {
-        // Re-load guide sources for full source list
-        const allSources = await prisma.guideSource.findMany({ where: { guideId: guide.id } });
-        const allSourceTexts = allSources.map((s) => s.content);
+        const allSourceTexts = await getActiveGuideSourceTexts(guide.id);
 
         const currentGuide = await prisma.guide.findUnique({ where: { id: guide.id } });
         if (!currentGuide) return;
@@ -131,7 +130,7 @@ export async function POST(
 
         if (shouldFullRefine) {
           console.log(`[guide-refine] Full refine for guide ${id}`);
-          const result = await refineGuide(currentContent, newSourceTexts, { instructions, model });
+          const result = await refineGuide(currentContent, allSourceTexts, { instructions, model });
           resultContent = {
             ...result.content,
             _sectionPlan: currentContent._sectionPlan,
@@ -204,13 +203,16 @@ export async function POST(
 
         // Save version history and mark as published
         const newVersion = guide.version + 1;
+        const sourceRefs = await getGuideVersionSourceRefs(guide.id);
         await prisma.$transaction(async (tx) => {
           await tx.guideVersion.create({
             data: {
               guideId: guide.id,
-              version: guide.version,
-              content: guide.content,
+              version: newVersion,
+              content: JSON.stringify(resultContent),
               changeDescription,
+              snapshotSemantics: "current_head",
+              sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
             },
           });
 

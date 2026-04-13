@@ -1,4 +1,5 @@
 import { ask, compactProfile } from "../client";
+import { RESUME_ADVISOR_INSTRUCTIONS } from "./skill-prompts";
 
 /**
  * Skill: Resume Advisor
@@ -70,8 +71,9 @@ Verdict: ${cachedMatch.verdictSummary || "N/A"}\n`
     terminologyMap: parsedTermMap.length > 0 ? parsedTermMap.slice(0, 15) : undefined,
   };
 
-  const reply = await ask(`You are a resume strategy advisor helping a candidate tailor their resume for a specific job posting.
+  const reply = await ask(`${RESUME_ADVISOR_INSTRUCTIONS}
 
+---
 ${historyText}
 User's question: "${message}"
 
@@ -80,15 +82,7 @@ ${JSON.stringify(compactProfile(profile))}
 
 TARGET JOB:
 ${JSON.stringify(compactJob)}
-${matchSection}
-RULES:
-- Give specific, actionable advice referencing the candidate's actual profile
-- Suggest which bullets to emphasize, reword, or reorder; which skills to highlight or deprioritize
-- Advise on relevant publications, certifications, and recommendations for this role
-- Be honest about gaps — suggest framing strategies, not fabrication
-- Use the job's exact terminology where the candidate genuinely has the skill (ATS matching)
-- Keep responses concise and practical (2-4 paragraphs max)
-- Use markdown formatting; reply with ONLY your advice text — no JSON wrapping, no code fences`, { skill: "resume-advisor", model: options?.model });
+${matchSection}`, { skill: "resume-advisor", model: options?.model });
 
   return { reply };
 }

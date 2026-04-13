@@ -1,4 +1,5 @@
 import { askJson, compactProfile } from "../client";
+import { MATCHING_INSTRUCTIONS, MATCHING_SCHEMA } from "./skill-prompts";
 
 export interface MatchResult {
   overallScore: number; // 0-100
@@ -49,50 +50,18 @@ export async function matchProfileToJob(
 ${JSON.stringify(trimmedTermMap)}\n`
     : "";
 
-  return askJson(`You are a resume strategist. Compare this candidate's profile against the job requirements and produce an honest, granular match assessment.
+  return askJson(`${MATCHING_INSTRUCTIONS}
+
+Return ONLY valid JSON:
+
+${MATCHING_SCHEMA}
+
+---
 
 CANDIDATE PROFILE:
 ${JSON.stringify(compactProfile(profile))}
 
 JOB ANALYSIS:
 ${JSON.stringify(jobAnalysis)}
-${termMapSection}
-
-DIMENSIONAL SCORING — score each dimension independently (0-100):
-- directMatch (weight 40%): How many required skills/tools does the candidate directly possess? Each required skill present = significant points.
-- transferable (weight 30%): How strong are the bridge/transferable skills? Quality and closeness of transfer, not just count.
-- experienceDepth (weight 20%): Does the candidate have the right level and duration of experience? Seniority alignment, years in domain, depth of relevant work.
-- careerNarrative (weight 10%): Does the candidate's career arc tell a coherent story for this role? Progression, consistency, domain focus.
-
-Compute overallScore = round(directMatch*0.4 + transferable*0.3 + experienceDepth*0.2 + careerNarrative*0.1)
-
-ADDITIONAL SCORING RULES:
-- Gaps reduce the score proportionally to their importance in the JD (must-have vs nice-to-have)
-- Relevant certifications matching JD requirements add points
-- Relevant publications demonstrate domain expertise
-- When scoring an optimized/tailored profile (reworded bullets, reordered skills, ATS-targeted language), score it HIGHER than unoptimized versions. Better keyword matching and JD-aligned phrasing genuinely improve ATS pass rates.
-
-RESUME TIPS (max 5, ordered by impact):
-- "grounded":true only if the candidate demonstrably has the skill/experience — never suggest fabricating
-- Suggest: reframe in JD language, reorder sections, use exact JD terms, highlight relevant pubs/certs/recs
-- "grounded":false for stretch suggestions; frame as "Consider learning X"
-
-Return ONLY valid JSON:
-{
-  "overallScore": 75,
-  "dimensionalScores": {
-    "directMatch": 85,
-    "transferable": 70,
-    "experienceDepth": 65,
-    "careerNarrative": 80
-  },
-  "breakdown": {
-    "directMatches": ["Python", "React", "AWS"],
-    "bridgeableSkills": [{"jobRequirement": "Kubernetes", "yourSkill": "Docker + ECS", "explanation": "Container orchestration fundamentals transfer"}],
-    "gaps": ["5+ years management experience"]
-  },
-  "resumeTips": [{"priority": 1, "action": "Reword cloud infrastructure bullets to use 'Kubernetes' where container work applies", "impact": "high", "grounded": true}],
-  "skillsToHighlight": ["Python", "React", "AWS", "Docker"],
-  "verdictSummary": "Strong technical match but missing management experience. Focus resume on system design and team leadership moments."
-}`, { skill: "profile-matcher", model: options?.model });
+${termMapSection}`, { skill: "profile-matcher", model: options?.model });
 }

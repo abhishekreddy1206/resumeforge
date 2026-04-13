@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
       question,
       {
         characterLimit: characterLimit ? Number(characterLimit) : undefined,
-        model: job.aiModel,
+        model: undefined, // Let skill use its Haiku default
         availableOptions: options.length > 0 ? options : undefined,
       }
     );

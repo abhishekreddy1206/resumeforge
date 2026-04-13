@@ -8,6 +8,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum SavedSourceChangeType {
+  initial
+  replace
+  refresh
+  migrated
+}
+
+enum SavedSourceCaptureDecisionReason {
+  scrape_preferred
+  scrape_failed
+  scrape_too_short
+  scrape_preview_like
+  fallback_substantially_longer
+}
+
+enum GuideVersionSnapshotSemantics {
+  legacy_previous_head
+  current_head
+}
+
 model Profile {
   id        String   @id @default(cuid())
   name      String
@@ -316,37 +336,89 @@ model Guide {
 }
 
 model GuideVersion {
-  id                String   @id @default(cuid())
+  id                String                        @id @default(cuid())
   guideId           String
-  guide             Guide    @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  guide             Guide                         @relation(fields: [guideId], references: [id], onDelete: Cascade)
   version           Int
   content           String
   changeDescription String?
-  createdAt         DateTime @default(now())
+  snapshotSemantics GuideVersionSnapshotSemantics @default(current_head)
+  sourceRefs        String?
+  createdAt         DateTime                      @default(now())
+
+  @@unique([guideId, version])
 }
 
 model GuideSource {
-  id        String   @id @default(cuid())
-  guideId   String
-  guide     Guide    @relation(fields: [guideId], references: [id], onDelete: Cascade)
-  type      String
-  url       String?
-  title     String?
-  content   String
-  createdAt DateTime @default(now())
+  id                   String             @id @default(cuid())
+  guideId              String
+  guide                Guide              @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  type                 String
+  url                  String?
+  title                String?
+  content              String
+  savedSourceId        String?
+  savedSourceVersionId String?
+  isActive             Boolean            @default(true)
+  supersededAt         DateTime?
+  createdAt            DateTime           @default(now())
+  savedSource          SavedSource?       @relation(fields: [savedSourceId], references: [id], onDelete: SetNull)
+  savedSourceVersion   SavedSourceVersion? @relation(fields: [savedSourceVersionId], references: [id], onDelete: SetNull)
+
+  @@index([guideId, isActive])
+  @@index([guideId, savedSourceId, isActive])
+  @@index([savedSourceId, isActive])
+  @@index([savedSourceVersionId])
 }
 
 model SavedSource {
-  id        String   @id @default(cuid())
-  profileId String
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  type      String   // "medium" | "substack" | "article"
-  url       String
-  title     String
-  content   String
+  id              String               @id @default(cuid())
+  profileId       String
+  profile         Profile              @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type            String               // "medium" | "substack" | "article"
+  url             String
+  title           String
+  content         String
+  version         Int                  @default(1)
+  contentHash     String               @default("")
+  wordCount       Int                  @default(0)
+  reviewFlags     String               @default("[]")
+  reviewSummary   String?
   captureMethod   String?
+  captureDecisionReason SavedSourceCaptureDecisionReason?
+  captureDiagnostics String?
   publisher       String?
   publishedAt     String?
   lastRefreshedAt DateTime?
-  createdAt DateTime @default(now())
+  deletedAt       DateTime?
+  createdAt       DateTime             @default(now())
+  versions        SavedSourceVersion[]
+  guideSources    GuideSource[]
+
+  @@unique([profileId, url])
+}
+
+model SavedSourceVersion {
+  id            String                @id @default(cuid())
+  savedSourceId String
+  savedSource   SavedSource           @relation(fields: [savedSourceId], references: [id], onDelete: Cascade)
+  version       Int
+  url           String
+  title         String
+  content       String
+  contentHash   String
+  captureMethod String?
+  captureDecisionReason SavedSourceCaptureDecisionReason?
+  captureDiagnostics String?
+  publisher     String?
+  publishedAt   String?
+  wordCount     Int                   @default(0)
+  reviewFlags   String                @default("[]")
+  reviewSummary String?
+  changeType    SavedSourceChangeType
+  createdAt     DateTime              @default(now())
+  guideSources  GuideSource[]
+
+  @@unique([savedSourceId, version])
+  @@index([savedSourceId, createdAt])
 }

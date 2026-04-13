@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildSavedSourceReviewUrl, isRefreshableArticleSource, parseCaptureDiagnostics, parseReviewFlags, prepareSavedArticleCapture, shouldCreateSavedSourceVersion, stringifyCaptureDiagnostics, stringifyReviewFlags } from "@/lib/saved-sources";
+import { normalizeArticleUrl } from "@/lib/utils/normalize-url";
 import { suggestGuidesForSourceBestEffort } from "@/lib/learn-sources";
 
 function duplicateResponse(source: {
@@ -63,27 +64,16 @@ export async function POST(
       return NextResponse.json({ error: "Source not found" }, { status: 404 });
     }
 
-    if (source.deletedAt) {
-      return NextResponse.json(
-        { error: "This source was deleted. Restore or replace it before refreshing." },
-        { status: 410 }
-      );
-    }
-
     if (!isRefreshableArticleSource(source.type, source.url)) {
       return NextResponse.json(
-        { error: "Only URL-backed article sources can be refreshed" },
+        { error: "Only URL-backed article sources can be replaced" },
         { status: 400 }
       );
     }
 
-    let body: Record<string, unknown> = {};
-    try {
-      body = await request.json();
-    } catch {
-      body = {};
-    }
-
+    const body = await request.json();
+    const requestUrl = typeof body.url === "string" && body.url.trim() ? body.url.trim() : source.url;
+    const requestTitle = typeof body.title === "string" ? body.title : source.title;
     const fallbackContent = typeof body.fallbackContent === "string"
       ? body.fallbackContent
       : typeof body.content === "string"
@@ -94,16 +84,27 @@ export async function POST(
         ? body.fallbackDiagnostics
         : null;
 
+    const preNormalizedUrl = normalizeArticleUrl(requestUrl);
     const prepared = await prepareSavedArticleCapture({
-      url: source.url,
-      title: source.title,
+      url: requestUrl,
+      title: requestTitle,
       fallbackContent,
       fallbackDiagnostics,
-      allowFallback: typeof fallbackContent === "string" && fallbackContent.trim().length >= 50,
+      allowFallback: true,
     });
 
-    const refreshedAt = new Date();
-    const refreshed = await prisma.$transaction(async (tx) => {
+    if (preNormalizedUrl !== source.url && prepared.canonicalUrl !== source.url) {
+      return NextResponse.json(
+        {
+          error: "Replacement URL does not match this saved source. Review the existing source or capture it as a new article.",
+          reviewUrl: buildSavedSourceReviewUrl(source.id),
+        },
+        { status: 409 }
+      );
+    }
+
+    const replacedAt = new Date();
+    const replaced = await prisma.$transaction(async (tx) => {
       const conflictingSource = await tx.savedSource.findFirst({
         where: {
           profileId: profile.id,
@@ -124,9 +125,9 @@ export async function POST(
         return { duplicate: conflictingSource } as const;
       }
 
-      const shouldVersion = shouldCreateSavedSourceVersion(source, prepared);
       const reviewFlags = stringifyReviewFlags(prepared.reviewFlags);
       const captureDiagnostics = stringifyCaptureDiagnostics(prepared.captureDiagnostics);
+      const shouldVersion = shouldCreateSavedSourceVersion(source, prepared);
 
       if (shouldVersion) {
         const nextVersion = source.version + 1;
@@ -147,7 +148,7 @@ export async function POST(
             wordCount: prepared.wordCount,
             reviewFlags,
             reviewSummary: prepared.reviewSummary,
-            changeType: "refresh",
+            changeType: "replace",
           },
         });
 
@@ -167,7 +168,8 @@ export async function POST(
             captureDiagnostics,
             publisher: prepared.publisher,
             publishedAt: prepared.publishedAt,
-            lastRefreshedAt: refreshedAt,
+            deletedAt: null,
+            lastRefreshedAt: replacedAt,
           },
           select: {
             id: true,
@@ -196,7 +198,8 @@ export async function POST(
       const updated = await tx.savedSource.update({
         where: { id: source.id },
         data: {
-          lastRefreshedAt: refreshedAt,
+          deletedAt: null,
+          lastRefreshedAt: replacedAt,
           captureDecisionReason: prepared.captureDecisionReason,
           captureDiagnostics,
         },
@@ -224,39 +227,39 @@ export async function POST(
       return { source: updated, unchanged: true } as const;
     });
 
-    if ("duplicate" in refreshed && refreshed.duplicate) {
-      return duplicateResponse(refreshed.duplicate);
+    if ("duplicate" in replaced && replaced.duplicate) {
+      return duplicateResponse(replaced.duplicate);
     }
 
     const suggestions = await suggestGuidesForSourceBestEffort(
-      refreshed.source.title,
-      refreshed.source.content
+      replaced.source.title,
+      replaced.source.content
     );
 
     return NextResponse.json({
-      id: refreshed.source.id,
-      type: refreshed.source.type,
-      url: refreshed.source.url,
-      title: refreshed.source.title,
-      version: refreshed.source.version,
-      wordCount: refreshed.source.wordCount,
-      captureMethod: refreshed.source.captureMethod,
-      captureDecisionReason: refreshed.source.captureDecisionReason,
-      captureDiagnostics: parseCaptureDiagnostics(refreshed.source.captureDiagnostics),
-      publisher: refreshed.source.publisher,
-      publishedAt: refreshed.source.publishedAt,
-      lastRefreshedAt: refreshed.source.lastRefreshedAt,
-      reviewFlags: parseReviewFlags(refreshed.source.reviewFlags),
-      reviewSummary: refreshed.source.reviewSummary,
-      createdAt: refreshed.source.createdAt,
-      deletedAt: refreshed.source.deletedAt,
-      reviewUrl: buildSavedSourceReviewUrl(refreshed.source.id),
+      id: replaced.source.id,
+      type: replaced.source.type,
+      url: replaced.source.url,
+      title: replaced.source.title,
+      version: replaced.source.version,
+      wordCount: replaced.source.wordCount,
+      captureMethod: replaced.source.captureMethod,
+      captureDecisionReason: replaced.source.captureDecisionReason,
+      captureDiagnostics: parseCaptureDiagnostics(replaced.source.captureDiagnostics),
+      publisher: replaced.source.publisher,
+      publishedAt: replaced.source.publishedAt,
+      lastRefreshedAt: replaced.source.lastRefreshedAt,
+      reviewFlags: parseReviewFlags(replaced.source.reviewFlags),
+      reviewSummary: replaced.source.reviewSummary,
+      createdAt: replaced.source.createdAt,
+      deletedAt: replaced.source.deletedAt,
+      reviewUrl: buildSavedSourceReviewUrl(replaced.source.id),
       refreshable: true,
-      unchanged: refreshed.unchanged,
+      unchanged: replaced.unchanged,
       suggestions,
     });
   } catch (error) {
-    console.error("Saved source refresh error:", error);
-    return NextResponse.json({ error: "Failed to refresh source" }, { status: 500 });
+    console.error("Saved source replace error:", error);
+    return NextResponse.json({ error: "Failed to replace source" }, { status: 500 });
   }
 }

@@ -25,6 +25,45 @@ const TRACKING_PARAMS = new Set([
   "gh_jid",
 ]);
 
+function stripTrackingParams(parsed: URL): void {
+  const keysToDelete: string[] = [];
+  parsed.searchParams.forEach((_value, key) => {
+    if (TRACKING_PARAMS.has(key.toLowerCase())) {
+      keysToDelete.push(key);
+    }
+  });
+  for (const key of keysToDelete) {
+    parsed.searchParams.delete(key);
+  }
+}
+
+export function normalizeArticleUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = new URL(trimmed);
+
+    stripTrackingParams(parsed);
+
+    parsed.searchParams.sort();
+    parsed.hash = "";
+    const protocol = parsed.protocol.toLowerCase();
+    const host = parsed.host.toLowerCase();
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    let normalized = `${protocol}//${host}${pathname}`;
+
+    const qs = parsed.searchParams.toString();
+    if (qs) {
+      normalized += `?${qs}`;
+    }
+
+    return normalized;
+  } catch {
+    return trimmed.replace(/\/+$/, "");
+  }
+}
+
 export function normalizeJobUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -32,24 +71,10 @@ export function normalizeJobUrl(raw: string): string {
   try {
     const parsed = new URL(trimmed);
 
-    // Remove tracking params, keep meaningful ones
-    const keysToDelete: string[] = [];
-    parsed.searchParams.forEach((_value, key) => {
-      if (TRACKING_PARAMS.has(key.toLowerCase())) {
-        keysToDelete.push(key);
-      }
-    });
-    for (const key of keysToDelete) {
-      parsed.searchParams.delete(key);
-    }
-
-    // Sort remaining params for consistent comparison
+    stripTrackingParams(parsed);
     parsed.searchParams.sort();
-
-    // Strip fragment
     parsed.hash = "";
 
-    // Rebuild: lowercase host, preserve path + cleaned query
     let normalized = `${parsed.protocol}//${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}`;
 
     const qs = parsed.searchParams.toString();
@@ -59,7 +84,6 @@ export function normalizeJobUrl(raw: string): string {
 
     return normalized.toLowerCase();
   } catch {
-    // Not a valid URL — fall back to simple string normalization
     return trimmed.replace(/\/+$/, "").toLowerCase();
   }
 }

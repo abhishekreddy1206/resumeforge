@@ -6,13 +6,57 @@
  */
 
 (() => {
+  const NOISE_SELECTOR = [
+    "script",
+    "style",
+    "nav",
+    "footer",
+    "header",
+    "aside",
+    "iframe",
+    "noscript",
+    "svg",
+    "form",
+    "button",
+    "[hidden]",
+    '[aria-hidden="true"]',
+  ].join(", ");
+
+  const PRIMARY_TEXT_SELECTORS = [
+    "article",
+    ".article-body",
+    ".post-content",
+    ".entry-content",
+    "main",
+    '[role="main"]',
+    ".content",
+    "#content",
+    '[class*="job-description"]',
+    '[class*="posting"]',
+  ];
+
+  function normalizeText(text) {
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  function extractCleanText(node) {
+    if (!node) return "";
+
+    const clone = node.cloneNode(true);
+    for (const noisy of clone.querySelectorAll(NOISE_SELECTOR)) {
+      noisy.remove();
+    }
+
+    const rawText = clone.innerText || clone.textContent || "";
+    return normalizeText(rawText);
+  }
+
   /** Try to extract JSON-LD JobPosting structured data. */
   function tryJsonLd() {
     const scripts = document.querySelectorAll('script[type="application/ld+json"]');
     for (const script of scripts) {
       try {
         let data = JSON.parse(script.textContent || "");
-        // Handle @graph arrays
         if (data["@graph"]) data = data["@graph"];
         const items = Array.isArray(data) ? data : [data];
         for (const item of items) {
@@ -47,6 +91,7 @@
       document.querySelector(`meta[property="${prop}"]`)?.getAttribute("content") ||
       document.querySelector(`meta[name="${prop}"]`)?.getAttribute("content") ||
       null;
+
     return {
       ogTitle: get("og:title"),
       siteName: get("og:site_name"),
@@ -55,37 +100,46 @@
     };
   }
 
-  /** Extract rendered text from the best container element. */
+  /** Extract rendered text from the best candidate container. */
   function extractBestText() {
-    const selectors = [
-      "article",
-      '[role="main"]',
-      "main",
-      ".content",
-      "#content",
-      ".post-content",
-      ".entry-content",
-      ".article-body",
-      '[class*="job-description"]',
-      '[class*="posting"]',
-    ];
+    const candidateLengths = {};
+    let bestSelector = null;
+    let bestText = "";
 
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el) {
-        const text = el.innerText.replace(/\s+/g, " ").trim();
-        if (text.length > 100) return text;
+    for (const selector of PRIMARY_TEXT_SELECTORS) {
+      const element = document.querySelector(selector);
+      if (!element) continue;
+
+      const text = extractCleanText(element);
+      candidateLengths[selector] = text.length;
+
+      if (text.length > bestText.length) {
+        bestSelector = selector;
+        bestText = text;
       }
     }
 
-    // Fallback to body, stripping nav/footer/header noise
-    const clone = document.body.cloneNode(true);
-    for (const tag of clone.querySelectorAll(
-      "script, style, nav, footer, header, aside, iframe, noscript, svg"
-    )) {
-      tag.remove();
+    const bodyText = extractCleanText(document.body);
+    candidateLengths.body = bodyText.length;
+
+    let selectedSelector = bestSelector;
+    let selectedText = bestText;
+
+    if (!selectedText) {
+      selectedSelector = "body";
+      selectedText = bodyText;
+    } else if (bodyText.length >= Math.max(Math.floor(selectedText.length * 1.2), selectedText.length + 200)) {
+      selectedSelector = "body";
+      selectedText = bodyText;
     }
-    return clone.innerText.replace(/\s+/g, " ").trim();
+
+    return {
+      text: selectedText,
+      selectedSelector,
+      selectedTextLength: selectedText.length,
+      bodyTextLength: bodyText.length,
+      candidateLengths,
+    };
   }
 
   /** Main extraction — combines all strategies. */
@@ -98,13 +152,25 @@
 
     const ogMeta = extractOgMeta();
     const jsonLd = tryJsonLd();
-    const text = jsonLd?.text || extractBestText();
+    const extractedText = jsonLd
+      ? {
+          text: jsonLd.text,
+          selectedSelector: "jsonld",
+          selectedTextLength: jsonLd.text.length,
+          bodyTextLength: 0,
+          candidateLengths: {},
+        }
+      : extractBestText();
     const title = jsonLd?.title || ogMeta.ogTitle || pageTitle;
 
     return {
       url,
       title,
-      text,
+      text: extractedText.text,
+      selectedSelector: extractedText.selectedSelector,
+      selectedTextLength: extractedText.selectedTextLength,
+      bodyTextLength: extractedText.bodyTextLength,
+      candidateLengths: extractedText.candidateLengths,
       company: jsonLd?.company || null,
       metadata: {
         siteName: ogMeta.siteName,
@@ -115,7 +181,6 @@
     };
   }
 
-  // Listen for extraction request from background.js
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === "EXTRACT_CONTENT") {
       try {
@@ -124,7 +189,7 @@
       } catch (err) {
         sendResponse({ error: err.message });
       }
-      return false; // synchronous response
+      return false;
     }
   });
 })();

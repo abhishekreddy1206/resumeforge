@@ -1,4 +1,5 @@
 import { askJson } from "../client";
+import { RESUME_PARSER_INSTRUCTIONS } from "./skill-prompts";
 
 interface ParsedResume {
   name: string;
@@ -70,21 +71,9 @@ interface ParsedResume {
  * Extracts contact info, experience, education, projects, and skills.
  */
 export async function parseResumeText(text: string): Promise<ParsedResume> {
-  return askJson(`Parse the resume text into JSON. Return ONLY valid JSON with no extra text. All fields optional unless marked *.
+  return askJson(`${RESUME_PARSER_INSTRUCTIONS}
 
-Schema:
-{
-  name*, email, phone, location, summary, linkedin, github, website, twitter (x.com or twitter.com URL), pinterest,
-  experiences: [{company*, title*, startDate* (YYYY-MM), endDate (YYYY-MM|null), current:bool, bullets:string[], skills:string[]}],
-  educations: [{school*, degree*, field, startDate, endDate, gpa}],
-  projects: [{name*, description, url, skills:string[]}],
-  skills: [{name*, category* (language|framework|tool|database|cloud|soft)}],
-  publications: [{title*, publisher, date (YYYY-MM), url, doi, description (≤100 words)}],
-  certifications: [{name*, issuer, date (YYYY-MM), expiryDate, credentialId, url}],
-  recommendations: [{recommenderName*, recommenderTitle, relationship, text*, linkedinUrl}]
-}
-
-Extract all skills mentioned (explicit + implicit from context). For experiences, extract skills used even if not listed.
+---
 
 Resume:
 ${text}`, { skill: "resume-parser" });

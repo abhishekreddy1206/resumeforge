@@ -1,0 +1,1 @@
+export const MAX_ARTICLE_CAPTURE_CHARS = 100000;

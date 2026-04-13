@@ -25,8 +25,13 @@ interface SavedSourceItem {
   type: string;
   url: string;
   title: string;
+  version: number;
+  wordCount: number;
   createdAt: string;
   captureMethod?: string | null;
+  reviewFlags?: string[];
+  reviewSummary?: string | null;
+  reviewUrl?: string;
   refreshable?: boolean;
 }
 
@@ -325,17 +330,26 @@ export function RefinePanel({ guideId, existingSources, onRefined, sectionId, se
                       className="flex items-center gap-2 flex-1 min-w-0 text-left"
                     >
                       <BookmarkCheck className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium">{s.title}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
-                          {s.captureMethod === "dom_fallback" ? " · needs refresh" : ""}
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate font-medium">{s.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {s.type} &middot; v{s.version} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                            {s.reviewSummary ? ` · ${s.reviewSummary}` : s.captureMethod === "dom_fallback" ? " · needs refresh" : ""}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                    {s.refreshable && (
-                      <button
-                        onClick={() => refreshSavedSource(s.id)}
+                      </button>
+                      {s.reviewUrl && (
+                        <a
+                          href={s.reviewUrl}
+                          className="shrink-0 text-xs text-primary hover:text-primary/80"
+                          title="Review saved source"
+                        >
+                          Review
+                        </a>
+                      )}
+                      {s.refreshable && (
+                        <button
+                          onClick={() => refreshSavedSource(s.id)}
                         disabled={refreshingSourceId === s.id}
                         className="shrink-0 p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
                         title="Refresh saved source"

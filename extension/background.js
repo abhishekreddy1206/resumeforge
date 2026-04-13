@@ -4,6 +4,7 @@
  */
 
 const DEFAULT_API_URL = "http://localhost:3000";
+const ARTICLE_CAPTURE_MAX_CHARS = 100000;
 
 function safeHostname(url) {
   try { return new URL(url).hostname.toLowerCase(); } catch { return ""; }
@@ -88,7 +89,10 @@ async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `API error: ${res.status}`);
+    const error = new Error(err.error || `API error: ${res.status}`);
+    error.status = res.status;
+    error.payload = err;
+    throw error;
   }
   return res;
 }
@@ -96,9 +100,41 @@ async function apiFetch(path, options = {}) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   handleMessage(msg)
     .then(sendResponse)
-    .catch((err) => sendResponse({ error: err.message }));
+    .catch((err) => sendResponse({
+      error: err.message,
+      status: err.status,
+      details: err.payload,
+    }));
   return true; // Keep channel open for async response
 });
+
+function buildArticleCapturePayload(extraction) {
+  const pageUrl = (extraction.url || "").toLowerCase();
+  let type = "article";
+  if (/medium\.com|towardsdatascience\.com|betterprogramming\.pub|levelup\.gitconnected\.com/.test(pageUrl)) {
+    type = "medium";
+  } else if (/\.substack\.com\/p\//.test(pageUrl)) {
+    type = "substack";
+  }
+
+  return {
+    url: extraction.url,
+    title: extraction.title || "Untitled",
+    fallbackContent: ((extraction.text || "").trim()).slice(0, ARTICLE_CAPTURE_MAX_CHARS),
+    fallbackDiagnostics: {
+      selectedSelector: extraction.selectedSelector || null,
+      selectedTextLength:
+        typeof extraction.selectedTextLength === "number" ? extraction.selectedTextLength : null,
+      bodyTextLength:
+        typeof extraction.bodyTextLength === "number" ? extraction.bodyTextLength : null,
+      candidateLengths:
+        extraction.candidateLengths && typeof extraction.candidateLengths === "object"
+          ? extraction.candidateLengths
+          : {},
+    },
+    type,
+  };
+}
 
 async function handleMessage(msg) {
   switch (msg.type) {
@@ -260,24 +296,10 @@ async function handleMessage(msg) {
       }
 
       if (captureType === "article") {
-        // Determine article type from URL
-        const pageUrl = (extraction.url || "").toLowerCase();
-        let type = "article";
-        if (/medium\.com|towardsdatascience\.com|betterprogramming\.pub|levelup\.gitconnected\.com/.test(pageUrl)) {
-          type = "medium";
-        } else if (/\.substack\.com\/p\//.test(pageUrl)) {
-          type = "substack";
-        }
-
-        const content = text.slice(0, 10000);
+        const payload = buildArticleCapturePayload(extraction);
         const res = await apiFetch("/api/learn/sources", {
           method: "POST",
-          body: JSON.stringify({
-            url: extraction.url,
-            title: extraction.title || "Untitled",
-            fallbackContent: content,
-            type,
-          }),
+          body: JSON.stringify(payload),
         });
         const saved = await res.json();
         return {
@@ -290,6 +312,43 @@ async function handleMessage(msg) {
       }
 
       throw new Error(`Unknown capture type: ${captureType}`);
+    }
+
+    case "REPLACE_SAVED_ARTICLE": {
+      const { sourceId, tabId } = msg;
+      if (!sourceId) {
+        throw new Error("Missing sourceId for replace");
+      }
+
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["capture.js"],
+      });
+
+      const extraction = await chrome.tabs.sendMessage(tabId, { type: "EXTRACT_CONTENT" });
+      if (extraction.error) throw new Error(extraction.error);
+
+      const text = (extraction.text || "").trim();
+      if (text.length < 50) {
+        throw new Error("Could not extract enough content from this page.");
+      }
+
+      const payload = buildArticleCapturePayload(extraction);
+      const res = await apiFetch(`/api/learn/sources/${sourceId}/replace`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const saved = await res.json();
+      return {
+        success: true,
+        captureType: "article",
+        replaced: true,
+        title: saved.title,
+        id: saved.id,
+        version: saved.version,
+        unchanged: saved.unchanged,
+        suggestions: saved.suggestions || [],
+      };
     }
 
     case "SET_API_URL": {

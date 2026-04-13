@@ -1,4 +1,5 @@
-import { askJson, compactProfile, PROFILE_SCHEMA_RULES } from "../client";
+import { askJson, compactProfile } from "../client";
+import { TIP_APPLY_INSTRUCTIONS, TIP_APPLY_SCHEMA } from "./skill-prompts";
 
 /**
  * Skill: Resume Tip Applier
@@ -31,8 +32,13 @@ export async function applyResumeTips(
           .join("\n")}\n`
       : "";
 
-  return askJson(`You are a resume optimization assistant. Apply specific resume tips to the candidate's profile to improve their match with the target job.
+  const terminologyMapSection = terminologyMap && terminologyMap.length > 0 ? `\nTERMINOLOGY MAP (use the JD's exact terms where the candidate has the equivalent skill):\n${JSON.stringify(terminologyMap)}\n` : "";
 
+  return askJson(`${TIP_APPLY_INSTRUCTIONS}
+
+${TIP_APPLY_SCHEMA}
+
+---
 ${historyText}
 User's instruction: "${instruction}"
 
@@ -42,7 +48,7 @@ ${JSON.stringify(compactProfile(profile))}
 TARGET JOB:
 Title: ${job.title}
 Company: ${job.company}
-${terminologyMap && terminologyMap.length > 0 ? `\nTERMINOLOGY MAP (use the JD's exact terms where the candidate has the equivalent skill):\n${JSON.stringify(terminologyMap)}\n` : ""}
+${terminologyMapSection}
 MATCH ANALYSIS:
 Score: ${matchResult.overallScore}/100
 Direct matches: ${JSON.stringify(matchResult.breakdown?.directMatches || [])}
@@ -50,29 +56,5 @@ Gaps: ${JSON.stringify(matchResult.breakdown?.gaps || [])}
 Skills to highlight: ${JSON.stringify(matchResult.skillsToHighlight || [])}
 
 RESUME TIPS TO APPLY:
-${JSON.stringify(matchResult.resumeTips || [])}
-
-RULES:
-- Apply ONLY grounded tips (grounded:true) unless user explicitly asks for stretch tips
-- You MUST rewrite the summary to target this specific role — incorporate the job's key terms, domain, and required skills. The summary is the highest-impact ATS section; never leave it unchanged.
-- Reword experience bullets using exact JD terminology where the candidate genuinely has the skill
-- Reorder experiences and bullets to lead with the most relevant content
-- Add demonstrable skills not yet listed (only skills evidenced by experience bullets)
-- For publications: REMOVE or de-emphasize publications that are irrelevant to the target role. Only keep publications that strengthen the application. If none are relevant, return an empty publications array.
-- For certifications: highlight those matching JD requirements; omit irrelevant ones
-- For recommendations: select only those speaking to skills the job requires; omit irrelevant ones
-- Do NOT fabricate experience or skills; preserve the data shape: ${PROFILE_SCHEMA_RULES}
-
-Return JSON with "reply" and "changes". In "changes", include ONLY sections you modified.
-You MAY omit sections that are COMPLETELY UNCHANGED (e.g., if educations didn't change, omit them).
-For sections you DO include, return the COMPLETE updated array/value — not partial diffs.
-
-{
-  "reply": "Brief summary of changes made (under 500 chars)",
-  "changes": {
-    "summary": "full new summary text",
-    "experiences": [{"company":"string","title":"string","startDate":"string","endDate":"string","current":true,"bullets":["string"],"skills":["string"]}],
-    "skills": [{"name":"string","category":"string"}]
-  }
-}`, { timeoutMs: 600_000, skill: "resume-tip-applier", model: options?.model });
+${JSON.stringify(matchResult.resumeTips || [])}`, { timeoutMs: 600_000, skill: "resume-tip-applier", model: options?.model });
 }

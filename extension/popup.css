@@ -403,6 +403,45 @@ body {
   text-decoration: underline;
 }
 
+.capture-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.capture-action-btn {
+  width: 100%;
+  border: 1px solid #fcd34d;
+  background: #fff7d6;
+  color: #92400e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.capture-action-btn:hover:not(:disabled) {
+  background: #fef3c7;
+}
+
+.capture-action-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.capture-action-primary {
+  border-color: #f59e0b;
+  background: #f59e0b;
+  color: #fff;
+}
+
+.capture-action-primary:hover:not(:disabled) {
+  background: #d97706;
+}
+
 /* ── Warning ── */
 .warning {
   font-size: 11px;

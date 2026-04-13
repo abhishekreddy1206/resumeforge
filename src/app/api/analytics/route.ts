@@ -41,8 +41,9 @@ export async function GET() {
       _sum: { costUsd: true, inputTokens: true, outputTokens: true },
       _count: true,
     }),
-    db.$queryRaw<Array<{ skill: string; totalCost: number; totalInput: number; totalOutput: number; calls: number }>>`
-      SELECT skill, SUM(costUsd) as totalCost, SUM(inputTokens) as totalInput, SUM(outputTokens) as totalOutput, COUNT(*) as calls
+    db.$queryRaw<Array<{ skill: string; totalCost: number; totalInput: number; totalOutput: number; calls: number; cacheReads: number; cacheCreations: number }>>`
+      SELECT skill, SUM(costUsd) as totalCost, SUM(inputTokens) as totalInput, SUM(outputTokens) as totalOutput, COUNT(*) as calls,
+        SUM(cacheReadInputTokens) as cacheReads, SUM(cacheCreationInputTokens) as cacheCreations
       FROM TokenUsage GROUP BY skill ORDER BY totalCost DESC
     `,
     db.$queryRaw<Array<{ model: string; totalCost: number; calls: number }>>`
@@ -181,6 +182,8 @@ export async function GET() {
         inputTokens: Number(r.totalInput),
         outputTokens: Number(r.totalOutput),
         calls: Number(r.calls),
+        cacheReads: Number(r.cacheReads || 0),
+        cacheCreations: Number(r.cacheCreations || 0),
       })),
       byModel: byModel.map((r) => ({
         model: r.model,

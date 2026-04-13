@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { refineGuideSection } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
+import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
 
 export async function POST(
   request: NextRequest,
@@ -9,10 +10,7 @@ export async function POST(
 ) {
   try {
     const { id, sectionId } = await params;
-    const guide = await prisma.guide.findUnique({
-      where: { id },
-      include: { sources: true },
-    });
+    const guide = await prisma.guide.findUnique({ where: { id } });
 
     if (!guide) {
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
@@ -48,8 +46,7 @@ export async function POST(
       },
     });
 
-    // Load all guide sources
-    const sourceTexts = guide.sources.map((s) => s.content);
+    const sourceTexts = await getActiveGuideSourceTexts(guide.id);
     const siblingTitles = content.sections.map((s) => s.title);
 
     try {
@@ -73,13 +70,16 @@ export async function POST(
       if (currentContent._sectionStatuses) currentContent._sectionStatuses[sectionId] = "completed";
 
       const newVersion = guide.version + 1;
+      const sourceRefs = await getGuideVersionSourceRefs(guide.id);
       await prisma.$transaction(async (tx) => {
         await tx.guideVersion.create({
           data: {
             guideId: guide.id,
-            version: guide.version,
-            content: guide.content,
+            version: newVersion,
+            content: JSON.stringify(currentContent),
             changeDescription: `Refined section: ${section.title}${instructions ? ` (${instructions.slice(0, 100)})` : ""}`,
+            snapshotSemantics: "current_head",
+            sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
           },
         });
 

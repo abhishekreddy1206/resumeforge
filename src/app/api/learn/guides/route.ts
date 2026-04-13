@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateGuideOutline, generateGuideSection, matchGuideToPath } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
-import { resolveGuideSources } from "@/lib/learn-sources";
+import { GuideSourceResolutionError, type GuideSourcePayload, getActiveGuideSourceTexts, getGuideVersionSourceRefs, persistGuideSources, resolveGuideSources, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 
 const SECTION_BATCH_SIZE = 1;
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { topic, sources, difficulty, model } = body as {
       topic: string;
-      sources?: Array<{ type: string; content?: string; url?: string; filename?: string; savedSourceId?: string }>;
+      sources?: Array<{ type: string; content?: string; url?: string; filename?: string; savedSourceId?: string; savedSourceVersionId?: string }>;
       difficulty?: string;
       model?: string;
     };
@@ -69,7 +69,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    const { sourceTexts, sourcesToSave } = await resolveGuideSources(profile.id, sources);
+    let sourceTexts: string[];
+    let sourcesToSave: GuideSourcePayload[];
+    try {
+      const resolved = await resolveGuideSources(profile.id, sources);
+      sourceTexts = resolved.sourceTexts;
+      sourcesToSave = resolved.sourcesToSave;
+    } catch (error) {
+      if (error instanceof GuideSourceResolutionError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
     if (sources && sources.length > 0 && sourceTexts.length === 0) {
       return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
     }
@@ -132,17 +143,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      for (const src of sourcesToSave) {
-        await tx.guideSource.create({
-          data: {
-            guideId: g.id,
-            type: src.type,
-            url: src.url || null,
-            title: src.title || null,
-            content: src.content,
-          },
-        });
-      }
+      await persistGuideSources(tx, g.id, sourcesToSave);
 
       return g;
     });
@@ -158,8 +159,7 @@ export async function POST(request: NextRequest) {
         let failedCount = 0;
 
         // Load sources from DB (consistent with resume endpoint)
-        const guideSources = await prisma.guideSource.findMany({ where: { guideId: guide.id } });
-        const sources = guideSources.map((s) => s.content);
+        const sources = await getActiveGuideSourceTexts(guide.id);
 
         for (let i = 0; i < outline.sectionPlan.length; i += SECTION_BATCH_SIZE) {
           const batch = outline.sectionPlan.slice(i, i + SECTION_BATCH_SIZE);
@@ -223,13 +223,43 @@ export async function POST(request: NextRequest) {
             ? `Guide generation failed. ${failedCount} sections could not be generated.`
             : `${failedCount} section${failedCount === 1 ? "" : "s"} failed to generate. Use Resume Generation to retry.`
           : null;
-        await prisma.guide.update({
-          where: { id: guide.id },
-          data: {
-            status: finalStatus,
-            lastAsyncError,
-            lastAsyncStage: failedCount > 0 ? "create_sections" : null,
-          },
+        const finalGuide = await prisma.guide.findUnique({ where: { id: guide.id } });
+        const sourceRefs = await getGuideVersionSourceRefs(guide.id);
+
+        await prisma.$transaction(async (tx) => {
+          await tx.guide.update({
+            where: { id: guide.id },
+            data: {
+              status: finalStatus,
+              lastAsyncError,
+              lastAsyncStage: failedCount > 0 ? "create_sections" : null,
+            },
+          });
+
+          if (finalStatus === "published" && finalGuide) {
+            await tx.guideVersion.upsert({
+              where: {
+                guideId_version: {
+                  guideId: guide.id,
+                  version: finalGuide.version,
+                },
+              },
+              create: {
+                guideId: guide.id,
+                version: finalGuide.version,
+                content: finalGuide.content,
+                changeDescription: "Initial guide generation",
+                snapshotSemantics: "current_head",
+                sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
+              },
+              update: {
+                content: finalGuide.content,
+                changeDescription: "Initial guide generation",
+                snapshotSemantics: "current_head",
+                sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
+              },
+            });
+          }
         });
 
         console.log(`[guide-create] Guide ${guide.id} done: ${completedCount} ok, ${failedCount} failed -> ${finalStatus}`);

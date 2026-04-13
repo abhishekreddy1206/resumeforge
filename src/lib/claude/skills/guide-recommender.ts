@@ -45,5 +45,5 @@ Prioritize topics that:
 3. Cover fundamentals that compound (not narrow tool-specific knowledge)
 
 Return ONLY a JSON array:
-[{"topic":"string","description":"string","difficulty":"beginner|intermediate|advanced","gapSkills":["string"],"frequency":number}]`, { skill: "guide-recommender", model: options?.model });
+[{"topic":"string","description":"string","difficulty":"beginner|intermediate|advanced","gapSkills":["string"],"frequency":number}]`, { skill: "guide-recommender", model: options?.model || "haiku" });
 }

@@ -1,4 +1,5 @@
-import { askJson, PROFILE_SCHEMA_RULES } from "../client";
+import { askJson } from "../client";
+import { SKILLS_EDIT_INSTRUCTIONS, SKILLS_EDIT_SCHEMA } from "./skill-prompts";
 
 /**
  * Skill: Skills Editor
@@ -27,31 +28,14 @@ export async function editSkills(
           .join("\n")}\n`
       : "";
 
-  return askJson(`You are a skills editing assistant. The user wants to modify their professional skills list.
+  return askJson(`${SKILLS_EDIT_INSTRUCTIONS}
 
+${SKILLS_EDIT_SCHEMA}
+
+---
 ${historyText}
 User's latest instruction: "${instruction}"
 
 Current Skills:
-${JSON.stringify(currentSkills.map(({ name, category }) => ({ name, category })))}
-
-RULES:
-- If the user wants to ADD, REMOVE, or MODIFY skills, return both "reply" and "updatedSkills"
-- If the user is asking a QUESTION (not requesting changes), return only "reply" with no "updatedSkills"
-- ${PROFILE_SCHEMA_RULES}
-- Preserve existing skill IDs when modifying (only omit id for new skills)
-- Be concise in your reply — explain what you changed in 1-2 sentences
-- If a user asks to add a skill that already exists, mention it's already there
-- When removing skills, filter them out of the list entirely
-
-Return JSON:
-{
-  "reply": "Brief explanation of what was changed (or answer to their question)",
-  "updatedSkills": [ /* full skills array — ONLY if changes were made */ ]
-}
-
-If the user asked a question without requesting changes, return:
-{
-  "reply": "Your answer here"
-}`, { skill: "skills-editor" });
+${JSON.stringify(currentSkills.map(({ name, category }) => ({ name, category })))}`, { skill: "skills-editor" });
 }

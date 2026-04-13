@@ -49,5 +49,5 @@ Return ONLY valid JSON:
       "difficulty": "beginner|intermediate|advanced"
     }
   ]
-}`, { timeoutMs: 120_000, skill: "curriculum-planner", model: options?.model });
+}`, { timeoutMs: 120_000, skill: "curriculum-planner", model: options?.model || "haiku" });
 }

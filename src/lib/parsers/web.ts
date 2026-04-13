@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { MAX_ARTICLE_CAPTURE_CHARS } from "@/lib/capture-constants";
 
 const BLOCKED_IP_PATTERNS = [
   /^localhost$/i,
@@ -323,6 +324,7 @@ async function fetchSubstackArticle(url: string): Promise<{
   text: string;
   publisher?: string;
   date?: string;
+  finalUrl?: string;
 }> {
   const match = url.match(/(?:https?:\/\/)?([^.]+)\.substack\.com\/p\/([^/?#]+)/);
   if (!match) throw new Error("Invalid Substack URL");
@@ -360,6 +362,7 @@ async function fetchSubstackArticle(url: string): Promise<{
     text,
     publisher: `${publication} (Substack)`,
     date: data.post_date || undefined,
+    finalUrl: url,
   };
 }
 
@@ -368,6 +371,7 @@ async function fetchMediumArticle(url: string): Promise<{
   text: string;
   publisher?: string;
   date?: string;
+  finalUrl?: string;
 }> {
   const sid = process.env.MEDIUM_SID;
   const uid = process.env.MEDIUM_UID;
@@ -423,7 +427,13 @@ async function fetchMediumArticle(url: string): Promise<{
 
   console.log(`[web-scraper] Fetched Medium article "${title}" (${text.length} chars)`);
 
-  return { title, text, publisher, date };
+  return {
+    title,
+    text,
+    publisher,
+    date,
+    finalUrl: response.url || url,
+  };
 }
 
 export async function scrapeArticleUrl(url: string): Promise<{
@@ -432,6 +442,7 @@ export async function scrapeArticleUrl(url: string): Promise<{
   publisher?: string;
   date?: string;
   doi?: string;
+  finalUrl: string;
 }> {
   validateExternalUrl(url);
 
@@ -439,7 +450,11 @@ export async function scrapeArticleUrl(url: string): Promise<{
   if (url.match(/\.substack\.com\/p\//)) {
     try {
       const result = await fetchSubstackArticle(url);
-      return { ...result, text: result.text.slice(0, 10000) };
+      return {
+        ...result,
+        text: result.text.slice(0, MAX_ARTICLE_CAPTURE_CHARS),
+        finalUrl: result.finalUrl || url,
+      };
     } catch (err) {
       console.log(`[web-scraper] Substack API failed, falling back to HTML scraping: ${err}`);
       // Fall through to regular scraping
@@ -450,7 +465,11 @@ export async function scrapeArticleUrl(url: string): Promise<{
   if (url.includes("medium.com/") || url.includes("towardsdatascience.com/") || url.includes("levelup.gitconnected.com/") || url.includes("betterprogramming.pub/")) {
     try {
       const result = await fetchMediumArticle(url);
-      return { ...result, text: result.text.slice(0, 10000) };
+      return {
+        ...result,
+        text: result.text.slice(0, MAX_ARTICLE_CAPTURE_CHARS),
+        finalUrl: result.finalUrl || url,
+      };
     } catch (err) {
       console.log(`[web-scraper] Medium auth failed, falling back to HTML scraping: ${err}`);
       // Fall through to regular scraping
@@ -547,10 +566,11 @@ export async function scrapeArticleUrl(url: string): Promise<{
 
   return {
     title: title.slice(0, 500),
-    text: text.slice(0, 10000),
+    text: text.slice(0, MAX_ARTICLE_CAPTURE_CHARS),
     publisher: publisher?.slice(0, 200),
     date: date?.slice(0, 20),
     doi: doi?.slice(0, 100),
+    finalUrl: response.url || url,
   };
 }
 

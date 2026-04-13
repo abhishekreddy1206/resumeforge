@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
+import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
 
 export async function GET(
   _request: NextRequest,
@@ -12,11 +13,27 @@ export async function GET(
       where: { OR: [{ id }, { slug: id }] },
       include: {
         sources: {
-          select: { id: true, type: true, url: true, title: true, createdAt: true },
+          where: { isActive: true },
+          select: {
+            id: true,
+            type: true,
+            url: true,
+            title: true,
+            createdAt: true,
+            savedSourceId: true,
+            savedSourceVersionId: true,
+          },
           orderBy: { createdAt: "asc" },
         },
         versions: {
-          select: { id: true, version: true, changeDescription: true, createdAt: true },
+          select: {
+            id: true,
+            version: true,
+            changeDescription: true,
+            snapshotSemantics: true,
+            sourceRefs: true,
+            createdAt: true,
+          },
           orderBy: { version: "desc" },
         },
       },
@@ -26,11 +43,50 @@ export async function GET(
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
     }
 
+    const staleGuideSources = await prisma.guideSource.findMany({
+      where: {
+        guideId: guide.id,
+        isActive: true,
+        savedSourceId: { not: null },
+      },
+      select: {
+        id: true,
+        title: true,
+        savedSourceId: true,
+        savedSourceVersionId: true,
+        savedSourceVersion: {
+          select: {
+            version: true,
+          },
+        },
+        savedSource: {
+          select: {
+            version: true,
+          },
+        },
+      },
+    });
+
     return NextResponse.json({
       ...guide,
       content: JSON.parse(guide.content),
       tags: JSON.parse(guide.tags),
       sectionProgress: JSON.parse(guide.sectionProgress),
+      staleSources: staleGuideSources.map((source) => {
+        const attachedVersion = source.savedSourceVersion?.version ?? null;
+        const headVersion = source.savedSource?.version ?? attachedVersion ?? null;
+        return {
+          savedSourceId: source.savedSourceId,
+          guideSourceId: source.id,
+          sourceTitle: source.title,
+          attachedVersion,
+          headVersion,
+          isStale: attachedVersion !== null && headVersion !== null
+            ? attachedVersion < headVersion
+            : false,
+          reviewUrl: source.savedSourceId ? buildSavedSourceReviewUrl(source.savedSourceId) : null,
+        };
+      }),
     });
   } catch (error) {
     console.error("Guide get error:", error);

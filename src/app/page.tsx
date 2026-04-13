@@ -69,7 +69,7 @@ interface AnalyticsData {
   tokenUsage: {
     daily: Array<{ day: string; cost: number; inputTokens: number; outputTokens: number; calls: number }>;
     totals: { cost: number; inputTokens: number; outputTokens: number; calls: number };
-    bySkill: Array<{ skill: string; cost: number; inputTokens: number; outputTokens: number; calls: number }>;
+    bySkill: Array<{ skill: string; cost: number; inputTokens: number; outputTokens: number; calls: number; cacheReads: number; cacheCreations: number }>;
     byModel: Array<{ model: string; cost: number; calls: number }>;
   };
   versions: Array<{
@@ -323,6 +323,29 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+              {analytics.tokenUsage.bySkill.some((s) => s.cacheReads > 0 || s.cacheCreations > 0) && (
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">Prompt Cache Efficiency</h4>
+                  <div className="space-y-1">
+                    {analytics.tokenUsage.bySkill
+                      .filter((s) => s.cacheReads > 0 || s.cacheCreations > 0)
+                      .map((s) => {
+                        const totalCacheTokens = s.cacheReads + s.cacheCreations;
+                        const hitPct = totalCacheTokens > 0 ? Math.round((s.cacheReads / totalCacheTokens) * 100) : 0;
+                        return (
+                          <div key={s.skill} className="flex items-center gap-2">
+                            <span className="text-xs w-28 truncate font-mono">{s.skill}</span>
+                            <div className="flex-1 bg-muted rounded h-2 overflow-hidden">
+                              <div className="bg-green-500 h-full rounded" style={{ width: `${hitPct}%` }} />
+                            </div>
+                            <span className="text-xs text-muted-foreground w-20 text-right">{hitPct}% hits</span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">Cache reads vs. creations — higher is better (less redundant input)</p>
+                </div>
+              )}
             </div>
           )}
         </section>

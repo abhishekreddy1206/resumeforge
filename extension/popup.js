@@ -236,6 +236,80 @@ function updateCaptureHints(pageUrl) {
   }
 }
 
+function apiBase() {
+  return apiUrlInput.value.trim().replace(/\/+$/, "");
+}
+
+function renderArticleCaptureSuccess(result, mode = "saved") {
+  const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
+  const heading = mode === "replaced"
+    ? `Article ${result.unchanged ? "confirmed" : "replaced"}: "${escapeHtml(result.title)}"${result.version ? ` (v${result.version})` : ""}`
+    : `Article saved: "${escapeHtml(result.title)}"`;
+
+  if (suggestions.length > 0) {
+    captureResult.innerHTML = `
+      <div>${heading}</div>
+      <div class="capture-suggestions">
+        <div class="capture-suggestions-title">Suggested guides</div>
+        ${suggestions.map((suggestion) => `
+          <a class="capture-suggestion-link" href="${apiBase()}/learn/${suggestion.guideSlug}" target="_blank" rel="noopener noreferrer">
+            ${escapeHtml(suggestion.guideTopic)}
+          </a>
+        `).join("")}
+      </div>
+    `;
+  } else {
+    captureResult.textContent = heading;
+  }
+}
+
+function renderDuplicateCapture(details) {
+  const primaryLabel = details.deleted ? "Restore saved article" : "Replace saved article";
+  captureResult.className = "capture-result duplicate";
+  captureResult.innerHTML = `
+    <div>This article is already saved as "${escapeHtml(details.title || "Untitled")}"${details.version ? ` (v${details.version})` : ""}.</div>
+    <div class="capture-actions">
+      <button type="button" class="capture-action-btn capture-action-primary" id="capture-replace-btn">${primaryLabel}</button>
+      <button type="button" class="capture-action-btn" id="capture-review-btn">Review existing source</button>
+    </div>
+  `;
+
+  const replaceBtn = document.getElementById("capture-replace-btn");
+  const reviewBtn = document.getElementById("capture-review-btn");
+
+  replaceBtn?.addEventListener("click", async () => {
+    try {
+      replaceBtn.disabled = true;
+      reviewBtn.disabled = true;
+      replaceBtn.textContent = details.deleted ? "Restoring..." : "Replacing...";
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) throw new Error("No active tab found");
+
+      const result = await chrome.runtime.sendMessage({
+        type: "REPLACE_SAVED_ARTICLE",
+        sourceId: details.existingSourceId,
+        tabId: tab.id,
+      });
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      captureResult.className = "capture-result success";
+      renderArticleCaptureSuccess(result, "replaced");
+    } catch (err) {
+      captureResult.className = "capture-result error";
+      captureResult.textContent = err.message || "Replace failed";
+    }
+  });
+
+  reviewBtn?.addEventListener("click", async () => {
+    const reviewPath = details.reviewUrl || `/learn/sources/${details.existingSourceId}`;
+    await chrome.tabs.create({ url: `${apiBase()}${reviewPath}` });
+  });
+}
+
 async function captureCurrentPage(captureType) {
   const btn = captureType === "job" ? captureJobBtn : captureArticleBtn;
   captureJobBtn.disabled = true;
@@ -255,10 +329,8 @@ async function captureCurrentPage(captureType) {
     });
 
     if (result.error) {
-      // Check for duplicate
-      if (result.error.includes("already been")) {
-        captureResult.className = "capture-result duplicate";
-        captureResult.textContent = result.error;
+      if (result.status === 409 && result.details?.duplicate) {
+        renderDuplicateCapture(result.details);
       } else {
         throw new Error(result.error);
       }
@@ -267,23 +339,7 @@ async function captureCurrentPage(captureType) {
       if (captureType === "job") {
         captureResult.textContent = `Job imported! "${result.title}" is being analyzed.`;
       } else {
-        const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
-        if (suggestions.length > 0) {
-          const apiBase = apiUrlInput.value.trim().replace(/\/+$/, "");
-          captureResult.innerHTML = `
-            <div>Article saved: "${escapeHtml(result.title)}"</div>
-            <div class="capture-suggestions">
-              <div class="capture-suggestions-title">Suggested guides</div>
-              ${suggestions.map((suggestion) => `
-                <a class="capture-suggestion-link" href="${apiBase}/learn/${suggestion.guideSlug}" target="_blank" rel="noopener noreferrer">
-                  ${escapeHtml(suggestion.guideTopic)}
-                </a>
-              `).join("")}
-            </div>
-          `;
-        } else {
-          captureResult.textContent = `Article saved: "${result.title}"`;
-        }
+        renderArticleCaptureSuccess(result, "saved");
       }
     }
   } catch (err) {

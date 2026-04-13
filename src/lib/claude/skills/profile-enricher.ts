@@ -1,4 +1,11 @@
 import { askJson, compactProfile } from "../client";
+import {
+  ENRICHMENT_GITHUB_INSTRUCTIONS,
+  ENRICHMENT_STACKOVERFLOW_INSTRUCTIONS,
+  ENRICHMENT_LINKEDIN_INSTRUCTIONS,
+  ENRICHMENT_RULES,
+  ENRICHMENT_SCHEMA,
+} from "./skill-prompts";
 
 /**
  * Skill: Profile Enricher
@@ -8,26 +15,10 @@ import { askJson, compactProfile } from "../client";
  * without removing existing data.
  */
 
-const SOURCE_INSTRUCTIONS: Record<string, string> = {
-  github: `This is GitHub profile data. Extract:
-- Top repositories as projects (name, description, URL, languages used)
-- Programming languages and tools as skills
-- Bio information to enrich the summary
-- Any notable contributions (high star repos, active open source)`,
-
-  stackoverflow: `This is StackOverflow profile data. Extract:
-- Top tags as technical skills
-- Badge counts as indicators of community contribution
-- Tag answer counts to identify areas of knowledge`,
-
-  linkedin: `This is LinkedIn profile data (pasted text). Extract:
-- Work experience not already in the profile
-- Skills and endorsements
-- Education details
-- Certifications
-- Publications (articles, papers)
-- Recommendations (recommender name, title, relationship, text)
-- Summary/headline to enrich the professional summary`,
+const sourceInstructions: Record<string, string> = {
+  github: ENRICHMENT_GITHUB_INSTRUCTIONS,
+  stackoverflow: ENRICHMENT_STACKOVERFLOW_INSTRUCTIONS,
+  linkedin: ENRICHMENT_LINKEDIN_INSTRUCTIONS,
 };
 
 export async function enrichFromExternalSource(
@@ -39,25 +30,13 @@ export async function enrichFromExternalSource(
 ) {
   return askJson(`Merge the following ${source} data into the existing candidate profile.
 
-${SOURCE_INSTRUCTIONS[source] || "Extract relevant professional information."}
+${sourceInstructions[source] || "Extract relevant professional information."}
 
-RULES:
-- Do NOT remove existing data — only add or enhance
-- Do NOT fabricate experience or skills not evidenced by the data
-- Deduplicate skills (don't add "JavaScript" if "JavaScript" already exists)
-- For skills, categorize as: language, framework, tool, database, cloud, or soft
+${ENRICHMENT_RULES}
 Return ONLY valid JSON with this structure:
-{
-  "summary": "enhanced summary incorporating new info",
-  "projects": [{ "name": "...", "description": "...", "url": "...", "skills": ["..."] }],
-  "skills": [{ "name": "...", "category": "language|framework|tool|database|cloud|soft" }],
-  "experiences": [{ "company": "...", "title": "...", "startDate": "...", "endDate": "...", "bullets": ["..."], "skills": ["..."] }],
-  "publications": [{ "title": "...", "publisher": "...", "date": "YYYY", "url": "...", "doi": "..." }],
-  "certifications": [{ "name": "...", "issuer": "...", "date": "YYYY", "expiryDate": "...", "credentialId": "...", "url": "..." }],
-  "recommendations": [{ "recommenderName": "...", "recommenderTitle": "...", "relationship": "...", "text": "..." }]
-}
+${ENRICHMENT_SCHEMA}
 
-Only include sections that have new data to add. Omit empty arrays.
+---
 
 Existing Profile:
 ${JSON.stringify(compactProfile(existingProfile))}

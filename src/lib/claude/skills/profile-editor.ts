@@ -1,4 +1,5 @@
-import { askJson, compactProfile, PROFILE_SCHEMA_RULES } from "../client";
+import { askJson, compactProfile } from "../client";
+import { PROFILE_EDIT_INSTRUCTIONS, PROFILE_EDIT_SCHEMA } from "./skill-prompts";
 
 /**
  * Skill: Profile Editor
@@ -23,29 +24,14 @@ export async function editProfile(
           .join("\n")}\n`
       : "";
 
-  return askJson(`You are a profile editing assistant. The user wants to modify their professional profile data.
+  return askJson(`${PROFILE_EDIT_INSTRUCTIONS}
 
+${PROFILE_EDIT_SCHEMA}
+
+---
 ${historyText}
 User's latest instruction: "${instruction}"
 
 Current Profile Data:
-${JSON.stringify(compactProfile(currentProfile))}
-
-RULES:
-- If the user wants to MODIFY the profile, return both "reply" and "updatedProfile"
-- If the user is asking a QUESTION (not requesting changes), return only "reply" with no "updatedProfile"
-- Preserve all existing data unless the user explicitly asks to change or remove something
-- ${PROFILE_SCHEMA_RULES}
-- Be concise in your reply — explain what you changed in 1-2 sentences
-
-Return ONLY valid JSON:
-{
-  "reply": "Brief explanation of what was changed (or answer to their question)",
-  "updatedProfile": { /* full modified profile object — ONLY if changes were made */ }
-}
-
-If the user asked a question without requesting changes, return:
-{
-  "reply": "Your answer here"
-}`, { timeoutMs: 600_000, skill: "profile-editor" });
+${JSON.stringify(compactProfile(currentProfile))}`, { timeoutMs: 600_000, skill: "profile-editor" });
 }

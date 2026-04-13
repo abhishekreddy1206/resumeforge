@@ -19,8 +19,32 @@ interface GuideData {
   lastAsyncError: string | null;
   lastAsyncStage: string | null;
   sectionProgress: Record<string, { quizzesCompleted: number[]; scenariosRevealed: number[] }>;
-  sources: Array<{ id: string; type: string; url: string | null; title: string | null; createdAt: string }>;
-  versions: Array<{ id: string; version: number; changeDescription: string | null; createdAt: string }>;
+  sources: Array<{
+    id: string;
+    type: string;
+    url: string | null;
+    title: string | null;
+    createdAt: string;
+    savedSourceId?: string | null;
+    savedSourceVersionId?: string | null;
+  }>;
+  versions: Array<{
+    id: string;
+    version: number;
+    changeDescription: string | null;
+    snapshotSemantics: string;
+    sourceRefs: string | null;
+    createdAt: string;
+  }>;
+  staleSources: Array<{
+    savedSourceId: string | null;
+    guideSourceId: string;
+    sourceTitle: string | null;
+    attachedVersion: number | null;
+    headVersion: number | null;
+    isStale: boolean;
+    reviewUrl: string | null;
+  }>;
 }
 
 export default function GuideViewerPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -203,6 +227,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
     ? "text-primary"
     : "text-chart-3";
   const asyncStageLabel = guide.lastAsyncStage?.replace(/_/g, " ");
+  const staleSources = guide.staleSources.filter((source) => source.isStale);
 
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
@@ -251,6 +276,39 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
             <span className="font-medium">Latest background issue{asyncStageLabel ? ` (${asyncStageLabel})` : ""}:</span>{" "}
             {guide.lastAsyncError}
           </p>
+        </div>
+      )}
+
+      {staleSources.length > 0 && (
+        <div className="mb-6 border border-blue-500/25 bg-blue-500/5 rounded px-4 py-3 anim-fade-up">
+          <p className="text-sm text-foreground">
+            <span className="font-medium">Newer saved article extract{staleSources.length > 1 ? "s are" : " is"} available:</span>{" "}
+            this guide is still pinned to an older source version until you explicitly refine it.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {staleSources.map((source) => {
+              const label = `${source.sourceTitle || "Saved source"}${source.attachedVersion ? ` v${source.attachedVersion}` : ""}${source.headVersion ? ` → v${source.headVersion}` : ""}`;
+              if (!source.reviewUrl) {
+                return (
+                  <span
+                    key={source.guideSourceId}
+                    className="label-mono px-2 py-1 rounded bg-blue-500/10 text-blue-700"
+                  >
+                    {label}
+                  </span>
+                );
+              }
+              return (
+                <a
+                  key={source.guideSourceId}
+                  href={source.reviewUrl}
+                  className="label-mono px-2 py-1 rounded bg-blue-500/10 text-blue-700 hover:bg-blue-500/15 transition-colors"
+                >
+                  {label}
+                </a>
+              );
+            })}
+          </div>
         </div>
       )}
 

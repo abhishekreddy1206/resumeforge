@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateGuideSection } from "@/lib/claude";
 import type { GuideContentStorage, SectionGenStatus } from "@/lib/claude";
+import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
 
 const RESUME_BATCH_SIZE = 1;
 
@@ -11,10 +12,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const guide = await prisma.guide.findUnique({
-      where: { id },
-      include: { sources: true },
-    });
+    const guide = await prisma.guide.findUnique({ where: { id } });
     if (!guide) {
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
     }
@@ -59,7 +57,14 @@ export async function POST(
         // If some are refining, don't change status — refine's after() will handle it
         const hasRefining = content.sections.some((s) => statuses[s.id] === "refining");
         if (!hasRefining) {
-          await prisma.guide.update({ where: { id }, data: { status: "published" } });
+          await prisma.guide.update({
+            where: { id },
+            data: {
+              status: "published",
+              lastAsyncError: null,
+              lastAsyncStage: null,
+            },
+          });
           return NextResponse.json({ status: "published", remaining: 0 });
         }
         // Refining in progress — nothing for resume to do
@@ -72,8 +77,8 @@ export async function POST(
     const batch = eligibleSections.slice(0, RESUME_BATCH_SIZE);
     const siblingTitles = content.sections.map((s) => s.title);
 
-    // Load source materials from DB (fixes the source propagation bug)
-    const sourceTexts = guide.sources.map((s) => s.content);
+    // Load active source snapshots only so resume uses pinned guide inputs.
+    const sourceTexts = await getActiveGuideSourceTexts(guide.id);
 
     // Mark batch as "generating"
     for (const section of batch) {
@@ -85,8 +90,6 @@ export async function POST(
       data: {
         content: JSON.stringify(content),
         status: "generating",
-        lastAsyncError: null,
-        lastAsyncStage: null,
       },
     });
 
@@ -135,22 +138,56 @@ export async function POST(
     // Derive overall status from section statuses
     const allStatuses = Object.values(currentStatuses) as SectionGenStatus[];
     const allCompleted = allStatuses.every((s) => s === "completed");
+    const failedCount = allStatuses.filter((s) => s === "failed").length;
     const allFailed = allStatuses.every((s) => s === "failed");
     const remaining = allStatuses.filter((s) => s === "pending" || s === "failed").length;
 
     const newStatus = allCompleted ? "published" : allFailed ? "failed" : "generating";
-    const lastAsyncError = allFailed
-      ? "Guide generation failed. Resume generation to retry."
+    const lastAsyncError = failedCount > 0
+      ? allFailed
+        ? "Guide generation failed. Resume generation to retry."
+        : `${failedCount} section${failedCount === 1 ? "" : "s"} failed to generate. Resume generation to retry.`
       : null;
 
-    await prisma.guide.update({
-      where: { id },
-      data: {
-        content: JSON.stringify(currentContent),
-        status: newStatus,
-        lastAsyncError,
-        lastAsyncStage: allFailed ? "create_sections" : null,
-      },
+    const sourceRefs = newStatus === "published"
+      ? await getGuideVersionSourceRefs(guide.id)
+      : null;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.guide.update({
+        where: { id },
+        data: {
+          content: JSON.stringify(currentContent),
+          status: newStatus,
+          lastAsyncError,
+          lastAsyncStage: failedCount > 0 ? "create_sections" : null,
+        },
+      });
+
+      if (newStatus === "published") {
+        await tx.guideVersion.upsert({
+          where: {
+            guideId_version: {
+              guideId: guide.id,
+              version: guide.version,
+            },
+          },
+          create: {
+            guideId: guide.id,
+            version: guide.version,
+            content: JSON.stringify(currentContent),
+            changeDescription: "Initial guide generation",
+            snapshotSemantics: "current_head",
+            sourceRefs: serializeGuideVersionSourceRefs(sourceRefs || []),
+          },
+          update: {
+            content: JSON.stringify(currentContent),
+            changeDescription: "Initial guide generation",
+            snapshotSemantics: "current_head",
+            sourceRefs: serializeGuideVersionSourceRefs(sourceRefs || []),
+          },
+        });
+      }
     });
 
     console.log(`[guide-resume] Guide ${id}: ${generatedCount}/${batch.length} ok, ${remaining} remaining -> ${newStatus}`);

@@ -46,11 +46,16 @@ interface SavedSourceItem {
   type: string;
   url: string;
   title: string;
+  version: number;
+  wordCount: number;
   createdAt: string;
   captureMethod?: string | null;
   publisher?: string | null;
   publishedAt?: string | null;
   lastRefreshedAt?: string | null;
+  reviewFlags?: string[];
+  reviewSummary?: string | null;
+  reviewUrl?: string;
   refreshable?: boolean;
 }
 
@@ -448,11 +453,20 @@ function LearnPageContent() {
                             <div className="flex-1 min-w-0">
                               <div className="truncate font-medium">{s.title}</div>
                               <div className="text-xs text-muted-foreground truncate">
-                                {s.type} &middot; {new URL(s.url).hostname.replace("www.", "")}
-                                {s.captureMethod === "dom_fallback" ? " · needs refresh" : ""}
+                                {s.type} &middot; v{s.version} &middot; {new URL(s.url).hostname.replace("www.", "")}
+                                {s.reviewSummary ? ` · ${s.reviewSummary}` : s.captureMethod === "dom_fallback" ? " · needs refresh" : ""}
                               </div>
                             </div>
                           </button>
+                          {s.reviewUrl && (
+                            <a
+                              href={s.reviewUrl}
+                              className="shrink-0 text-xs text-primary hover:text-primary/80"
+                              title="Review saved source"
+                            >
+                              Review
+                            </a>
+                          )}
                           {s.refreshable && (
                             <button
                               onClick={() => refreshSavedSource(s.id)}

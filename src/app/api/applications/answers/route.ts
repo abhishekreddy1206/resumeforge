@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateFormAnswer } from "@/lib/claude";
+import { generateFormAnswer, generateFormAnswerBatch } from "@/lib/claude";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
 function calculateTotalYears(
@@ -275,37 +275,76 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Tier 4: Generate remaining via AI (in parallel) ──
+    // ── Tier 4: Generate remaining via AI ──
+    // Use batch call for 2+ questions (sends profile/job once instead of N times)
+    // Falls back to individual parallel calls on batch failure
     if (toGenerate.length > 0) {
-      const aiResults = await Promise.allSettled(
-        toGenerate.map(({ input }) => {
-          const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
-          return generateFormAnswer(
+      let batchOk = false;
+
+      if (toGenerate.length >= 2) {
+        try {
+          const batchResults = await generateFormAnswerBatch(
             profileData as Record<string, unknown>,
             jobAnalysis,
-            input.question,
-            {
-              characterLimit: input.characterLimit ? Number(input.characterLimit) : undefined,
-              model: job.aiModel,
-              availableOptions: opts.length > 0 ? opts : undefined,
-            }
+            toGenerate.map(({ input }) => {
+              const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+              return {
+                question: input.question,
+                characterLimit: input.characterLimit ? Number(input.characterLimit) : undefined,
+                availableOptions: opts.length > 0 ? opts : undefined,
+              };
+            }),
           );
-        })
-      );
 
-      for (let j = 0; j < toGenerate.length; j++) {
-        const { index, input } = toGenerate[j];
-        const result = aiResults[j];
-        const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+          if (Array.isArray(batchResults) && batchResults.length === toGenerate.length) {
+            for (let j = 0; j < toGenerate.length; j++) {
+              const { index, input } = toGenerate[j];
+              const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+              const raw = batchResults[j]?.answer || "";
+              const finalAnswer = opts.length ? matchAnswerToOption(raw, opts) : raw;
+              await prisma.applicationAnswer.create({
+                data: { jobId, question: input.question, answer: finalAnswer, source: "ai" },
+              });
+              results[index] = { answer: finalAnswer, source: "ai" };
+            }
+            batchOk = true;
+          }
+        } catch {
+          // Fall through to individual calls
+        }
+      }
 
-        if (result.status === "fulfilled") {
-          const finalAnswer = opts.length ? matchAnswerToOption(result.value.answer, opts) : result.value.answer;
-          await prisma.applicationAnswer.create({
-            data: { jobId, question: input.question, answer: finalAnswer, source: "ai" },
-          });
-          results[index] = { answer: finalAnswer, source: "ai" };
-        } else {
-          results[index] = { answer: "", source: "error" };
+      if (!batchOk) {
+        const aiResults = await Promise.allSettled(
+          toGenerate.map(({ input }) => {
+            const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+            return generateFormAnswer(
+              profileData as Record<string, unknown>,
+              jobAnalysis,
+              input.question,
+              {
+                characterLimit: input.characterLimit ? Number(input.characterLimit) : undefined,
+                model: undefined, // Let skill use its Haiku default
+                availableOptions: opts.length > 0 ? opts : undefined,
+              }
+            );
+          })
+        );
+
+        for (let j = 0; j < toGenerate.length; j++) {
+          const { index, input } = toGenerate[j];
+          const result = aiResults[j];
+          const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+
+          if (result.status === "fulfilled") {
+            const finalAnswer = opts.length ? matchAnswerToOption(result.value.answer, opts) : result.value.answer;
+            await prisma.applicationAnswer.create({
+              data: { jobId, question: input.question, answer: finalAnswer, source: "ai" },
+            });
+            results[index] = { answer: finalAnswer, source: "ai" };
+          } else {
+            results[index] = { answer: "", source: "error" };
+          }
         }
       }
     }
