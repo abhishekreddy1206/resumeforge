@@ -1,6 +1,17 @@
 import { askJson, compactProfile } from "../client";
-import { RESUME_WRITING_INSTRUCTIONS, RESUME_WRITING_SCHEMA } from "./skill-prompts";
-import type { ResumeData } from "@/lib/types";
+import {
+  RESUME_V2_WRITER_INSTRUCTIONS,
+  RESUME_V2_WRITER_SCHEMA,
+  RESUME_WRITING_INSTRUCTIONS,
+  RESUME_WRITING_SCHEMA,
+} from "./skill-prompts";
+import type {
+  JobAnalysisData,
+  ResumeData,
+  ResumeOptimizationPlan,
+  SourceProfileSnapshot,
+} from "@/lib/types";
+import type { MatchResult } from "./profile-matcher";
 
 /**
  * Skill: Resume Writer (ATS-Optimized)
@@ -34,4 +45,40 @@ ${JSON.stringify(compactProfile(profile))}
 
 Target Job:
 ${JSON.stringify(jobAnalysis)}`, { timeoutMs: 600_000, skill: "resume-writer", model: options?.model });
+}
+
+export async function generateResumeFromPlan(
+  sourceSnapshot: SourceProfileSnapshot,
+  jobAnalysis: JobAnalysisData,
+  matchResult: MatchResult,
+  plan: ResumeOptimizationPlan,
+  options?: { model?: string; validatorFeedback?: string }
+) {
+  const validatorSection = options?.validatorFeedback
+    ? `\nVALIDATOR FEEDBACK TO FIX:\n${options.validatorFeedback}\n`
+    : "";
+
+  return askJson<ResumeData>(
+    `${RESUME_V2_WRITER_INSTRUCTIONS}
+
+Return ONLY valid JSON:
+
+${RESUME_V2_WRITER_SCHEMA}
+
+---
+
+Source Snapshot:
+${JSON.stringify(sourceSnapshot)}
+
+ResumeOptimizationPlan:
+${JSON.stringify(plan)}
+
+Target Job:
+${JSON.stringify(jobAnalysis)}
+
+Match Analysis:
+${JSON.stringify(matchResult)}
+${validatorSection}`,
+    { timeoutMs: 600_000, skill: "resume-writer-v2", model: options?.model }
+  );
 }

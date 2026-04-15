@@ -153,10 +153,7 @@ function JobCard({ job, score, idx, togglingId, toggleApplied }: {
   );
 }
 
-function getLatestScore(job: Job): number | null {
-  if (job.profileVersions && job.profileVersions.length > 0) {
-    return job.profileVersions[0].score;
-  }
+function getMatchScore(job: Job): number | null {
   if (job.matchResult) {
     try {
       const cached = JSON.parse(job.matchResult);
@@ -251,7 +248,7 @@ export default function TopMatchesPage() {
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
   const allScoredJobs = jobs
-    .map((job) => ({ job, score: getLatestScore(job) }))
+    .map((job) => ({ job, score: getMatchScore(job) }))
     .filter((item): item is { job: Job; score: number } => item.score !== null && item.score >= 75)
     .sort((a, b) => new Date(b.job.createdAt).getTime() - new Date(a.job.createdAt).getTime());
 

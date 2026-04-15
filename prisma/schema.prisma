@@ -12,6 +12,7 @@ enum SavedSourceChangeType {
   initial
   replace
   refresh
+  manual_edit
   migrated
 }
 
@@ -159,6 +160,7 @@ model Job {
   requirements String?  // JSON array of {requirement, classification, confidence, bridgeNote}
   atsKeywords  String?  // JSON object of {technical, domain, tools, softSkills}
   seniority    String?  // junior|mid|senior|staff|principal
+  roleArchetype String? // backend-engineer|frontend-engineer|fullstack-engineer|...
   sponsorship     String?  // available|unavailable|unspecified — visa/work authorization status
   terminologyMap  String?  // JSON array of {jdTerm, resumeSynonyms[]}
   matchResult     String?  // JSON — cached profile match analysis
@@ -183,8 +185,11 @@ model ProfileVersion {
   profileId String
   jobId     String
   snapshot  String   // JSON — full profile data at time of save
-  score     Float    // ATS match score when saved
-  delta     Float?   // score improvement over original
+  optimizationPlan String? // JSON — ResumeOptimizationPlan for v2
+  resumeData String? // JSON — final generated resume artifact for v2
+  score     Float    // v1: ATS-like legacy score, v2: resume quality score
+  scoreVersion Int   @default(1)
+  delta     Float?   // v1: score improvement, v2: change from previous v2 quality score
   label     String?  // optional user label e.g. "Optimized for Google SWE"
   createdAt DateTime @default(now())
 
@@ -212,6 +217,9 @@ model Resume {
   profileVersionId String?
   format           String   // pdf, docx, latex
   filePath         String
+  evaluation       String?  // JSON — persisted evaluation payload
+  evaluationStatus String?  // pending|done|error
+  evaluationVersion Int?
   createdAt        DateTime @default(now())
 
   profile        Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -240,6 +248,7 @@ model ApplicationProfile {
   // Name split (computed from Profile.name, editable)
   firstName         String?
   lastName          String?
+  preferredFirstName String?
 
   // Work authorization
   workAuthorized    Boolean?
@@ -252,6 +261,7 @@ model ApplicationProfile {
   noticePeriod      String?  // "immediately" | "2 weeks" | "1 month" | etc.
   preferredWorkMode String?  // "remote" | "hybrid" | "onsite" | "any"
   earliestStartDate String?  // ISO date or "immediately"
+  country           String?
 
   // EEO (voluntary, never sent to AI)
   gender            String?  // "male" | "female" | "non_binary" | "prefer_not_to_say"
@@ -329,6 +339,9 @@ model Guide {
   learningPath     LearningPath?  @relation(fields: [learningPathId], references: [id])
   sources          GuideSource[]
   versions         GuideVersion[]
+  sectionStatuses  String?
+  sectionErrors    String?
+  sectionAttempts  String?
   lastAsyncError   String?
   lastAsyncStage   String?
   createdAt        DateTime       @default(now())

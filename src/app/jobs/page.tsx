@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -100,7 +101,7 @@ interface Job {
   interviewPrep?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string; createdAt: string }>;
-  profileVersions?: Array<{ id: string; score: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
+  profileVersions?: Array<{ id: string; score: number; scoreVersion?: number; delta: number | null; createdAt: string; resumes: Array<{ id: string; format: string; createdAt: string }> }>;
 }
 
 interface MatchResult {
@@ -232,7 +233,7 @@ function ScoreRing({ score }: { score: number }) {
         </span>
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest mt-0.5"
           style={{ fontFamily: "var(--font-dm-mono)" }}>
-          ATS
+          Match
         </span>
       </div>
     </div>
@@ -1334,26 +1335,29 @@ function ExpandedJobDetail({
           </div>
           {/* Score progression */}
           <div className="flex items-center gap-2 flex-wrap mb-3">
-            {job.profileVersions && job.profileVersions.length > 0 && (() => {
-              // Derive original score from the oldest version (score - delta)
-              const oldest = job.profileVersions[job.profileVersions.length - 1];
-              const originalScore = oldest.delta != null ? Math.round(oldest.score - oldest.delta) : (match?.overallScore ?? oldest.score);
-              return (
-                <>
-                  <span
-                    className="text-muted-foreground"
-                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                  >
-                    Original
-                  </span>
-                  <MatchScoreBadge score={originalScore} />
+            {match?.overallScore != null && (
+              <>
+                <span
+                  className="text-muted-foreground"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  Match
+                </span>
+                <MatchScoreBadge score={match.overallScore} />
+                {job.profileVersions && job.profileVersions.length > 0 && (
                   <ArrowRight className="w-3 h-3 text-muted-foreground/40" />
-                </>
-              );
-            })()}
+                )}
+              </>
+            )}
             {job.profileVersions!.slice().reverse().map((v, vi) => (
               <span key={v.id} className="inline-flex items-center gap-1">
                 {vi > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
+                <span
+                  className="text-muted-foreground"
+                  style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  {v.scoreVersion === 2 ? "Quality" : "Legacy"}
+                </span>
                 <MatchScoreBadge score={v.score} />
                 {v.delta != null && v.delta > 0 && (
                   <span
@@ -1376,6 +1380,12 @@ function ExpandedJobDetail({
                     style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.6rem", letterSpacing: "0.06em" }}
                   >
                     v{job.profileVersions!.length - vi}
+                  </span>
+                  <span
+                    className="text-muted-foreground"
+                    style={{ fontFamily: "var(--font-dm-mono)", fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                  >
+                    {v.scoreVersion === 2 ? "Quality" : "Legacy"}
                   </span>
                   <MatchScoreBadge score={v.score} />
                   {v.delta != null && v.delta > 0 && (
@@ -1580,6 +1590,7 @@ function ExpandedJobDetail({
 const PAGE_SIZE = 30;
 
 export default function JobsPage() {
+  const searchParams = useSearchParams();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -1625,7 +1636,18 @@ export default function JobsPage() {
   } | null>(null);
   const [gapLoading, setGapLoading] = useState(false);
   const [showGapPanel, setShowGapPanel] = useState(false);
+  const [resolvedReviewJobId, setResolvedReviewJobId] = useState<string | null>(null);
   const jobListRef = useScrollReveal<HTMLElement>([jobs]);
+
+  const reviewJobId = searchParams.get("jobId");
+
+  function scrollToJob(jobId: string) {
+    const candidates = Array.from(document.querySelectorAll(`[data-job-focus-id="${jobId}"]`));
+    const visibleTarget = candidates.find((node) => node instanceof HTMLElement && node.offsetParent !== null);
+    const fallbackTarget = candidates[0];
+    const target = (visibleTarget || fallbackTarget) as HTMLElement | undefined;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   async function fetchJobs(p: number) {
     const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
@@ -1813,6 +1835,35 @@ export default function JobsPage() {
 
     return () => clearInterval(interval);
   }, [jobs, page]);
+
+  useEffect(() => {
+    if (!reviewJobId || loading) return;
+
+    const existing = jobs.find((job) => job.id === reviewJobId);
+    if (existing) {
+      if (expandedJob !== reviewJobId) {
+        setExpandedJob(reviewJobId);
+      }
+      if (resolvedReviewJobId !== reviewJobId) {
+        setResolvedReviewJobId(reviewJobId);
+        window.setTimeout(() => scrollToJob(reviewJobId), 200);
+      }
+      return;
+    }
+
+    if (resolvedReviewJobId === reviewJobId) return;
+
+    fetch(`/api/jobs/${reviewJobId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((job) => {
+        if (!job) return;
+        setJobs((prev) => (prev.some((item) => item.id === job.id) ? prev : [job, ...prev]));
+        setExpandedJob(job.id);
+        setResolvedReviewJobId(job.id);
+        window.setTimeout(() => scrollToJob(job.id), 200);
+      })
+      .catch(() => {});
+  }, [expandedJob, jobs, loading, resolvedReviewJobId, reviewJobId]);
 
   const [retryingJobs, setRetryingJobs] = useState<Record<string, boolean>>({});
 
@@ -2136,8 +2187,6 @@ export default function JobsPage() {
   }
 
   function getBestScore(job: Job): number | null {
-    const versions = job.profileVersions;
-    if (versions && versions.length > 0) return versions[0].score;
     const match = matchResults[job.id];
     if (match) return match.overallScore;
     // Check cached matchResult from API
@@ -2539,7 +2588,7 @@ export default function JobsPage() {
               const hasVersions = (job.profileVersions?.length ?? 0) > 0;
 
               return (
-                <div key={job.id} className="scroll-reveal" style={{ "--reveal-delay": `${idx * 0.04}s` } as React.CSSProperties}>
+                <div key={job.id} className="scroll-reveal" style={{ "--reveal-delay": `${idx * 0.04}s` } as React.CSSProperties} data-job-focus-id={job.id}>
                 <div
                   className={cn(
                     "border border-border rounded-sm cursor-pointer transition-colors",
@@ -2761,7 +2810,7 @@ export default function JobsPage() {
                   </TableHead>
                   <TableHead className="w-[90px] text-center">
                     <button onClick={() => handleSort("atsScore")} className="flex items-center justify-center text-xs font-medium uppercase tracking-wider w-full">
-                      ATS <SortIcon field="atsScore" />
+                      Match <SortIcon field="atsScore" />
                     </button>
                   </TableHead>
                   <TableHead className="w-[80px] text-center hidden md:table-cell">
@@ -2794,6 +2843,7 @@ export default function JobsPage() {
                   return (
                     <React.Fragment key={job.id}>
                     <TableRow
+                      data-job-focus-id={job.id}
                       className={`group cursor-pointer ${isAnalyzing && !isFailed ? "opacity-60" : ""} ${isExpanded ? "border-b-0" : ""}`}
                       onClick={() => { if (isFailed) handleReanalyze(job); else if (!isAnalyzing) toggleExpand(job.id); }}
                     >
@@ -2857,7 +2907,7 @@ export default function JobsPage() {
                         <span className="text-sm">{job.company}</span>
                       </TableCell>
 
-                      {/* ATS Score */}
+                      {/* Match Score */}
                       <TableCell className="text-center">
                         {isAnalyzing ? (
                           <span className="text-xs text-muted-foreground">—</span>

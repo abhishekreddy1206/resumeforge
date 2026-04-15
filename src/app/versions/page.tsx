@@ -34,7 +34,10 @@ interface VersionResume {
 interface ProfileVersion {
   id: string;
   snapshot: string;
+  optimizationPlan?: string | null;
+  resumeData?: string | null;
   score: number;
+  scoreVersion?: number;
   delta: number | null;
   label: string | null;
   createdAt: string;
@@ -49,7 +52,7 @@ interface JobSummary {
   matchResult: string | null;
   matchedAt: string | null;
   createdAt: string;
-  profileVersions: { id: string; score: number; delta: number | null; createdAt: string }[];
+  profileVersions: { id: string; score: number; scoreVersion?: number; delta: number | null; createdAt: string }[];
   resumes: { id: string; format: string; profileVersionId: string | null; createdAt: string }[];
 }
 
@@ -65,7 +68,7 @@ interface CompanyGroup {
   jobs: JobSummary[];
   totalVersions: number;
   totalResumes: number;
-  bestScore: number | null;
+  bestQuality: number | null;
   hasScore: boolean;
   hasPdf: boolean;
 }
@@ -128,19 +131,18 @@ function groupByCompany(jobs: JobSummary[]): CompanyGroup[] {
       const totalVersions = companyJobs.reduce((s, j) => s + j.profileVersions.length, 0);
       const totalResumes = companyJobs.reduce((s, j) => s + j.resumes.length, 0);
       const scores = companyJobs
-        .flatMap((j) => j.profileVersions.map((v) => v.score))
+        .flatMap((j) => j.profileVersions.filter((v) => v.scoreVersion === 2).map((v) => v.score))
         .filter((s) => s > 0);
-      const bestScore = scores.length > 0 ? Math.max(...scores) : null;
+      const bestQuality = scores.length > 0 ? Math.max(...scores) : null;
       const hasScore = companyJobs.every((j) => j.matchResult != null);
       const hasPdf = companyJobs.every((j) => j.resumes.some((r) => r.format === "pdf"));
 
-      return { company, jobs: companyJobs, totalVersions, totalResumes, bestScore, hasScore, hasPdf };
+      return { company, jobs: companyJobs, totalVersions, totalResumes, bestQuality, hasScore, hasPdf };
     })
     .sort((a, b) => {
-      // Sort by best score descending, then by name
-      if (a.bestScore != null && b.bestScore != null) return b.bestScore - a.bestScore;
-      if (a.bestScore != null) return -1;
-      if (b.bestScore != null) return 1;
+      if (a.bestQuality != null && b.bestQuality != null) return b.bestQuality - a.bestQuality;
+      if (a.bestQuality != null) return -1;
+      if (b.bestQuality != null) return 1;
       return a.company.localeCompare(b.company);
     });
 }
@@ -347,12 +349,12 @@ export default function VersionsPage() {
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-sm shrink-0">
                           {group.jobs.length} {group.jobs.length === 1 ? "job" : "jobs"}
                         </Badge>
-                        {group.bestScore != null && (
+                        {group.bestQuality != null && (
                           <Badge
                             variant="secondary"
                             className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0"
                           >
-                            Best: {group.bestScore}%
+                            Best Quality: {group.bestQuality}%
                           </Badge>
                         )}
                       </div>
@@ -402,7 +404,7 @@ export default function VersionsPage() {
                                 {matchScore != null ? (
                                   <>
                                     <span className="text-sm font-bold text-primary leading-none">{matchScore}</span>
-                                    <span className="text-[8px] text-muted-foreground">ATS</span>
+                                    <span className="text-[8px] text-muted-foreground">Match</span>
                                   </>
                                 ) : (
                                   <span className="text-[9px] text-muted-foreground">—</span>
@@ -481,6 +483,9 @@ export default function VersionsPage() {
                                                   <p className="text-xs font-medium">
                                                     v{jobVersions.length - vi}
                                                   </p>
+                                                  <Badge variant="outline" className="text-[8px] px-1 py-0 rounded-sm">
+                                                    {version.scoreVersion === 2 ? "Quality" : "Legacy"}
+                                                  </Badge>
                                                   {version.delta != null && version.delta > 0 && (
                                                     <Badge
                                                       variant="secondary"
@@ -631,7 +636,7 @@ export default function VersionsPage() {
                                 ) : (
                                   <div className="py-3 px-3 border border-border/50 rounded-sm text-center">
                                     <p className="text-xs text-muted-foreground">
-                                      No optimized versions yet — use the job advisor chat to improve your match score
+                                      No saved resume versions yet — generate or save a v2 resume to build quality history
                                     </p>
                                   </div>
                                 )}

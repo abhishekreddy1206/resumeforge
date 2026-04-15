@@ -453,6 +453,51 @@ export async function generateDocx(data: ResumeData): Promise<Buffer> {
     }
   }
 
+  // ── Recommendations ──
+  if (data.recommendations && data.recommendations.length > 0) {
+    children.push(sectionHeading("Recommendation"));
+    const recommendation = data.recommendations[0];
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `"${recommendation.text}"`,
+            italics: true,
+            size: 18,
+            color: COLORS.secondary,
+            font: "Calibri",
+          }),
+        ],
+        spacing: { before: 40, after: 10 },
+      })
+    );
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: recommendation.recommenderName,
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          }),
+          new TextRun({
+            text: recommendation.recommenderTitle ? `, ${recommendation.recommenderTitle}` : "",
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          }),
+          new TextRun({
+            text: recommendation.relationship ? ` (${recommendation.relationship})` : "",
+            size: 17,
+            color: COLORS.muted,
+            font: "Calibri",
+          }),
+        ],
+        spacing: { after: 20 },
+      })
+    );
+  }
+
   // ── Skills ──
   if (data.skills && Object.keys(data.skills).length > 0) {
     children.push(sectionHeading("Technical Skills"));

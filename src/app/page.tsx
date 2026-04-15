@@ -59,12 +59,26 @@ interface AnalyticsData {
     status: "strong" | "partial" | "gap";
     profileSkill?: string;
   }>;
-  atsTrends: {
-    averageInitialScore: number;
-    averageFinalScore: number;
-    averageImprovement: number;
+  matchTrends: {
+    averageScore: number;
+    jobCount: number;
+    strongFitCount: number;
+    distribution: Array<{ range: string; count: number }>;
+  };
+  resumeQualityTrends: {
+    averageQuality: number;
+    averageDelta: number;
     jobCount: number;
     distribution: Array<{ range: string; count: number }>;
+  };
+  qualityHealth: {
+    evaluatedResumeCount: number;
+    hardGroundingViolationRate: number;
+    softWarningRate: number;
+    averageWarningsPerGeneratedResume: number;
+    pageBudgetOverflowRate: number;
+    averageQualityByRoleArchetype: Array<{ roleArchetype: string; averageQuality: number; count: number }>;
+    shareOfJobsWithValidV2Resumes: number;
   };
   tokenUsage: {
     daily: Array<{ day: string; cost: number; inputTokens: number; outputTokens: number; calls: number }>;
@@ -82,24 +96,40 @@ interface AnalyticsData {
     resumes: Array<{ id: string; format: string; createdAt: string }>;
   }>;
   resumeCount: number;
-}
-
-interface InsightsMeta {
-  totalJobs: number;
-  realisticJobs: number;
-  threshold: number;
-  avgScore: number;
-  clusterCount: number;
-  gapCount: number;
-  topFinding: string | null;
-  cachedAt: string | null;
+  insights: {
+    realisticJobs: number;
+    clusterCount: number;
+    gapCount: number;
+    avgScore: number;
+    topFinding: string | null;
+    coveredStudyTopics: number;
+    uncoveredStudyTopics: number;
+  };
+  learn: {
+    totalGuides: number;
+    completedGuides: number;
+    inProgressGuides: number;
+    totalPaths: number;
+    savedSources: number;
+  };
+  sourceHealth: {
+    needsReview: number;
+    domFallback: number;
+    staleGuideAttachments: number;
+    guidesWithStaleSources: number;
+    manualEdits: number;
+  };
+  capture: {
+    jobsBySource: Array<{ source: string; count: number }>;
+    placeholderJobs: number;
+  };
 }
 
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-24 rounded-lg" />
         ))}
       </div>
@@ -134,27 +164,19 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiUsageOpen, setAiUsageOpen] = useState(false);
-  const [insightsMeta, setInsightsMeta] = useState<InsightsMeta | null>(null);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/profile").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/jobs").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/jobs?pageSize=5").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/analytics").then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([p, j, a]) => {
         setProfile(p);
-        setJobs(j);
+        setJobs(Array.isArray(j) ? j : (j?.jobs ?? []));
         setAnalytics(a);
       })
       .finally(() => setLoading(false));
-
-    // Load insights meta in background (may be slow on cache miss)
-    fetch("/api/insights")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.meta) setInsightsMeta(d.meta);
-      });
   }, []);
 
   if (loading) {
@@ -229,7 +251,7 @@ export default function Dashboard() {
 
       {/* Hero Stats */}
       {hasAnalytics && (
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard
             label="Active Jobs"
             value={analytics.funnel.totalJobs - analytics.funnel.appliedJobs}
@@ -242,9 +264,18 @@ export default function Dashboard() {
             trend={analytics.funnel.totalJobs > 0 ? `${Math.round((analytics.funnel.appliedJobs / analytics.funnel.totalJobs) * 100)}% of total` : ""}
           />
           <StatCard
-            label="Avg ATS Score"
-            value={analytics.atsTrends.averageFinalScore || "—"}
-            trend={analytics.atsTrends.averageImprovement > 0 ? `+${analytics.atsTrends.averageImprovement} pts avg improvement` : ""}
+            label="Avg Match Score"
+            value={analytics.matchTrends.averageScore || "—"}
+            trend={analytics.matchTrends.jobCount > 0 ? `${analytics.matchTrends.strongFitCount} strong-fit jobs` : ""}
+          />
+          <StatCard
+            label="Avg Resume Quality"
+            value={analytics.resumeQualityTrends.averageQuality || "—"}
+            trend={
+              analytics.resumeQualityTrends.jobCount > 0
+                ? `${analytics.resumeQualityTrends.averageDelta >= 0 ? "+" : ""}${analytics.resumeQualityTrends.averageDelta} pts avg v2 delta`
+                : ""
+            }
             trendColor="text-green-500"
           />
           <StatCard
@@ -262,10 +293,65 @@ export default function Dashboard() {
       )}
 
       {/* Two-column insights */}
-      {hasAnalytics && (analytics.skillGaps.length > 0 || analytics.atsTrends.jobCount > 0) && (
+      {hasAnalytics && (analytics.skillGaps.length > 0 || analytics.resumeQualityTrends.jobCount > 0) && (
         <section className="grid md:grid-cols-2 gap-4">
           {analytics.skillGaps.length > 0 && <SkillGapChart data={analytics.skillGaps} />}
-          {analytics.atsTrends.jobCount > 0 && <ATSTrendChart data={analytics.atsTrends} />}
+          {analytics.resumeQualityTrends.jobCount > 0 && <ATSTrendChart data={analytics.resumeQualityTrends} />}
+        </section>
+      )}
+
+      {hasAnalytics && (
+        <section className="grid md:grid-cols-2 gap-4">
+          <div className="bg-card border rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-1">Learn &amp; Source Health</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Guide progress and saved-source quality from your learn pipeline.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-2xl font-bold">{analytics.learn.totalGuides}</div>
+                <div className="text-xs text-muted-foreground">guides</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{analytics.learn.savedSources}</div>
+                <div className="text-xs text-muted-foreground">saved sources</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-500">{analytics.learn.completedGuides}</div>
+                <div className="text-xs text-muted-foreground">completed guides</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-amber-500">{analytics.learn.inProgressGuides}</div>
+                <div className="text-xs text-muted-foreground">in progress</div>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-xs text-muted-foreground">
+              <div>{analytics.sourceHealth.needsReview} sources flagged for review</div>
+              <div>{analytics.sourceHealth.domFallback} DOM fallback captures</div>
+              <div>{analytics.sourceHealth.staleGuideAttachments} stale guide attachments across {analytics.sourceHealth.guidesWithStaleSources} guides</div>
+              <div>{analytics.sourceHealth.manualEdits} manual source edits recorded</div>
+            </div>
+          </div>
+
+          <div className="bg-card border rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-1">Capture Health</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Import quality across manual, extension, and email capture paths.
+            </p>
+            <div className="space-y-2">
+              {analytics.capture.jobsBySource.map((entry) => (
+                <div key={entry.source} className="flex items-center justify-between text-sm">
+                  <span className="font-mono text-xs text-muted-foreground">{entry.source}</span>
+                  <span className="font-medium">{entry.count}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-xs text-muted-foreground">
+              <div>{analytics.capture.placeholderJobs} jobs still have placeholder metadata or failed capture text</div>
+              <div>{analytics.insights.coveredStudyTopics} study topics already covered by guides</div>
+              <div>{analytics.insights.uncoveredStudyTopics} study topics still need guides</div>
+            </div>
+          </div>
         </section>
       )}
 
@@ -352,7 +438,7 @@ export default function Dashboard() {
       )}
 
       {/* Market Insights Card */}
-      {insightsMeta && insightsMeta.realisticJobs >= 2 ? (
+      {hasAnalytics && analytics.insights.realisticJobs >= 2 ? (
         <a href="/insights" className="block">
           <section className="bg-card border border-primary/20 rounded-lg p-5 hover:bg-primary/[0.02] transition-colors cursor-pointer">
             <div className="flex items-center justify-between mb-4">
@@ -364,27 +450,32 @@ export default function Dashboard() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
               <div>
-                <div className="text-xl font-bold">{insightsMeta.realisticJobs}</div>
+                <div className="text-xl font-bold">{analytics.insights.realisticJobs}</div>
                 <div className="text-[10px] text-muted-foreground">realistic targets</div>
               </div>
               <div>
-                <div className="text-xl font-bold">{insightsMeta.clusterCount}</div>
+                <div className="text-xl font-bold">{analytics.insights.clusterCount}</div>
                 <div className="text-[10px] text-muted-foreground">role profiles</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-red-400">{insightsMeta.gapCount}</div>
+                <div className="text-xl font-bold text-red-400">{analytics.insights.gapCount}</div>
                 <div className="text-[10px] text-muted-foreground">key gaps</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-emerald-400">{insightsMeta.avgScore}%</div>
+                <div className="text-xl font-bold text-emerald-400">{analytics.insights.avgScore}%</div>
                 <div className="text-[10px] text-muted-foreground">avg match</div>
               </div>
             </div>
-            {insightsMeta.topFinding && (
-              <div className="border-l-[3px] border-primary/40 bg-foreground/[0.02] rounded-r px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-                <strong className="text-primary">Top finding:</strong> {insightsMeta.topFinding}
+            <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-start">
+              {analytics.insights.topFinding && (
+                <div className="border-l-[3px] border-primary/40 bg-foreground/[0.02] rounded-r px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-primary">Top finding:</strong> {analytics.insights.topFinding}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground whitespace-nowrap">
+                {analytics.insights.coveredStudyTopics} covered · {analytics.insights.uncoveredStudyTopics} still open
               </div>
-            )}
+            </div>
           </section>
         </a>
       ) : hasAnalytics && analytics.versions.length > 0 ? (

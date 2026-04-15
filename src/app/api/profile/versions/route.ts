@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { RESUME_QUALITY_SCORE_VERSION } from "@/lib/resume-quality";
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 export async function GET() {
   try {
@@ -18,6 +23,8 @@ export async function GET() {
           id: true,
           format: true,
           createdAt: true,
+          evaluationStatus: true,
+          evaluationVersion: true,
           job: { select: { id: true, title: true, company: true } },
         },
       }),
@@ -32,11 +39,24 @@ export async function GET() {
           createdAt: true,
           profileVersions: {
             orderBy: { createdAt: "desc" },
-            select: { id: true, score: true, delta: true, createdAt: true },
+            select: {
+              id: true,
+              score: true,
+              scoreVersion: true,
+              delta: true,
+              createdAt: true,
+            },
           },
           resumes: {
             orderBy: { createdAt: "desc" },
-            select: { id: true, format: true, profileVersionId: true, createdAt: true },
+            select: {
+              id: true,
+              format: true,
+              profileVersionId: true,
+              evaluationStatus: true,
+              evaluationVersion: true,
+              createdAt: true,
+            },
           },
         },
       }),
@@ -54,25 +74,53 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { profileSnapshot, jobId, score, delta, label } =
-      await request.json();
+    const body = await request.json();
+    const {
+      profileSnapshot,
+      snapshot,
+      optimizationPlan,
+      resumeData,
+      jobId,
+      score,
+      scoreVersion,
+      delta,
+      label,
+    } = body;
 
-    if (!profileSnapshot || !jobId || typeof score !== "number") {
+    const resolvedSnapshot = snapshot ?? profileSnapshot;
+
+    if (!resolvedSnapshot || !jobId || typeof score !== "number") {
       return NextResponse.json(
-        { error: "profileSnapshot, jobId, and score are required" },
+        { error: "snapshot/profileSnapshot, jobId, and score are required" },
         { status: 400 }
       );
     }
 
-    if (typeof profileSnapshot !== "object" || !profileSnapshot.name) {
+    if (!isObjectRecord(resolvedSnapshot) || !resolvedSnapshot.name) {
       return NextResponse.json(
-        { error: "Invalid profileSnapshot shape" },
+        { error: "Invalid snapshot shape" },
         { status: 400 }
       );
     }
 
-    // Cap snapshot size at 500KB to prevent abuse
-    const snapshotStr = JSON.stringify(profileSnapshot);
+    if (optimizationPlan && !isObjectRecord(optimizationPlan)) {
+      return NextResponse.json(
+        { error: "Invalid optimizationPlan shape" },
+        { status: 400 }
+      );
+    }
+
+    if (resumeData && !isObjectRecord(resumeData)) {
+      return NextResponse.json(
+        { error: "Invalid resumeData shape" },
+        { status: 400 }
+      );
+    }
+
+    const snapshotStr = JSON.stringify(resolvedSnapshot);
+    const optimizationPlanStr = optimizationPlan ? JSON.stringify(optimizationPlan) : null;
+    const resumeDataStr = resumeData ? JSON.stringify(resumeData) : null;
+
     if (snapshotStr.length > 512_000) {
       return NextResponse.json(
         { error: "Profile snapshot too large" },
@@ -96,12 +144,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    const resolvedScoreVersion = Number.isInteger(scoreVersion)
+      ? scoreVersion
+      : optimizationPlanStr || resumeDataStr
+        ? RESUME_QUALITY_SCORE_VERSION
+        : 1;
+
     const version = await prisma.profileVersion.create({
       data: {
         profileId: profile.id,
         jobId,
         snapshot: snapshotStr,
+        optimizationPlan: optimizationPlanStr,
+        resumeData: resumeDataStr,
         score,
+        scoreVersion: resolvedScoreVersion,
         delta: typeof delta === "number" ? delta : null,
         label:
           label ||

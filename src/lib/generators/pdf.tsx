@@ -535,6 +535,25 @@ function ResumeDocument({ data }: { data: ResumeData }) {
           </View>
         )}
 
+        {/* Recommendations */}
+        {data.recommendations && data.recommendations.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeading title="Recommendation" />
+            {data.recommendations.slice(0, 1).map((recommendation, index) => (
+              <View key={index} style={styles.recItem}>
+                <Text style={styles.recText}>
+                  "{recommendation.text}"
+                </Text>
+                <Text style={styles.recAttribution}>
+                  {recommendation.recommenderName}
+                  {recommendation.recommenderTitle ? `, ${recommendation.recommenderTitle}` : ""}
+                  {recommendation.relationship ? ` (${recommendation.relationship})` : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Skills */}
         {data.skills && Object.keys(data.skills).length > 0 && (
           <View style={styles.section}>
