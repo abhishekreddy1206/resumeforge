@@ -1,7 +1,6 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
 
 const monoStyle: React.CSSProperties = {
   fontFamily: "var(--font-dm-mono)",
@@ -12,23 +11,22 @@ const monoStyle: React.CSSProperties = {
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  const handleToggle = () => {
+    const isDark =
+      resolvedTheme != null
+        ? resolvedTheme === "dark"
+        : document.documentElement.classList.contains("dark");
 
-  if (!mounted) {
-    // Render a placeholder matching the button dimensions to avoid layout shift
-    return <div className="w-8 h-8 shrink-0" />;
-  }
-
-  const isDark = resolvedTheme === "dark";
+    setTheme(isDark ? "light" : "dark");
+  };
 
   return (
     <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={handleToggle}
+      aria-label="Toggle theme"
       className="group relative w-8 h-8 flex items-center justify-center shrink-0 transition-colors hover:bg-primary/10 rounded-sm"
-      title={isDark ? "Light mode" : "Dark mode"}
+      title="Toggle theme"
     >
       {/* Sun */}
       <svg
@@ -39,11 +37,7 @@ export function ThemeToggle() {
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={`absolute w-4 h-4 text-muted-foreground group-hover:text-primary transition-all duration-300 ${
-          isDark
-            ? "opacity-100 rotate-0 scale-100"
-            : "opacity-0 rotate-90 scale-75"
-        }`}
+        className="absolute w-4 h-4 text-muted-foreground group-hover:text-primary transition-all duration-300 opacity-0 rotate-90 scale-75 dark:opacity-100 dark:rotate-0 dark:scale-100"
       >
         <circle cx="12" cy="12" r="4" />
         <line x1="12" y1="2" x2="12" y2="4" />
@@ -65,18 +59,14 @@ export function ThemeToggle() {
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={`absolute w-4 h-4 text-muted-foreground group-hover:text-primary transition-all duration-300 ${
-          isDark
-            ? "opacity-0 -rotate-90 scale-75"
-            : "opacity-100 rotate-0 scale-100"
-        }`}
+        className="absolute w-4 h-4 text-muted-foreground group-hover:text-primary transition-all duration-300 opacity-100 rotate-0 scale-100 dark:opacity-0 dark:-rotate-90 dark:scale-75"
       >
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
       </svg>
 
       {/* Label for desktop — hidden by default, visible on wider screens if needed */}
       <span className="sr-only" style={monoStyle}>
-        {isDark ? "Light" : "Dark"}
+        Toggle theme
       </span>
     </button>
   );
