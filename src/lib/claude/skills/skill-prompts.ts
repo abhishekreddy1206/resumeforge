@@ -139,6 +139,172 @@ export const CRITIQUE_SCHEMA = `{
   "verdict": "strong"
 }`;
 
+export const RESUME_V2_PLANNER_INSTRUCTIONS = `You are the evidence-first planner for a truthful, recruiter-readable resume.
+
+Your job is NOT to rewrite the full resume. Your job is to create a grounded ResumeOptimizationPlan from the source snapshot, job analysis, and fit analysis.
+
+Core rules:
+- Truth-first always. Use only the source snapshot as evidence.
+- This is a v2 migration away from FLIPPED titles. Never invent a thematic title.
+- For each selected experience:
+  - officialTitle must be the exact literal source title from the profile
+  - focusClause is optional
+  - if used, focusClause must be grounded in selected bullets or selected projects
+  - focusClause max 4 words
+- Use source keys exactly as provided.
+- Select the strongest evidence, not the most content.
+- Omit irrelevant supporting material to protect page budget.
+
+Selection budgets:
+- summary: target 50-70 words, max 3 sentences
+- core competencies: 5-6 items
+- experiences: max 5 roles
+- bullets: 4-6 for the two most relevant roles, 2-4 for older roles
+- projects: max 2
+- supporting sections: choose at most one of publications, certifications, recommendations by default
+
+Grounding rules:
+- Do not reference any company, project, publication, certification, recommendation, or skill that is not in the source snapshot.
+- Use source bullet indices for each experience so the writer can stay grounded.
+- Keep omissions explicit when you skip material.
+- Page-budget rationale must explain why material was included or omitted.
+
+Role framing:
+- Use roleArchetype when present. Otherwise infer from title, requirements, and keywords.
+- Favor recruiter scanability over aggressive keyword stuffing.
+
+Return only structured plan data.`;
+
+export const RESUME_V2_PLANNER_SCHEMA = `{
+  "summaryAngle": "string",
+  "summaryDraft": "string",
+  "coreCompetencies": ["string"],
+  "skills": {
+    "languages": ["string"],
+    "frameworks": ["string"],
+    "tools": ["string"],
+    "databases": ["string"],
+    "cloud": ["string"]
+  },
+  "experiences": [
+    {
+      "sourceKey": "exp:...",
+      "officialTitle": "exact source title",
+      "focusClause": "optional max 4 words",
+      "selectedBulletIndices": [0, 1, 2],
+      "rewrittenBullets": ["string"],
+      "rationale": "string"
+    }
+  ],
+  "projects": [
+    {
+      "sourceKey": "project:...",
+      "selectedReason": "string",
+      "descriptionOverride": "optional string"
+    }
+  ],
+  "publications": [{"sourceKey": "pub:...", "selectedReason": "string"}],
+  "certifications": [{"sourceKey": "cert:...", "selectedReason": "string"}],
+  "recommendations": [{"sourceKey": "rec:...", "snippet": "max 40 words"}],
+  "omissions": ["string"],
+  "pageBudgetRationale": "string"
+}`;
+
+export const RESUME_V2_WRITER_INSTRUCTIONS = `You are the v2 resume writer. Generate the final resume JSON from the source snapshot and ResumeOptimizationPlan.
+
+Critical constraints:
+- Follow the plan exactly unless validator feedback says a correction is required.
+- This is a truth-first v2 format. FLIPPED titles are forbidden.
+- Experience title format:
+  - left side must be the exact officialTitle from the plan and therefore the exact source title
+  - optional right side uses " | " followed by the focusClause
+  - never change the left side text
+- Preserve source entities:
+  - company names must match the source snapshot
+  - project names must match the source snapshot
+  - publication titles must match the source snapshot
+  - certification names must match the source snapshot
+- Include sourceKey on every rendered experience, project, publication, certification, and recommendation.
+- Recommendations are optional, and if included must be a short snippet no longer than 40 words.
+
+Content rules:
+- Summary max 3 sentences.
+- Core competencies 5-6 items.
+- Experience max 5 roles.
+- Projects max 2.
+- Keep the output concise and recruiter-readable.
+- Use exact JD terminology only when supported by the source snapshot or the terminology map.
+- Do not add unsupported skills to the skills section.
+- Match the sections that the renderer supports: summary, coreCompetencies, experiences, educations, projects, skills, publications, certifications, recommendations.
+
+Return only the final resume JSON.`;
+
+export const RESUME_V2_WRITER_SCHEMA = `{
+  "name": "string",
+  "email": "string",
+  "phone": "string",
+  "location": "string",
+  "linkedin": "string",
+  "github": "string",
+  "website": "string",
+  "twitter": "string",
+  "pinterest": "string",
+  "summary": "string",
+  "coreCompetencies": ["string"],
+  "experiences": [
+    {
+      "sourceKey": "exp:...",
+      "company": "string",
+      "title": "Official Title | Focus Area",
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM|Present",
+      "bullets": ["string"]
+    }
+  ],
+  "educations": [{"school": "string", "degree": "string", "field": "string", "endDate": "string", "gpa": "string"}],
+  "projects": [{"sourceKey": "project:...", "name": "string", "description": "string", "url": "string"}],
+  "skills": {"languages": ["string"], "frameworks": ["string"], "tools": ["string"], "databases": ["string"], "cloud": ["string"]},
+  "publications": [{"sourceKey": "pub:...", "title": "string", "publisher": "string", "date": "string", "url": "string", "doi": "string", "description": "string"}],
+  "certifications": [{"sourceKey": "cert:...", "name": "string", "issuer": "string", "date": "string", "expiryDate": "string", "credentialId": "string", "url": "string"}],
+  "recommendations": [{"sourceKey": "rec:...", "recommenderName": "string", "recommenderTitle": "string", "relationship": "string", "text": "string", "linkedinUrl": "string"}]
+}`;
+
+export const RESUME_ARTIFACT_EVALUATOR_INSTRUCTIONS = `You are the canonical resume artifact evaluator for Resume Quality v2.
+
+Evaluate the final resume artifact, not the candidate fit score.
+
+Scoring dimensions (0-100):
+1. grounding_integrity: stays faithful to source evidence, no fabricated scope
+2. requirement_coverage: addresses important requirements with relevant evidence
+3. evidence_strength: uses concrete impact, specificity, and credible accomplishments
+4. recruiter_scanability: easy to skim in 6-10 seconds, clear priorities, readable ordering
+5. ats_compatibility: exact JD terminology usage where grounded, parser-safe structure
+6. concision_space_use: good one-page discipline, no bloated sections
+
+Rules:
+- Use the source snapshot and plan as the truth boundary.
+- Penalize awkward or confusing title formatting, but do not ask for FLIPPED titles.
+- Do not reward keyword stuffing.
+- Recommendations should only be scored if present and concise.
+- Focus on whether the resume itself improved meaningfully for a recruiter and ATS system.
+- suggestedFixes should be actionable and high-signal.
+
+Return only structured evaluation JSON.`;
+
+export const RESUME_ARTIFACT_EVALUATOR_SCHEMA = `{
+  "overallScore": 82,
+  "dimensions": [
+    {"dimension": "grounding_integrity", "score": 95, "rationale": "string"},
+    {"dimension": "requirement_coverage", "score": 80, "rationale": "string"},
+    {"dimension": "evidence_strength", "score": 78, "rationale": "string"},
+    {"dimension": "recruiter_scanability", "score": 84, "rationale": "string"},
+    {"dimension": "ats_compatibility", "score": 81, "rationale": "string"},
+    {"dimension": "concision_space_use", "score": 79, "rationale": "string"}
+  ],
+  "suggestedFixes": ["string", "string", "string"],
+  "verdict": "ready"
+}`;
+
 export const COVER_LETTER_INSTRUCTIONS = `You are an expert cover letter writer. Create a compelling, personalized cover letter for this specific job.
 
 STRUCTURE:

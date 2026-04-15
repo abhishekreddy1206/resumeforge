@@ -2,21 +2,20 @@
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-interface ATSTrends {
-  averageInitialScore: number;
-  averageFinalScore: number;
-  averageImprovement: number;
+interface ResumeQualityTrends {
+  averageQuality: number;
+  averageDelta: number;
   jobCount: number;
   distribution: Array<{ range: string; count: number }>;
 }
 
-export function ATSTrendChart({ data }: { data: ATSTrends }) {
+export function ATSTrendChart({ data }: { data: ResumeQualityTrends }) {
   return (
     <div className="bg-card border rounded-lg p-4">
-      <h3 className="text-sm font-semibold mb-1">ATS Score Trends</h3>
-      <p className="text-xs text-muted-foreground mb-3">Score distribution across optimized jobs</p>
+      <h3 className="text-sm font-semibold mb-1">Resume Quality Trends</h3>
+      <p className="text-xs text-muted-foreground mb-3">V2 quality distribution across saved resume versions</p>
       {data.jobCount === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-6">No optimization data yet. Match and optimize jobs to see trends.</p>
+        <p className="text-xs text-muted-foreground text-center py-6">No v2 resume quality data yet. Generate saved v2 resumes to see trends.</p>
       ) : (
         <>
           <ResponsiveContainer width="100%" height={120}>
@@ -32,9 +31,11 @@ export function ATSTrendChart({ data }: { data: ATSTrends }) {
             </BarChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-6 mt-2 text-xs">
-            <span className="text-muted-foreground">Avg initial: <span className="text-foreground font-medium">{data.averageInitialScore}</span></span>
-            <span className="text-muted-foreground">Avg final: <span className="text-foreground font-medium">{data.averageFinalScore}</span></span>
-            <span className="text-green-500 font-medium">+{data.averageImprovement} pts avg improvement across {data.jobCount} jobs</span>
+            <span className="text-muted-foreground">Avg quality: <span className="text-foreground font-medium">{data.averageQuality}</span></span>
+            <span className="text-green-500 font-medium">
+              {data.averageDelta >= 0 ? "+" : ""}
+              {data.averageDelta} pts avg v2 delta across {data.jobCount} jobs
+            </span>
           </div>
         </>
       )}

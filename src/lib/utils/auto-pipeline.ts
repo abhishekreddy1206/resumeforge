@@ -1,37 +1,32 @@
-import { prisma } from "@/lib/db";
-import { matchProfileToJob, applyResumeTips, generateTailoredResume, mergeProfileChanges } from "@/lib/claude";
-import { serializeProfile } from "@/lib/utils/profile-diff";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
-import { generatePdf } from "@/lib/generators/pdf";
-import { createTaskLogger } from "@/lib/logger";
 import fs from "fs/promises";
 import path from "path";
+import { prisma } from "@/lib/db";
+import { matchProfileToJob } from "@/lib/claude";
+import { generatePdf } from "@/lib/generators/pdf";
+import { refreshRecommendationsCache } from "@/lib/learn-cache";
+import { createTaskLogger } from "@/lib/logger";
+import {
+  RESUME_QUALITY_SCORE_VERSION,
+  buildJobAnalysisFromRecord,
+  buildResumeQualityVersion,
+} from "@/lib/resume-quality";
+import { safeJsonParse } from "@/lib/utils/json";
+import { serializeProfile } from "@/lib/utils/profile-diff";
 
-function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
-  if (typeof value !== "string") return value ?? fallback;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
-
-const sanitize = (s: string) =>
-  s.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
+const sanitize = (value: string) =>
+  value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
 
 /**
- * Full automation pipeline that runs after job analysis completes:
- * 1. Match profile to job
- * 2. If score >= 65, auto-apply grounded resume tips and rescore
- * 3. If rescored score >= 75, auto-generate a PDF resume
- *
- * Each step is guarded so failures don't prevent earlier results from persisting.
- * Silently no-ops if no profile exists.
+ * Automation pipeline for v2 resume quality:
+ * 1. Persist fit analysis
+ * 2. Stop if match score < 60
+ * 3. Build planner -> writer -> evaluator artifact
+ * 4. Save only valid v2 profile versions with quality >= 78
+ * 5. Generate PDF only for saved v2 versions
  */
 export async function runAutoPipeline(jobId: string): Promise<void> {
   const task = createTaskLogger("auto-pipeline", jobId);
 
-  // --- Step 1: Load data and run match ---
   const [profile, job] = await Promise.all([
     prisma.profile.findFirst({
       include: {
@@ -48,34 +43,22 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
 
   if (!profile || !job) return;
 
-  // Skip jobs that don't offer sponsorship — no point spending tokens
   if (job.sponsorship === "unavailable") {
     task.step("skipped_no_sponsorship");
     return;
   }
 
-  const profileData = serializeProfile(profile);
-
-  const jobAnalysis = {
-    title: job.title,
-    company: job.company,
-    description: job.description,
-    skills: safeJsonParse(job.skills, []),
-    requirements: safeJsonParse(job.requirements, []),
-    atsKeywords: safeJsonParse(job.atsKeywords, {}),
-    terminologyMap: safeJsonParse(job.terminologyMap, []),
-    seniority: job.seniority,
-  };
-
+  const profileForMatch = serializeProfile(profile);
+  const jobAnalysis = buildJobAnalysisFromRecord(job as unknown as Record<string, unknown>);
   const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{
     jdTerm: string;
     resumeSynonyms: string[];
   }>;
 
-  const modelOpts = { model: job.aiModel };
-  const match = await matchProfileToJob(profileData, jobAnalysis, terminologyMap, modelOpts);
+  const match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
+    model: job.aiModel,
+  });
 
-  // Persist match result
   await prisma.job.update({
     where: { id: jobId },
     data: {
@@ -86,129 +69,105 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
 
   task.step("match_complete", { score: match.overallScore });
 
-  // Everything after match persistence should trigger a recommendation refresh on exit
   try {
-    // Gate: only continue if score >= 65
-    if (match.overallScore < 65) {
-      task.step("below_threshold", { score: match.overallScore, threshold: 65 });
+    if (match.overallScore < 60) {
+      task.step("below_threshold", { score: match.overallScore, threshold: 60 });
       return;
     }
 
-    // --- Step 2: Auto-apply grounded resume tips ---
-    let updatedProfile: Record<string, unknown>;
-    try {
-      const groundedTips = (match.resumeTips || []).filter(
-        (t: { grounded?: boolean }) => t.grounded
-      );
+    const build = await buildResumeQualityVersion({
+      profile: profile as unknown as Record<string, unknown>,
+      jobAnalysis,
+      matchResult: { ...match },
+      model: job.aiModel,
+    });
 
-      if (groundedTips.length === 0) {
-        task.step("no_grounded_tips");
-        return;
-      }
-
-      const instruction = `Apply all grounded resume tips to optimize for this role: ${groundedTips
-        .map((t: { action: string }, i: number) => `${i + 1}) ${t.action}`)
-        .join(" ")}`;
-
-      const tipResult = await applyResumeTips(
-        profileData,
-        { title: job.title, company: job.company },
-        match,
-        instruction,
-        [],
-        terminologyMap,
-        modelOpts
-      );
-
-      updatedProfile = mergeProfileChanges(profileData, tipResult.changes);
-      task.step("tips_applied", { changeCount: tipResult.changes?.length ?? 0, replyLength: tipResult.reply?.length ?? 0 });
-    } catch (err) {
-      task.fail(err, { phase: "tip_application" });
-      return;
-    }
-
-    // --- Step 3: Rescore with optimized profile ---
-    try {
-      const newMatch = await matchProfileToJob(updatedProfile, jobAnalysis, terminologyMap, modelOpts);
-      const newScore = newMatch.overallScore;
-      const delta = newScore - match.overallScore;
-
-      task.step("rescore_complete", { previousScore: match.overallScore, newScore, delta });
-
-      // Only save if score improved
-      if (newScore <= match.overallScore) {
-        task.step("no_improvement", { previousScore: match.overallScore, newScore });
-        return;
-      }
-
-      // Update job with improved match result
-      await prisma.job.update({
-        where: { id: jobId },
-        data: {
-          matchResult: JSON.stringify(newMatch),
-          matchedAt: new Date(),
-        },
+    if (build.hardBlockers.length > 0 || !build.optimizationPlan || !build.resumeData || !build.evaluation) {
+      task.step("blocked", {
+        stage: build.blockedStage,
+        hardBlockers: build.hardBlockers.map((entry) => entry.code),
       });
+      return;
+    }
 
-      // Save profile version
-      const version = await prisma.profileVersion.create({
+    if (build.evaluation.overallScore < 78) {
+      task.step("below_quality_threshold", {
+        score: build.evaluation.overallScore,
+        threshold: 78,
+      });
+      return;
+    }
+
+    const previousV2Version = await prisma.profileVersion.findFirst({
+      where: {
+        profileId: profile.id,
+        jobId: job.id,
+        scoreVersion: RESUME_QUALITY_SCORE_VERSION,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const delta = previousV2Version ? build.evaluation.overallScore - previousV2Version.score : null;
+
+    const version = await prisma.profileVersion.create({
+      data: {
+        profileId: profile.id,
+        jobId: job.id,
+        snapshot: JSON.stringify(build.sourceSnapshot),
+        optimizationPlan: JSON.stringify(build.optimizationPlan),
+        resumeData: JSON.stringify(build.resumeData),
+        score: build.evaluation.overallScore,
+        scoreVersion: RESUME_QUALITY_SCORE_VERSION,
+        delta,
+        label: `Auto v2: ${job.title} at ${job.company} — ${build.evaluation.overallScore}%`,
+      },
+    });
+
+    task.step("version_saved", {
+      versionId: version.id,
+      score: build.evaluation.overallScore,
+      warnings: build.warnings.length,
+    });
+
+    try {
+      const buffer = await generatePdf(build.resumeData);
+      const dirPath = path.join(
+        process.cwd(),
+        "resumes",
+        sanitize(job.company),
+        sanitize(job.title)
+      );
+      await fs.mkdir(dirPath, { recursive: true });
+
+      const fileName = `resume-${sanitize(profile.name)}-${Date.now()}.pdf`;
+      const filePath = path.join(dirPath, fileName);
+      await fs.writeFile(filePath, buffer);
+
+      await prisma.resume.create({
         data: {
           profileId: profile.id,
           jobId: job.id,
-          snapshot: JSON.stringify(updatedProfile),
-          score: newScore,
-          delta,
-          label: `Auto-optimized: ${job.title} at ${job.company} — ${newScore}%`,
+          format: "pdf",
+          filePath: path.relative(process.cwd(), filePath),
+          profileVersionId: version.id,
+          evaluation: JSON.stringify(build.evaluation),
+          evaluationStatus: "done",
+          evaluationVersion: RESUME_QUALITY_SCORE_VERSION,
         },
       });
 
-      task.step("version_saved", { versionId: version.id, score: newScore, delta });
-
-      // Gate: only generate PDF if score >= 75
-      if (newScore < 75) {
-        task.step("below_pdf_threshold", { score: newScore, threshold: 75 });
-        return;
-      }
-
-      // --- Step 4: Auto-generate PDF ---
-      try {
-        const tailoredContent = await generateTailoredResume(updatedProfile, jobAnalysis, modelOpts);
-
-        const buffer = await generatePdf(tailoredContent);
-
-        const dirPath = path.join(
-          process.cwd(),
-          "resumes",
-          sanitize(job.company),
-          sanitize(job.title)
-        );
-        await fs.mkdir(dirPath, { recursive: true });
-
-        const fileName = `resume-${sanitize(profile.name)}-${Date.now()}.pdf`;
-        const filePath = path.join(dirPath, fileName);
-        await fs.writeFile(filePath, buffer);
-
-        await prisma.resume.create({
-          data: {
-            profileId: profile.id,
-            jobId: job.id,
-            format: "pdf",
-            filePath: path.relative(process.cwd(), filePath),
-            profileVersionId: version.id,
-          },
-        });
-
-        task.complete({ phase: "pdf_generated", filePath });
-      } catch (err) {
-        task.fail(err, { phase: "pdf_generation" });
-      }
-    } catch (err) {
-      task.fail(err, { phase: "rescore" });
+      task.complete({
+        phase: "pdf_generated",
+        filePath,
+        qualityScore: build.evaluation.overallScore,
+      });
+    } catch (pdfError) {
+      task.fail(pdfError, { phase: "pdf_generation" });
     }
+  } catch (error) {
+    task.fail(error);
   } finally {
-    // Eagerly refresh recommendations cache after match data changed
-    refreshRecommendationsCache().catch((err) =>
-      task.fail(err, { phase: "recommendation_refresh" })
+    refreshRecommendationsCache().catch((error) =>
+      task.fail(error, { phase: "recommendation_refresh" })
     );
   }
 }

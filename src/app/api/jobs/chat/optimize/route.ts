@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import {
-  RESUME_QUALITY_SCORE_VERSION,
-  buildJobAnalysisFromRecord,
-  buildResumeQualityVersion,
-} from "@/lib/resume-quality";
+import { buildJobAnalysisFromRecord, buildResumeQualityVersion } from "@/lib/resume-quality";
 import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
@@ -13,10 +9,7 @@ export async function POST(request: NextRequest) {
     const { jobId, temporaryProfile } = await request.json();
 
     if (!jobId) {
-      return NextResponse.json(
-        { error: "jobId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "jobId is required" }, { status: 400 });
     }
 
     const [job, profile] = await Promise.all([
@@ -41,42 +34,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No profile found" }, { status: 404 });
     }
 
-    const cachedMatch = safeJsonParse<Record<string, unknown> | null>(job.matchResult, null);
-    if (!cachedMatch || typeof cachedMatch.overallScore !== "number") {
+    const matchResult = safeJsonParse<Record<string, unknown> | null>(job.matchResult, null);
+    if (!matchResult || typeof matchResult.overallScore !== "number") {
       return NextResponse.json(
         { error: "No match analysis found — run Match Analysis first" },
         { status: 400 }
       );
     }
 
+    const profileData =
+      temporaryProfile && typeof temporaryProfile === "object" && temporaryProfile !== null
+        ? temporaryProfile
+        : serializeProfile(profile);
+
     const build = await buildResumeQualityVersion({
-      profile:
-        temporaryProfile && typeof temporaryProfile === "object" && temporaryProfile !== null
-          ? temporaryProfile
-          : serializeProfile(profile),
+      profile: profileData,
       jobAnalysis: buildJobAnalysisFromRecord(job as unknown as Record<string, unknown>),
-      matchResult: cachedMatch,
+      matchResult,
       model: job.aiModel,
     });
 
-    const latestV2Version = await prisma.profileVersion.findFirst({
-      where: {
-        jobId,
-        scoreVersion: RESUME_QUALITY_SCORE_VERSION,
-      },
-      orderBy: { createdAt: "desc" },
-      select: { score: true },
-    });
-
-    const qualityScore = build.evaluation?.overallScore ?? 0;
-    const baselineQuality = latestV2Version?.score ?? qualityScore;
-
     return NextResponse.json({
-      originalScore: baselineQuality,
-      newScore: qualityScore,
-      delta: latestV2Version ? qualityScore - baselineQuality : 0,
-      matchScore: cachedMatch.overallScore,
-      match: cachedMatch,
       optimizationPlan: build.optimizationPlan,
       previewResume: build.resumeData,
       qualityPreview: build.evaluation,
@@ -85,9 +63,9 @@ export async function POST(request: NextRequest) {
       blockedStage: build.blockedStage,
     });
   } catch (error) {
-    console.error("Rescore alias error:", error);
+    console.error("Optimize preview error:", error);
     return NextResponse.json(
-      { error: "Failed to generate optimization preview" },
+      { error: "Failed to optimize resume preview" },
       { status: 500 }
     );
   }

@@ -10,9 +10,10 @@
 
 export { parseResumeText } from "./skills/resume-parser";
 export { analyzeJobDescription } from "./skills/job-analyzer";
-export { generateTailoredResume } from "./skills/resume-writer";
+export { generateTailoredResume, generateResumeFromPlan } from "./skills/resume-writer";
+export { planResumeOptimization } from "./skills/resume-planner";
 export { enrichFromExternalSource } from "./skills/profile-enricher";
-export { critiqueResume } from "./skills/resume-critic";
+export { critiqueResume, evaluateResumeArtifact } from "./skills/resume-critic";
 export type { ResumeCritique } from "./skills/resume-critic";
 export { editProfile } from "./skills/profile-editor";
 export { editSkills } from "./skills/skills-editor";
@@ -40,6 +41,8 @@ export {
   refineGuide,
   generateGuideOutline,
   generateGuideSection,
+  generateSectionCore,
+  generateSectionInteractive,
   refineGuideSection,
   classifySectionRelevance,
   GuideOutlineValidationError,
@@ -55,6 +58,8 @@ export type {
   GuideContentStorage,
   GuideGenerationState,
   GeneratedGuideSectionResult,
+  CoreSectionResult,
+  InteractiveSectionResult,
 } from "./skills/guide-generator";
 export { recommendGuides } from "./skills/guide-recommender";
 export type { GuideRecommendation } from "./skills/guide-recommender";

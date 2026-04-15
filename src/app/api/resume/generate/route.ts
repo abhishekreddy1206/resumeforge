@@ -1,69 +1,138 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { generateTailoredResume, critiqueResume } from "@/lib/claude";
-import { generatePdf } from "@/lib/generators/pdf";
-import { generateDocx } from "@/lib/generators/docx";
 import fs from "fs/promises";
 import path from "path";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  critiqueResume,
+  evaluateResumeArtifact,
+  generateTailoredResume,
+  matchProfileToJob,
+} from "@/lib/claude";
+import { prisma } from "@/lib/db";
+import { generateDocx } from "@/lib/generators/docx";
+import { generatePdf } from "@/lib/generators/pdf";
+import {
+  RESUME_QUALITY_SCORE_VERSION,
+  buildJobAnalysisFromRecord,
+  buildResumeQualityVersion,
+  finalizeResumeArtifactEvaluation,
+  isV2ProfileVersion,
+  validateResumeData,
+} from "@/lib/resume-quality";
+import type {
+  JobAnalysisData,
+  ResumeArtifactEvaluation,
+  ResumeData,
+  ResumeOptimizationPlan,
+  SourceProfileSnapshot,
+} from "@/lib/types";
+import { safeJsonParse } from "@/lib/utils/json";
 
-// In-memory cache for async critique results (with TTL cleanup)
-const critiqueCache = new Map<
-  string,
-  { status: "pending" | "done" | "error"; data?: unknown; error?: string; createdAt: number }
->();
-
-// Evict stale entries older than 5 minutes
-function evictStaleCritiqueEntries() {
-  const maxAge = 5 * 60 * 1000;
-  const now = Date.now();
-  for (const [key, entry] of critiqueCache) {
-    if (now - entry.createdAt > maxAge) critiqueCache.delete(key);
-  }
-}
-
-function safeJsonParse(value: unknown, fallback: unknown = []): unknown {
-  if (typeof value !== "string") return value ?? fallback;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
-
-function isValidProfileOverride(p: unknown): p is Record<string, unknown> {
-  return typeof p === "object" && p !== null && "name" in p && "experiences" in p;
+function isValidProfileOverride(profile: unknown): profile is Record<string, unknown> {
+  return typeof profile === "object" && profile !== null && "name" in profile && "experiences" in profile;
 }
 
 function serializeDbProfile(profile: {
   experiences: Array<Record<string, unknown>>;
   projects: Array<Record<string, unknown>>;
   recommendations?: string | null;
+  additionalEmails?: string | null;
   [key: string]: unknown;
 }) {
   return {
     ...profile,
-    experiences: profile.experiences.map((e) => ({
-      ...e,
-      bullets: safeJsonParse(e.bullets, []),
-      skills: safeJsonParse(e.skills, []),
+    experiences: profile.experiences.map((experience) => ({
+      ...experience,
+      bullets: safeJsonParse<string[]>(
+        experience.bullets,
+        Array.isArray(experience.bullets) ? (experience.bullets as string[]) : []
+      ),
+      skills: safeJsonParse<string[]>(
+        experience.skills,
+        Array.isArray(experience.skills) ? (experience.skills as string[]) : []
+      ),
     })),
-    projects: profile.projects.map((p) => ({
-      ...p,
-      skills: safeJsonParse(p.skills, []),
+    projects: profile.projects.map((project) => ({
+      ...project,
+      skills: safeJsonParse<string[]>(
+        project.skills,
+        Array.isArray(project.skills) ? (project.skills as string[]) : []
+      ),
     })),
     recommendations: safeJsonParse(profile.recommendations, []),
+    additionalEmails: safeJsonParse(profile.additionalEmails, []),
   };
+}
+
+async function ensureMatchResult(
+  profileData: Record<string, unknown>,
+  job: {
+    id: string;
+    aiModel: string;
+    matchResult: string | null;
+    terminologyMap: string | null;
+  },
+  jobAnalysis: JobAnalysisData
+): Promise<Record<string, unknown>> {
+  const cachedMatch = safeJsonParse<Record<string, unknown> | null>(job.matchResult, null);
+  if (cachedMatch && typeof cachedMatch.overallScore === "number") {
+    return cachedMatch;
+  }
+
+  const match = await matchProfileToJob(
+    profileData,
+    jobAnalysis,
+    safeJsonParse(job.terminologyMap, []),
+    { model: job.aiModel }
+  );
+
+  await prisma.job.update({
+    where: { id: job.id },
+    data: {
+      matchResult: JSON.stringify(match),
+      matchedAt: new Date(),
+    },
+  });
+
+  return { ...match };
+}
+
+async function evaluateStoredV2Resume(params: {
+  resumeData: ResumeData;
+  sourceSnapshot: SourceProfileSnapshot;
+  optimizationPlan: ResumeOptimizationPlan;
+  jobAnalysis: JobAnalysisData;
+  matchResult: Record<string, unknown>;
+  model?: string;
+}): Promise<ResumeArtifactEvaluation> {
+  const validationIssues = validateResumeData(
+    params.resumeData,
+    params.sourceSnapshot,
+    params.optimizationPlan,
+    params.jobAnalysis
+  );
+  const llmEvaluation = await evaluateResumeArtifact(
+    params.resumeData,
+    params.sourceSnapshot,
+    params.jobAnalysis,
+    params.matchResult,
+    params.optimizationPlan,
+    { model: params.model }
+  );
+  return finalizeResumeArtifactEvaluation(llmEvaluation, validationIssues, params.resumeData);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { jobId, format = "pdf", profileOverride, profileVersionId, emailOverride } = await request.json();
+    const {
+      jobId,
+      format = "pdf",
+      profileOverride,
+      profileVersionId,
+      emailOverride,
+    } = await request.json();
 
     if (!jobId) {
-      return NextResponse.json(
-        { error: "jobId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "jobId is required" }, { status: 400 });
     }
 
     if (!["pdf", "docx"].includes(format)) {
@@ -73,7 +142,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch profile and job in parallel
     const [profile, job] = await Promise.all([
       prisma.profile.findFirst({
         include: {
@@ -99,70 +167,126 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    // Cascade: profileOverride → explicit version → latest job version → DB profile
-    let profileData: Record<string, unknown>;
-    let resolvedVersionId: string | undefined = profileVersionId;
+    const jobAnalysis = buildJobAnalysisFromRecord(job as unknown as Record<string, unknown>);
+    const dbProfile = serializeDbProfile(profile);
 
-    if (profileOverride && isValidProfileOverride(profileOverride)) {
-      profileData = profileOverride;
-    } else if (profileVersionId) {
+    let resolvedVersionId: string | undefined;
+    let resumeData: ResumeData | null = null;
+    let evaluation: unknown = null;
+
+    if (profileVersionId) {
       const version = await prisma.profileVersion.findUnique({
         where: { id: profileVersionId },
       });
-      if (version?.snapshot) {
-        const parsed = safeJsonParse(version.snapshot, null);
-        profileData = isValidProfileOverride(parsed) ? (parsed as Record<string, unknown>) : serializeDbProfile(profile);
-      } else {
-        profileData = serializeDbProfile(profile);
+
+      if (!version) {
+        return NextResponse.json({ error: "Profile version not found" }, { status: 404 });
+      }
+
+      resolvedVersionId = version.id;
+
+      if (isV2ProfileVersion(version) && version.resumeData && version.optimizationPlan) {
+        const sourceSnapshot = safeJsonParse<SourceProfileSnapshot | null>(version.snapshot, null);
+        const optimizationPlan = safeJsonParse<ResumeOptimizationPlan | null>(version.optimizationPlan, null);
+        const storedResume = safeJsonParse<ResumeData | null>(version.resumeData, null);
+
+        if (sourceSnapshot && optimizationPlan && storedResume) {
+          const matchResult = await ensureMatchResult(dbProfile, job, jobAnalysis);
+          resumeData = storedResume;
+          evaluation = await evaluateStoredV2Resume({
+            resumeData,
+            sourceSnapshot,
+            optimizationPlan,
+            jobAnalysis,
+            matchResult,
+            model: job.aiModel,
+          });
+        }
+      }
+
+      if (!resumeData) {
+        const parsedSnapshot = safeJsonParse<Record<string, unknown> | null>(version.snapshot, null);
+        const legacyProfileData =
+          parsedSnapshot && isValidProfileOverride(parsedSnapshot) ? parsedSnapshot : dbProfile;
+        resumeData = await generateTailoredResume(legacyProfileData, jobAnalysis, {
+          model: job.aiModel,
+        });
+        evaluation = await critiqueResume(resumeData, jobAnalysis, { model: job.aiModel });
       }
     } else {
-      // Auto-select the latest optimized version for this job
-      const latestVersion = await prisma.profileVersion.findFirst({
-        where: { jobId, profileId: profile.id },
-        orderBy: { createdAt: "desc" },
-      });
-      if (latestVersion?.snapshot) {
-        const parsed = safeJsonParse(latestVersion.snapshot, null);
-        if (isValidProfileOverride(parsed)) {
-          profileData = parsed;
-          resolvedVersionId = latestVersion.id;
-        } else {
-          profileData = serializeDbProfile(profile);
+      const latestV2Version = !profileOverride
+        ? await prisma.profileVersion.findFirst({
+            where: {
+              jobId,
+              profileId: profile.id,
+              scoreVersion: RESUME_QUALITY_SCORE_VERSION,
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : null;
+
+      if (latestV2Version?.resumeData && latestV2Version.optimizationPlan) {
+        const sourceSnapshot = safeJsonParse<SourceProfileSnapshot | null>(latestV2Version.snapshot, null);
+        const optimizationPlan = safeJsonParse<ResumeOptimizationPlan | null>(latestV2Version.optimizationPlan, null);
+        const storedResume = safeJsonParse<ResumeData | null>(latestV2Version.resumeData, null);
+
+        if (sourceSnapshot && optimizationPlan && storedResume) {
+          const matchResult = await ensureMatchResult(dbProfile, job, jobAnalysis);
+          resumeData = storedResume;
+          evaluation = await evaluateStoredV2Resume({
+            resumeData,
+            sourceSnapshot,
+            optimizationPlan,
+            jobAnalysis,
+            matchResult,
+            model: job.aiModel,
+          });
+          resolvedVersionId = latestV2Version.id;
         }
-      } else {
-        profileData = serializeDbProfile(profile);
+      }
+
+      if (!resumeData) {
+        const generationProfile =
+          profileOverride && isValidProfileOverride(profileOverride)
+            ? profileOverride
+            : dbProfile;
+        const matchResult = await ensureMatchResult(generationProfile, job, jobAnalysis);
+        const build = await buildResumeQualityVersion({
+          profile: generationProfile,
+          jobAnalysis,
+          matchResult,
+          model: job.aiModel,
+        });
+
+        if (build.hardBlockers.length > 0 || !build.resumeData || !build.evaluation) {
+          return NextResponse.json(
+            {
+              error: "Resume generation blocked by validation",
+              hardBlockers: build.hardBlockers,
+              warnings: build.warnings,
+            },
+            { status: 422 }
+          );
+        }
+
+        resumeData = build.resumeData;
+        evaluation = build.evaluation;
       }
     }
 
-    const jobAnalysis = {
-      title: job.title,
-      company: job.company,
-      description: job.description,
-      skills: safeJsonParse(job.skills, []),
-      requirements: safeJsonParse(job.requirements, []),
-      atsKeywords: safeJsonParse(job.atsKeywords, {}),
-      terminologyMap: safeJsonParse(job.terminologyMap, []),
-      seniority: job.seniority,
-    };
-
-    // Generate tailored resume content with Claude
-    const tailoredContent = await generateTailoredResume(
-      profileData,
-      jobAnalysis,
-      { model: job.aiModel }
-    );
-
-    // Apply email override if provided
-    if (emailOverride && typeof emailOverride === "string") {
-      tailoredContent.email = emailOverride;
+    if (!resumeData) {
+      return NextResponse.json(
+        { error: "Failed to resolve resume content" },
+        { status: 500 }
+      );
     }
 
-    // Create output directory and generate file
-    const sanitize = (s: string) =>
-      s
-        .replace(/[^a-zA-Z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .toLowerCase();
+    if (emailOverride && typeof emailOverride === "string") {
+      resumeData.email = emailOverride;
+    }
+
+    const sanitize = (value: string) =>
+      value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
     const dirPath = path.join(
       process.cwd(),
       "resumes",
@@ -175,13 +299,13 @@ export async function POST(request: NextRequest) {
     const fileName = `resume-${sanitize(profile.name)}-${timestamp}.${format}`;
     const filePath = path.join(dirPath, fileName);
 
-    const buffer = format === "pdf"
-      ? await generatePdf(tailoredContent)
-      : await generateDocx(tailoredContent);
+    const buffer =
+      format === "pdf"
+        ? await generatePdf(resumeData)
+        : await generateDocx(resumeData);
 
     await fs.writeFile(filePath, buffer);
 
-    // Save to database
     const resume = await prisma.resume.create({
       data: {
         profileId: profile.id,
@@ -189,31 +313,24 @@ export async function POST(request: NextRequest) {
         format,
         filePath: path.relative(process.cwd(), filePath),
         ...(resolvedVersionId ? { profileVersionId: resolvedVersionId } : {}),
+        evaluation: evaluation ? JSON.stringify(evaluation) : null,
+        evaluationStatus: evaluation ? "done" : "pending",
+        evaluationVersion:
+          evaluation && typeof evaluation === "object" && evaluation !== null && "version" in evaluation && typeof (evaluation as { version?: number }).version === "number"
+            ? (evaluation as { version: number }).version
+            : 1,
       },
     });
 
-    // Fire critique asynchronously — don't block the response
-    evictStaleCritiqueEntries();
-    critiqueCache.set(resume.id, { status: "pending", createdAt: Date.now() });
-    critiqueResume(tailoredContent, jobAnalysis, { model: job.aiModel })
-      .then((critique) => {
-        critiqueCache.set(resume.id, { status: "done", data: critique, createdAt: Date.now() });
-      })
-      .catch((err) => {
-        console.error("Async critique failed:", err);
-        critiqueCache.set(resume.id, {
-          status: "error",
-          error: err instanceof Error ? err.message : "Critique failed",
-          createdAt: Date.now(),
-        });
-      });
-
-    // Return immediately with the resume (no critique yet)
     return NextResponse.json({
       ...resume,
-      tailoredContent,
-      critique: null,
-      critiqueStatus: "pending",
+      tailoredContent: resumeData,
+      critique: evaluation,
+      critiqueStatus: evaluation ? "done" : "pending",
+      warnings:
+        evaluation && typeof evaluation === "object" && evaluation !== null && "warnings" in evaluation && Array.isArray((evaluation as { warnings?: unknown[] }).warnings)
+          ? (evaluation as { warnings: unknown[] }).warnings
+          : [],
     });
   } catch (error) {
     console.error("Resume generation error:", error);
@@ -224,7 +341,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET endpoint to poll for critique status
 export async function GET(request: NextRequest) {
   const resumeId = request.nextUrl.searchParams.get("resumeId");
   if (!resumeId) {
@@ -234,20 +350,30 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const entry = critiqueCache.get(resumeId);
-  if (!entry) {
+  const resume = await prisma.resume.findUnique({
+    where: { id: resumeId },
+    select: {
+      id: true,
+      evaluation: true,
+      evaluationStatus: true,
+      evaluationVersion: true,
+    },
+  });
+
+  if (!resume) {
     return NextResponse.json({ status: "not_found" });
   }
 
-  if (entry.status === "done") {
-    // Clean up cache after delivery
-    critiqueCache.delete(resumeId);
-    return NextResponse.json({ status: "done", critique: entry.data });
+  if (resume.evaluationStatus === "done") {
+    return NextResponse.json({
+      status: "done",
+      critique: safeJsonParse(resume.evaluation, null),
+      evaluationVersion: resume.evaluationVersion,
+    });
   }
 
-  if (entry.status === "error") {
-    critiqueCache.delete(resumeId);
-    return NextResponse.json({ status: "error", error: entry.error });
+  if (resume.evaluationStatus === "error") {
+    return NextResponse.json({ status: "error", error: "Critique failed" });
   }
 
   return NextResponse.json({ status: "pending" });

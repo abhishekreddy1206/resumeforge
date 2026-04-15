@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma as db } from "@/lib/db";
-
-function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
-  if (typeof value !== "string") return value ?? fallback;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
+import { summarizeInsightsForAnalytics, getInsightsData } from "@/lib/insights";
+import {
+  isPlaceholderJob,
+  summarizeJobsBySource,
+  summarizeMatchTrends,
+  summarizeQualityHealth,
+  summarizeResumeQualityTrends,
+} from "@/lib/dashboard-analytics";
+import { SavedSourceChangeType } from "@/generated/prisma/enums";
+import { safeJsonParse } from "@/lib/utils/json";
 
 export async function GET() {
   const [
+    insights,
     tokenRows,
     totalTokenAgg,
     bySkill,
@@ -24,7 +26,17 @@ export async function GET() {
     allJobs,
     profileSkills,
     allVersions,
+    evaluatedResumes,
+    totalGuides,
+    completedGuides,
+    inProgressGuides,
+    totalPaths,
+    totalSavedSources,
+    savedSourceHeads,
+    staleGuideSources,
+    manualEdits,
   ] = await Promise.all([
+    getInsightsData(),
     db.$queryRaw<Array<{ day: string; totalCost: number; totalInput: number; totalOutput: number; calls: number }>>`
       SELECT
         date(createdAt) as day,
@@ -52,7 +64,12 @@ export async function GET() {
     `,
     db.profileVersion.findMany({
       select: {
-        id: true, score: true, delta: true, label: true, createdAt: true,
+        id: true,
+        score: true,
+        scoreVersion: true,
+        delta: true,
+        label: true,
+        createdAt: true,
         job: { select: { id: true, title: true, company: true } },
         resumes: { select: { id: true, format: true, createdAt: true } },
       },
@@ -64,33 +81,73 @@ export async function GET() {
     db.job.count({ where: { applied: true } }),
     db.job.count({ where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
     db.job.findMany({
-      select: { id: true, skills: true, terminologyMap: true, matchResult: true },
+      select: {
+        id: true,
+        title: true,
+        company: true,
+        description: true,
+        source: true,
+        skills: true,
+        terminologyMap: true,
+        matchResult: true,
+      },
     }),
     db.skill.findMany({
       select: { name: true, category: true },
     }),
     db.profileVersion.findMany({
-      select: { jobId: true, score: true, delta: true, createdAt: true },
+      select: { jobId: true, score: true, scoreVersion: true, delta: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
+    db.resume.findMany({
+      select: {
+        jobId: true,
+        evaluation: true,
+        evaluationStatus: true,
+        evaluationVersion: true,
+        job: { select: { roleArchetype: true } },
+      },
+    }),
+    db.guide.count(),
+    db.guide.count({ where: { completionStatus: "completed" } }),
+    db.guide.count({ where: { completionStatus: "in_progress" } }),
+    db.learningPath.count(),
+    db.savedSource.count({ where: { deletedAt: null } }),
+    db.savedSource.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        reviewFlags: true,
+        captureMethod: true,
+      },
+    }),
+    db.guideSource.findMany({
+      where: {
+        isActive: true,
+        savedSourceId: { not: null },
+      },
+      select: {
+        guideId: true,
+        savedSourceVersion: { select: { version: true } },
+        savedSource: { select: { version: true } },
+      },
+    }),
+    db.savedSourceVersion.count({ where: { changeType: SavedSourceChangeType.manual_edit } }),
   ]);
 
-  // Compute funnel
-  const matchedJobs = allJobs.filter((j) => j.matchResult !== null).length;
-  const jobsWithVersions = new Set(allVersions.map((v) => v.jobId));
-  const optimizedJobs = jobsWithVersions.size;
+  const matchedJobs = allJobs.filter((job) => job.matchResult !== null).length;
+  const optimizedJobs = new Set(allVersions.filter((version) => version.scoreVersion === 2).map((version) => version.jobId)).size;
 
-  // Compute skill gaps
   const skillFrequency = new Map<string, number>();
-  const profileSkillNames = new Set(profileSkills.map((s) => s.name.toLowerCase()));
+  const profileSkillNames = new Set(profileSkills.map((skill) => skill.name.toLowerCase()));
   const synonymToCanonical = new Map<string, string>();
 
   for (const job of allJobs) {
-    const tMap = safeJsonParse(job.terminologyMap, []) as Array<{ jdTerm: string; resumeSynonyms: string[] }>;
-    if (Array.isArray(tMap)) {
-      for (const entry of tMap) {
-        for (const syn of entry.resumeSynonyms) {
-          synonymToCanonical.set(syn.toLowerCase(), entry.jdTerm.toLowerCase());
+    const terminologyMap = safeJsonParse(job.terminologyMap, []) as Array<{ jdTerm: string; resumeSynonyms: string[] }>;
+    if (Array.isArray(terminologyMap)) {
+      for (const entry of terminologyMap) {
+        for (const synonym of entry.resumeSynonyms) {
+          synonymToCanonical.set(synonym.toLowerCase(), entry.jdTerm.toLowerCase());
         }
       }
     }
@@ -114,61 +171,67 @@ export async function GET() {
       if (canonical && profileSkillNames.has(canonical)) {
         return { skill, frequency, status: "strong" as const, profileSkill: canonical };
       }
-      for (const pSkill of profileSkillNames) {
-        if (synonymToCanonical.get(pSkill) === skill) {
-          return { skill, frequency, status: "partial" as const, profileSkill: pSkill };
+      for (const profileSkill of profileSkillNames) {
+        if (synonymToCanonical.get(profileSkill) === skill) {
+          return { skill, frequency, status: "partial" as const, profileSkill };
         }
       }
       return { skill, frequency, status: "gap" as const };
     });
 
-  // Compute ATS trends
-  const versionsByJob = new Map<string, Array<{ score: number; delta: number | null; createdAt: Date }>>();
-  for (const v of allVersions) {
-    const arr = versionsByJob.get(v.jobId) || [];
-    arr.push(v);
-    versionsByJob.set(v.jobId, arr);
-  }
+  const matchTrends = summarizeMatchTrends(allJobs);
+  const resumeQualityTrends = summarizeResumeQualityTrends(allVersions);
+  const qualityHealth = summarizeQualityHealth(
+    evaluatedResumes.map((resume) => ({
+      evaluation: resume.evaluation,
+      evaluationStatus: resume.evaluationStatus,
+      evaluationVersion: resume.evaluationVersion,
+      roleArchetype: resume.job.roleArchetype,
+      jobId: resume.jobId,
+    })),
+    totalJobs
+  );
 
-  let totalInitial = 0;
-  let totalFinal = 0;
-  let totalImprovement = 0;
-  let jobsWithScores = 0;
-  const scoreBuckets = new Map<string, number>();
-
-  for (const [, jobVersions] of versionsByJob) {
-    if (jobVersions.length === 0) continue;
-    const initial = jobVersions[0].score;
-    const final = jobVersions[jobVersions.length - 1].score;
-    totalInitial += initial;
-    totalFinal += final;
-    totalImprovement += final - initial;
-    jobsWithScores++;
-    const bucket = `${Math.floor(final / 10) * 10}-${Math.floor(final / 10) * 10 + 9}`;
-    scoreBuckets.set(bucket, (scoreBuckets.get(bucket) || 0) + 1);
-  }
-
-  const atsTrends = {
-    averageInitialScore: jobsWithScores > 0 ? Math.round(totalInitial / jobsWithScores) : 0,
-    averageFinalScore: jobsWithScores > 0 ? Math.round(totalFinal / jobsWithScores) : 0,
-    averageImprovement: jobsWithScores > 0 ? Math.round(totalImprovement / jobsWithScores) : 0,
-    jobCount: jobsWithScores,
-    distribution: Array.from(scoreBuckets.entries())
-      .map(([range, count]) => ({ range, count }))
-      .sort((a, b) => a.range.localeCompare(b.range)),
-  };
+  const needsReview = savedSourceHeads.filter((source) => source.reviewFlags !== "[]").length;
+  const domFallback = savedSourceHeads.filter((source) => source.captureMethod === "dom_fallback").length;
+  const staleGuideAttachments = staleGuideSources.filter((source) => {
+    const attachedVersion = source.savedSourceVersion?.version ?? null;
+    const headVersion = source.savedSource?.version ?? null;
+    return attachedVersion !== null && headVersion !== null && attachedVersion < headVersion;
+  });
+  const guidesWithStaleSources = new Set(staleGuideAttachments.map((source) => source.guideId)).size;
+  const placeholderJobs = allJobs.filter((job) =>
+    isPlaceholderJob({
+      title: job.title || "",
+      company: job.company || "",
+      description: job.description || "",
+    })
+  ).length;
+  const insightSummary = summarizeInsightsForAnalytics(insights);
+  const scoreVersionsPresent = Array.from(
+    new Set(allVersions.map((version) => version.scoreVersion).filter((value): value is number => typeof value === "number"))
+  ).sort((a, b) => a - b);
 
   return NextResponse.json({
     funnel: { totalJobs, matchedJobs, optimizedJobs, appliedJobs, weeklyAdded },
     skillGaps,
-    atsTrends,
+    matchTrends,
+    resumeQualityTrends,
+    qualityHealth,
+    scoreVersionsPresent,
+    compatibility: {
+      legacyViewAvailable: scoreVersionsPresent.includes(1),
+      v2ViewAvailable: scoreVersionsPresent.includes(2),
+      legacyVersionCount: allVersions.filter((version) => version.scoreVersion === 1).length,
+      v2VersionCount: allVersions.filter((version) => version.scoreVersion === 2).length,
+    },
     tokenUsage: {
-      daily: tokenRows.map((r) => ({
-        day: r.day,
-        cost: Number(r.totalCost),
-        inputTokens: Number(r.totalInput),
-        outputTokens: Number(r.totalOutput),
-        calls: Number(r.calls),
+      daily: tokenRows.map((row) => ({
+        day: row.day,
+        cost: Number(row.totalCost),
+        inputTokens: Number(row.totalInput),
+        outputTokens: Number(row.totalOutput),
+        calls: Number(row.calls),
       })),
       totals: {
         cost: totalTokenAgg._sum.costUsd ?? 0,
@@ -176,22 +239,41 @@ export async function GET() {
         outputTokens: totalTokenAgg._sum.outputTokens ?? 0,
         calls: totalTokenAgg._count,
       },
-      bySkill: bySkill.map((r) => ({
-        skill: r.skill,
-        cost: Number(r.totalCost),
-        inputTokens: Number(r.totalInput),
-        outputTokens: Number(r.totalOutput),
-        calls: Number(r.calls),
-        cacheReads: Number(r.cacheReads || 0),
-        cacheCreations: Number(r.cacheCreations || 0),
+      bySkill: bySkill.map((row) => ({
+        skill: row.skill,
+        cost: Number(row.totalCost),
+        inputTokens: Number(row.totalInput),
+        outputTokens: Number(row.totalOutput),
+        calls: Number(row.calls),
+        cacheReads: Number(row.cacheReads || 0),
+        cacheCreations: Number(row.cacheCreations || 0),
       })),
-      byModel: byModel.map((r) => ({
-        model: r.model,
-        cost: Number(r.totalCost),
-        calls: Number(r.calls),
+      byModel: byModel.map((row) => ({
+        model: row.model,
+        cost: Number(row.totalCost),
+        calls: Number(row.calls),
       })),
     },
     versions,
     resumeCount,
+    insights: insightSummary,
+    learn: {
+      totalGuides,
+      completedGuides,
+      inProgressGuides,
+      totalPaths,
+      savedSources: totalSavedSources,
+    },
+    sourceHealth: {
+      needsReview,
+      domFallback,
+      staleGuideAttachments: staleGuideAttachments.length,
+      guidesWithStaleSources,
+      manualEdits,
+    },
+    capture: {
+      jobsBySource: summarizeJobsBySource(allJobs.map((job) => ({ source: job.source }))),
+      placeholderJobs,
+    },
   });
 }

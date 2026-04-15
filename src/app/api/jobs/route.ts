@@ -9,6 +9,10 @@ import { withLogging } from "@/lib/api-handler";
 
 const log = createLogger("jobs");
 
+function buildJobReviewUrl(jobId: string): string {
+  return `/jobs?jobId=${encodeURIComponent(jobId)}`;
+}
+
 export const GET = withLogging(async (request: NextRequest) => {
   const page = Math.max(1, parseInt(request.nextUrl.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(50, Math.max(1, parseInt(request.nextUrl.searchParams.get("pageSize") || "10", 10)));
@@ -33,7 +37,14 @@ export const GET = withLogging(async (request: NextRequest) => {
         },
         profileVersions: {
           orderBy: { createdAt: "desc" },
-          select: { id: true, score: true, delta: true, createdAt: true, resumes: { orderBy: { createdAt: "desc" }, select: { id: true, format: true, createdAt: true } } },
+          select: {
+            id: true,
+            score: true,
+            scoreVersion: true,
+            delta: true,
+            createdAt: true,
+            resumes: { orderBy: { createdAt: "desc" }, select: { id: true, format: true, createdAt: true } },
+          },
         },
       },
       skip,
@@ -114,6 +125,7 @@ export const PATCH = withLogging(async (request: NextRequest) => {
       requirements: null,
       atsKeywords: null,
       seniority: null,
+      roleArchetype: null,
       terminologyMap: null,
       matchResult: null,
       matchedAt: null,
@@ -133,6 +145,7 @@ export const PATCH = withLogging(async (request: NextRequest) => {
           requirements: JSON.stringify(analysis.requirements || []),
           atsKeywords: JSON.stringify(analysis.atsKeywords || {}),
           seniority: analysis.seniority || null,
+          roleArchetype: analysis.roleArchetype || null,
           sponsorship: (analysis.sponsorship as string) || "unspecified",
           terminologyMap: JSON.stringify(analysis.terminologyMap || []),
         },
@@ -154,7 +167,15 @@ export const PATCH = withLogging(async (request: NextRequest) => {
 });
 
 export const POST = withLogging(async (request: NextRequest) => {
-  const { url, description, aiModel, source } = await request.json();
+  const {
+    url,
+    description,
+    aiModel,
+    source,
+    titleHint,
+    companyHint,
+    locationHint,
+  } = await request.json();
 
   if (!url && !description) {
     return NextResponse.json(
@@ -176,7 +197,15 @@ export const POST = withLogging(async (request: NextRequest) => {
     });
     if (dup) {
       return NextResponse.json(
-        { error: `This job has already been added (${dup.title} at ${dup.company})`, duplicate: true },
+        {
+          error: `This job has already been added (${dup.title} at ${dup.company})`,
+          duplicate: true,
+          duplicateKind: "job",
+          existingJobId: dup.id,
+          title: dup.title,
+          company: dup.company,
+          reviewUrl: buildJobReviewUrl(dup.id),
+        },
         { status: 409 }
       );
     }
@@ -191,7 +220,15 @@ export const POST = withLogging(async (request: NextRequest) => {
     const dup = allJobs.find((j) => j.description.trim().slice(0, 200) === prefix);
     if (dup) {
       return NextResponse.json(
-        { error: `This job description already exists (${dup.title} at ${dup.company})`, duplicate: true },
+        {
+          error: `This job description already exists (${dup.title} at ${dup.company})`,
+          duplicate: true,
+          duplicateKind: "job",
+          existingJobId: dup.id,
+          title: dup.title,
+          company: dup.company,
+          reviewUrl: buildJobReviewUrl(dup.id),
+        },
         { status: 409 }
       );
     }
@@ -217,15 +254,21 @@ export const POST = withLogging(async (request: NextRequest) => {
   const job = await prisma.job.create({
     data: {
       title: "Analyzing...",
-      company: url
-        ? new URL(url).hostname.replace("www.", "").split(".")[0]
-        : "Analyzing...",
+      company:
+        (typeof companyHint === "string" && companyHint.trim()) ||
+        (url
+          ? new URL(url).hostname.replace("www.", "").split(".")[0]
+          : "Analyzing..."),
       url: url || null,
-      description: jobText,
+      description:
+        typeof locationHint === "string" && locationHint.trim() && !jobText.includes(locationHint)
+          ? `Location: ${locationHint.trim()}\n\n${jobText}`
+          : jobText,
       skills: null,
       requirements: null,
       atsKeywords: null,
       seniority: null,
+      roleArchetype: null,
       sponsorship: "unspecified",
       aiModel: aiModel || "sonnet",
       source: source || null,
@@ -241,12 +284,19 @@ export const POST = withLogging(async (request: NextRequest) => {
       await prisma.job.update({
         where: { id: job.id },
         data: {
-          title: (analysis.title as string) || "Untitled Position",
-          company: (analysis.company as string) || "Unknown Company",
+          title:
+            (analysis.title as string) ||
+            (typeof titleHint === "string" && titleHint.trim()) ||
+            "Untitled Position",
+          company:
+            (analysis.company as string) ||
+            (typeof companyHint === "string" && companyHint.trim()) ||
+            job.company,
           skills: JSON.stringify(analysis.skills || []),
           requirements: JSON.stringify(analysis.requirements || []),
           atsKeywords: JSON.stringify(analysis.atsKeywords || {}),
           seniority: analysis.seniority || null,
+          roleArchetype: analysis.roleArchetype || null,
           sponsorship: (analysis.sponsorship as string) || "unspecified",
           terminologyMap: JSON.stringify(analysis.terminologyMap || []),
         },
@@ -269,6 +319,7 @@ export const POST = withLogging(async (request: NextRequest) => {
   // Return immediately with the placeholder job
   return NextResponse.json({
     ...job,
+    captureTitle: typeof titleHint === "string" && titleHint.trim() ? titleHint.trim() : null,
     resumes: [],
     analysisStatus: "pending",
   });
