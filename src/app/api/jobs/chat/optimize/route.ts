@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildJobAnalysisFromRecord, buildResumeQualityVersion } from "@/lib/resume-quality";
+import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return (value as T) ?? fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,7 +50,7 @@ export async function POST(request: NextRequest) {
     const build = await buildResumeQualityVersion({
       profile: profileData,
       jobAnalysis: buildJobAnalysisFromRecord(job as unknown as Record<string, unknown>),
-      matchResult: matchResult as never,
+      matchResult,
       model: job.aiModel,
     });
 

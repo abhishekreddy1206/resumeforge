@@ -10,16 +10,8 @@ import {
   buildJobAnalysisFromRecord,
   buildResumeQualityVersion,
 } from "@/lib/resume-quality";
+import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return (value as T) ?? fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 const sanitize = (value: string) =>
   value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
@@ -86,7 +78,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     const build = await buildResumeQualityVersion({
       profile: profile as unknown as Record<string, unknown>,
       jobAnalysis,
-      matchResult: match,
+      matchResult: { ...match },
       model: job.aiModel,
     });
 
@@ -136,37 +128,41 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       warnings: build.warnings.length,
     });
 
-    const buffer = await generatePdf(build.resumeData);
-    const dirPath = path.join(
-      process.cwd(),
-      "resumes",
-      sanitize(job.company),
-      sanitize(job.title)
-    );
-    await fs.mkdir(dirPath, { recursive: true });
+    try {
+      const buffer = await generatePdf(build.resumeData);
+      const dirPath = path.join(
+        process.cwd(),
+        "resumes",
+        sanitize(job.company),
+        sanitize(job.title)
+      );
+      await fs.mkdir(dirPath, { recursive: true });
 
-    const fileName = `resume-${sanitize(profile.name)}-${Date.now()}.pdf`;
-    const filePath = path.join(dirPath, fileName);
-    await fs.writeFile(filePath, buffer);
+      const fileName = `resume-${sanitize(profile.name)}-${Date.now()}.pdf`;
+      const filePath = path.join(dirPath, fileName);
+      await fs.writeFile(filePath, buffer);
 
-    await prisma.resume.create({
-      data: {
-        profileId: profile.id,
-        jobId: job.id,
-        format: "pdf",
-        filePath: path.relative(process.cwd(), filePath),
-        profileVersionId: version.id,
-        evaluation: JSON.stringify(build.evaluation),
-        evaluationStatus: "done",
-        evaluationVersion: RESUME_QUALITY_SCORE_VERSION,
-      },
-    });
+      await prisma.resume.create({
+        data: {
+          profileId: profile.id,
+          jobId: job.id,
+          format: "pdf",
+          filePath: path.relative(process.cwd(), filePath),
+          profileVersionId: version.id,
+          evaluation: JSON.stringify(build.evaluation),
+          evaluationStatus: "done",
+          evaluationVersion: RESUME_QUALITY_SCORE_VERSION,
+        },
+      });
 
-    task.complete({
-      phase: "pdf_generated",
-      filePath,
-      qualityScore: build.evaluation.overallScore,
-    });
+      task.complete({
+        phase: "pdf_generated",
+        filePath,
+        qualityScore: build.evaluation.overallScore,
+      });
+    } catch (pdfError) {
+      task.fail(pdfError, { phase: "pdf_generation" });
+    }
   } catch (error) {
     task.fail(error);
   } finally {

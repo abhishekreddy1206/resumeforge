@@ -25,15 +25,7 @@ import type {
   ResumeOptimizationPlan,
   SourceProfileSnapshot,
 } from "@/lib/types";
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return (value as T) ?? fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
+import { safeJsonParse } from "@/lib/utils/json";
 
 function isValidProfileOverride(profile: unknown): profile is Record<string, unknown> {
   return typeof profile === "object" && profile !== null && "name" in profile && "experiences" in profile;
@@ -80,7 +72,7 @@ async function ensureMatchResult(
     terminologyMap: string | null;
   },
   jobAnalysis: JobAnalysisData
-) {
+): Promise<Record<string, unknown>> {
   const cachedMatch = safeJsonParse<Record<string, unknown> | null>(job.matchResult, null);
   if (cachedMatch && typeof cachedMatch.overallScore === "number") {
     return cachedMatch;
@@ -101,7 +93,7 @@ async function ensureMatchResult(
     },
   });
 
-  return match;
+  return { ...match };
 }
 
 async function evaluateStoredV2Resume(params: {
@@ -109,7 +101,7 @@ async function evaluateStoredV2Resume(params: {
   sourceSnapshot: SourceProfileSnapshot;
   optimizationPlan: ResumeOptimizationPlan;
   jobAnalysis: JobAnalysisData;
-  matchResult: unknown;
+  matchResult: Record<string, unknown>;
   model?: string;
 }): Promise<ResumeArtifactEvaluation> {
   const validationIssues = validateResumeData(
@@ -122,7 +114,7 @@ async function evaluateStoredV2Resume(params: {
     params.resumeData,
     params.sourceSnapshot,
     params.jobAnalysis,
-    params.matchResult as never,
+    params.matchResult,
     params.optimizationPlan,
     { model: params.model }
   );
@@ -262,7 +254,7 @@ export async function POST(request: NextRequest) {
         const build = await buildResumeQualityVersion({
           profile: generationProfile,
           jobAnalysis,
-          matchResult: matchResult as never,
+          matchResult,
           model: job.aiModel,
         });
 

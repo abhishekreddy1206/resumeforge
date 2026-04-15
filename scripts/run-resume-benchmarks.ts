@@ -4,21 +4,13 @@ import { askJson } from "@/lib/claude/client";
 import { generateTailoredResume, matchProfileToJob } from "@/lib/claude";
 import { prisma } from "@/lib/db";
 import { buildJobAnalysisFromRecord, buildResumeQualityVersion } from "@/lib/resume-quality";
+import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
 interface PairwiseResult {
   winner: "A" | "B" | "tie";
   reasoning: string;
   scanabilityWinner: "A" | "B" | "tie";
-}
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return (value as T) ?? fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 function getMatchScore(job: { matchResult: string | null }) {

@@ -2,17 +2,9 @@ import { prisma } from "@/lib/db";
 import { clusterJobs, type GuideRecommendation } from "@/lib/claude";
 import type { ClusterResult } from "@/lib/claude/skills/job-clusterer";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
+import { safeJsonParse } from "@/lib/utils/json";
 
 export const INSIGHTS_SCORE_THRESHOLD = 60;
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return (value ?? fallback) as T;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function hashString(s: string): string {
   let hash = 0;

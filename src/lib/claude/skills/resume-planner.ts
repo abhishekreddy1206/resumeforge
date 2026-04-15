@@ -8,12 +8,11 @@ import type {
   ResumeOptimizationPlan,
   SourceProfileSnapshot,
 } from "@/lib/types";
-import type { MatchResult } from "./profile-matcher";
 
 export async function planResumeOptimization(
   sourceSnapshot: SourceProfileSnapshot,
   jobAnalysis: JobAnalysisData,
-  matchResult: MatchResult,
+  matchResult: Record<string, unknown>,
   options?: { model?: string; validatorFeedback?: string }
 ): Promise<ResumeOptimizationPlan> {
   const validatorSection = options?.validatorFeedback

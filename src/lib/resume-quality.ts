@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { generateResumeFromPlan } from "@/lib/claude/skills/resume-writer";
 import { evaluateResumeArtifact } from "@/lib/claude/skills/resume-critic";
 import { planResumeOptimization } from "@/lib/claude/skills/resume-planner";
-import type { MatchResult } from "@/lib/claude/skills/profile-matcher";
 import type {
   JobAnalysisData,
   ResumeArtifactEvaluation,
@@ -11,19 +10,9 @@ import type {
   ResumeValidationIssue,
   SourceProfileSnapshot,
 } from "@/lib/types";
+import { safeJsonParse } from "@/lib/utils/json";
 
 const QUALITY_EVALUATION_VERSION = 2;
-
-function safeJsonParse<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") {
-    return (value as T) ?? fallback;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function normalizeText(value: string | null | undefined): string {
   return (value || "")
@@ -782,7 +771,7 @@ function formatValidationFeedback(issues: ResumeValidationIssue[]): string {
 export async function buildResumeQualityVersion(params: {
   profile: Record<string, unknown>;
   jobAnalysis: JobAnalysisData;
-  matchResult: MatchResult;
+  matchResult: Record<string, unknown>;
   model?: string;
 }): Promise<ResumeBuildResult> {
   const sourceSnapshot = createSourceProfileSnapshot(params.profile);

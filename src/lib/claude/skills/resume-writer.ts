@@ -11,7 +11,6 @@ import type {
   ResumeOptimizationPlan,
   SourceProfileSnapshot,
 } from "@/lib/types";
-import type { MatchResult } from "./profile-matcher";
 
 /**
  * Skill: Resume Writer (ATS-Optimized)
@@ -50,7 +49,7 @@ ${JSON.stringify(jobAnalysis)}`, { timeoutMs: 600_000, skill: "resume-writer", m
 export async function generateResumeFromPlan(
   sourceSnapshot: SourceProfileSnapshot,
   jobAnalysis: JobAnalysisData,
-  matchResult: MatchResult,
+  matchResult: Record<string, unknown>,
   plan: ResumeOptimizationPlan,
   options?: { model?: string; validatorFeedback?: string }
 ) {

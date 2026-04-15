@@ -9,15 +9,7 @@ import {
   summarizeResumeQualityTrends,
 } from "@/lib/dashboard-analytics";
 import { SavedSourceChangeType } from "@/generated/prisma/enums";
-
-function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
-  if (typeof value !== "string") return value ?? fallback;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
+import { safeJsonParse } from "@/lib/utils/json";
 
 export async function GET() {
   const [

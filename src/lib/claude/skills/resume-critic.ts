@@ -12,7 +12,6 @@ import type {
   ResumeOptimizationPlan,
   SourceProfileSnapshot,
 } from "@/lib/types";
-import type { MatchResult } from "./profile-matcher";
 
 interface PerspectiveScore {
   perspective: string;
@@ -50,11 +49,16 @@ interface ArtifactEvaluationResponse {
   verdict: "ready" | "needs_review" | "blocked";
 }
 
+/**
+ * Evaluate a resume artifact against source evidence and job requirements.
+ * Returns a partial evaluation — call `finalizeResumeArtifactEvaluation` to
+ * merge deterministic validation issues and compute real metrics.
+ */
 export async function evaluateResumeArtifact(
   resume: ResumeData,
   sourceSnapshot: SourceProfileSnapshot,
   jobAnalysis: JobAnalysisData,
-  matchResult: MatchResult,
+  matchResult: Record<string, unknown>,
   optimizationPlan: ResumeOptimizationPlan,
   options?: { model?: string }
 ): Promise<ResumeArtifactEvaluation> {
