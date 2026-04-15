@@ -12,7 +12,6 @@ enum SavedSourceChangeType {
   initial
   replace
   refresh
-  manual_edit
   migrated
 }
 
@@ -248,7 +247,6 @@ model ApplicationProfile {
   // Name split (computed from Profile.name, editable)
   firstName         String?
   lastName          String?
-  preferredFirstName String?
 
   // Work authorization
   workAuthorized    Boolean?
@@ -261,7 +259,6 @@ model ApplicationProfile {
   noticePeriod      String?  // "immediately" | "2 weeks" | "1 month" | etc.
   preferredWorkMode String?  // "remote" | "hybrid" | "onsite" | "any"
   earliestStartDate String?  // ISO date or "immediately"
-  country           String?
 
   // EEO (voluntary, never sent to AI)
   gender            String?  // "male" | "female" | "non_binary" | "prefer_not_to_say"
@@ -339,9 +336,6 @@ model Guide {
   learningPath     LearningPath?  @relation(fields: [learningPathId], references: [id])
   sources          GuideSource[]
   versions         GuideVersion[]
-  sectionStatuses  String?
-  sectionErrors    String?
-  sectionAttempts  String?
   lastAsyncError   String?
   lastAsyncStage   String?
   createdAt        DateTime       @default(now())
