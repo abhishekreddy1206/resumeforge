@@ -103,22 +103,27 @@ async function evaluateStoredV2Resume(params: {
   jobAnalysis: JobAnalysisData;
   matchResult: Record<string, unknown>;
   model?: string;
-}): Promise<ResumeArtifactEvaluation> {
+}): Promise<ResumeArtifactEvaluation | null> {
   const validationIssues = validateResumeData(
     params.resumeData,
     params.sourceSnapshot,
     params.optimizationPlan,
     params.jobAnalysis
   );
-  const llmEvaluation = await evaluateResumeArtifact(
-    params.resumeData,
-    params.sourceSnapshot,
-    params.jobAnalysis,
-    params.matchResult,
-    params.optimizationPlan,
-    { model: params.model }
-  );
-  return finalizeResumeArtifactEvaluation(llmEvaluation, validationIssues, params.resumeData);
+  try {
+    const llmEvaluation = await evaluateResumeArtifact(
+      params.resumeData,
+      params.sourceSnapshot,
+      params.jobAnalysis,
+      params.matchResult,
+      params.optimizationPlan,
+      { model: params.model }
+    );
+    return finalizeResumeArtifactEvaluation(llmEvaluation, validationIssues, params.resumeData);
+  } catch (err) {
+    console.error("evaluateStoredV2Resume failed:", err);
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -258,7 +263,7 @@ export async function POST(request: NextRequest) {
           model: job.aiModel,
         });
 
-        if (build.hardBlockers.length > 0 || !build.resumeData || !build.evaluation) {
+        if (build.hardBlockers.length > 0 || !build.resumeData) {
           return NextResponse.json(
             {
               error: "Resume generation blocked by validation",

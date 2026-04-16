@@ -11,7 +11,9 @@ import type {
   SourceProfileSnapshot,
 } from "@/lib/types";
 import { safeJsonParse } from "@/lib/utils/json";
+import { createLogger } from "@/lib/logger";
 
+const log = createLogger("resume-quality");
 const QUALITY_EVALUATION_VERSION = 2;
 
 function normalizeText(value: string | null | undefined): string {
@@ -759,7 +761,7 @@ export interface ResumeBuildResult {
   evaluation: ResumeArtifactEvaluation | null;
   hardBlockers: ResumeValidationIssue[];
   warnings: ResumeValidationIssue[];
-  blockedStage: "planner" | "writer" | null;
+  blockedStage: "planner" | "writer" | "evaluator" | null;
 }
 
 function formatValidationFeedback(issues: ResumeValidationIssue[]): string {
@@ -842,14 +844,28 @@ export async function buildResumeQualityVersion(params: {
     }
   }
 
-  const llmEvaluation = await evaluateResumeArtifact(
-    resumeData,
-    sourceSnapshot,
-    params.jobAnalysis,
-    params.matchResult,
-    optimizationPlan,
-    { model: params.model }
-  );
+  let llmEvaluation: ResumeArtifactEvaluation;
+  try {
+    llmEvaluation = await evaluateResumeArtifact(
+      resumeData,
+      sourceSnapshot,
+      params.jobAnalysis,
+      params.matchResult,
+      optimizationPlan,
+      { model: params.model }
+    );
+  } catch (err) {
+    log.error("evaluator_failed", { error: err });
+    return {
+      sourceSnapshot,
+      optimizationPlan,
+      resumeData,
+      evaluation: null,
+      hardBlockers: [],
+      warnings: [...planIssues, ...resumeIssues].filter((e) => e.severity === "soft"),
+      blockedStage: "evaluator",
+    };
+  }
 
   const evaluation = finalizeResumeArtifactEvaluation(
     llmEvaluation,

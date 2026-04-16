@@ -2195,9 +2195,16 @@ function JobsPageInner() {
   }
 
   function getBestScore(job: Job): number | null {
+    // Check v2 quality scores first (reflects actual resume output)
+    const v2Versions = job.profileVersions?.filter(
+      (v) => v.scoreVersion === 2 && v.score > 0
+    );
+    if (v2Versions?.length) {
+      return Math.max(...v2Versions.map((v) => v.score));
+    }
+    // Fall back to match analysis score
     const match = matchResults[job.id];
     if (match) return match.overallScore;
-    // Check cached matchResult from API
     if (job.matchResult) {
       try {
         const cached = JSON.parse(job.matchResult);
@@ -3185,7 +3192,7 @@ function JobsPageInner() {
         onOpenChange={setChatOpen}
         job={chatJob}
         matchResult={chatJob ? matchResults[chatJob.id] || null : null}
-        onVersionSaved={(jobId) => setVersionSavedForJob(jobId)}
+        onVersionSaved={(jobId) => { setVersionSavedForJob(jobId); fetchJobs(page); }}
         autoApplyTips={autoApplyTips}
         onAutoApplyConsumed={() => setAutoApplyTips(false)}
       />

@@ -68,13 +68,17 @@ export async function POST(request: NextRequest) {
       select: { score: true },
     });
 
-    const qualityScore = build.evaluation?.overallScore ?? 0;
-    const baselineQuality = latestV2Version?.score ?? qualityScore;
+    const qualityScore = build.evaluation?.overallScore ?? null;
+    const evaluationFailed = qualityScore === null;
+    const isFirstScore = !latestV2Version;
+    const baselineQuality = latestV2Version?.score ?? 0;
 
     return NextResponse.json({
-      originalScore: baselineQuality,
+      originalScore: isFirstScore ? 0 : baselineQuality,
       newScore: qualityScore,
-      delta: latestV2Version ? qualityScore - baselineQuality : 0,
+      delta: qualityScore != null ? qualityScore - baselineQuality : null,
+      isFirstScore,
+      evaluationFailed,
       matchScore: cachedMatch.overallScore,
       match: cachedMatch,
       optimizationPlan: build.optimizationPlan,

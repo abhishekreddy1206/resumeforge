@@ -40,7 +40,8 @@ interface ChatMessage {
   content: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updatedProfile?: Record<string, any>;
-  scoreComparison?: { before: number; after: number; delta: number };
+  accepted?: boolean;
+  scoreComparison?: { before: number; after: number; delta: number; isFirstScore?: boolean };
   resumeResult?: { id: string; format: string };
   versionSaved?: boolean;
   savedVersionId?: string;
@@ -132,15 +133,22 @@ export function JobChatPanel({
     }
   }, [job, activeJobId]);
 
-  // Load saved sessions for this job
+  // Load saved sessions for this job and auto-load the most recent one
   useEffect(() => {
     if (open && job) {
       fetch(`/api/chats?type=job&jobId=${job.id}`)
         .then((r) => r.json())
-        .then((data) => setSavedSessions(data.sessions || []))
+        .then((data) => {
+          const sessions = data.sessions || [];
+          setSavedSessions(sessions);
+          // Auto-load the most recent session if no messages are loaded yet
+          if (sessions.length > 0 && messages.length === 0 && !chatSessionId) {
+            loadSession(sessions[0].id);
+          }
+        })
         .catch(() => {});
     }
-  }, [open, job]);
+  }, [open, job]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chatSessionIdRef = useRef<string | null>(null);
   const savingRef = useRef(false);
@@ -152,7 +160,16 @@ export function JobChatPanel({
   const saveSession = useCallback(async (msgs?: ChatMessage[]) => {
     const toSave = msgs || messages;
     if (toSave.length === 0 || !job || savingRef.current) return;
-    const serialized = toSave.map((m) => ({ role: m.role, content: m.content }));
+    const serialized = toSave.map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.updatedProfile ? { updatedProfile: m.updatedProfile } : {}),
+      ...(m.accepted ? { accepted: m.accepted } : {}),
+      ...(m.scoreComparison ? { scoreComparison: m.scoreComparison } : {}),
+      ...(m.resumeResult ? { resumeResult: m.resumeResult } : {}),
+      ...(m.versionSaved ? { versionSaved: m.versionSaved } : {}),
+      ...(m.savedVersionId ? { savedVersionId: m.savedVersionId } : {}),
+    }));
     const title = `${job.title} at ${job.company}`;
     savingRef.current = true;
     try {
@@ -227,10 +244,35 @@ export function JobChatPanel({
       const res = await fetch(`/api/chats/${id}`);
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
-      setMessages((data.messages || []).map((m: { role: string; content: string }) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const restored: ChatMessage[] = (data.messages || []).map((m: any) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
-      })));
+        ...(m.updatedProfile ? { updatedProfile: m.updatedProfile } : {}),
+        ...(m.accepted ? { accepted: m.accepted } : {}),
+        ...(m.scoreComparison ? { scoreComparison: m.scoreComparison } : {}),
+        ...(m.resumeResult ? { resumeResult: m.resumeResult } : {}),
+        ...(m.versionSaved ? { versionSaved: m.versionSaved } : {}),
+        ...(m.savedVersionId ? { savedVersionId: m.savedVersionId } : {}),
+      }));
+      setMessages(restored);
+      // Restore temporaryProfile from the most recent accepted message
+      const lastAccepted = [...restored].reverse().find((m) => m.accepted && m.updatedProfile);
+      if (lastAccepted?.updatedProfile) {
+        setTemporaryProfile(lastAccepted.updatedProfile);
+        // Also restore original profile baseline for diffing
+        if (!originalProfile) {
+          fetch("/api/profile")
+            .then((r) => r.json())
+            .then((p) => setOriginalProfile(serializeForDiff(p)))
+            .catch(() => {});
+        }
+      }
+      // Restore latestScore from the most recent score comparison
+      const lastScore = [...restored].reverse().find((m) => m.scoreComparison);
+      if (lastScore?.scoreComparison) {
+        setLatestScore(lastScore.scoreComparison);
+      }
       setChatSessionId(id);
       setShowHistory(false);
     } catch { toast.error("Failed to load chat"); }
@@ -389,11 +431,11 @@ export function JobChatPanel({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleAcceptChanges(updatedProfile: Record<string, any>) {
     setTemporaryProfile(updatedProfile);
-    // Mark the message as accepted
+    // Mark the message as accepted but keep updatedProfile for persistence
     setMessages((prev) =>
       prev.map((m) =>
         m.updatedProfile === updatedProfile
-          ? { ...m, updatedProfile: undefined, content: m.content + "\n(Changes accepted — preview score or generate resume)" }
+          ? { ...m, accepted: true }
           : m
       )
     );
@@ -408,7 +450,7 @@ export function JobChatPanel({
     setMessages((prev) =>
       prev.map((m) =>
         m.updatedProfile === updatedProfile
-          ? { ...m, updatedProfile: undefined, content: m.content + "\n(Discarded)" }
+          ? { ...m, updatedProfile: undefined, accepted: undefined, content: m.content + "\n(Discarded)" }
           : m
       )
     );
@@ -439,24 +481,38 @@ export function JobChatPanel({
       }
 
       const data = await res.json();
-      const comparison = {
-        before: data.originalScore,
-        after: data.newScore,
-        delta: data.delta,
-      };
-      setLatestScore(comparison);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: data.delta > 0
-            ? `Your match score improved by +${data.delta} points!`
-            : data.delta === 0
-              ? "Score unchanged — the changes maintain your current match level."
-              : `Score decreased by ${data.delta} points.`,
-          scoreComparison: comparison,
-        },
-      ]);
+
+      if (data.evaluationFailed) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Resume generated but scoring was unavailable. You can still generate your resume.",
+          },
+        ]);
+      } else {
+        const comparison = {
+          before: data.originalScore,
+          after: data.newScore,
+          delta: data.delta,
+          isFirstScore: data.isFirstScore,
+        };
+        setLatestScore(comparison);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: data.isFirstScore
+              ? `Resume quality score: ${data.newScore}%`
+              : data.delta > 0
+                ? `Your resume quality score improved by +${data.delta} points!`
+                : data.delta === 0
+                  ? "Score unchanged — the changes maintain your current quality level."
+                  : `Score decreased by ${data.delta} points.`,
+            scoreComparison: comparison,
+          },
+        ]);
+      }
     } catch (err) {
       toast.error(
         `Rescore failed: ${err instanceof Error ? err.message : "Unknown error"}`
@@ -783,36 +839,51 @@ export function JobChatPanel({
               {/* Changes card with detailed diff */}
               {msg.updatedProfile && (
                 <div className="ml-10 mr-4">
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30 p-3.5 space-y-2.5">
-                    <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-                      Proposed Changes
+                  <div className={`rounded-xl border p-3.5 space-y-2.5 ${
+                    msg.accepted
+                      ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30"
+                      : "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30"
+                  }`}>
+                    <p className={`text-xs font-semibold uppercase tracking-wider ${
+                      msg.accepted
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-blue-700 dark:text-blue-400"
+                    }`}>
+                      {msg.accepted ? "Accepted Changes" : "Proposed Changes"}
                     </p>
                     <ProfileDiffView
                       diffs={computeDetailedDiff(
                         originalProfile || temporaryProfile || {},
                         msg.updatedProfile
                       )}
-                      accentColor="blue"
+                      accentColor={msg.accepted ? "emerald" : "blue"}
                     />
-                    <div className="flex gap-2 pt-1 flex-wrap">
-                      <Button
-                        size="sm"
-                        onClick={() => handleAcceptChanges(msg.updatedProfile!)}
-                        className="h-7 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Check className="w-3 h-3" />
-                        Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDiscardChanges(msg.updatedProfile!)}
-                        className="h-7 text-xs gap-1.5"
-                      >
-                        <X className="w-3 h-3" />
-                        Discard
-                      </Button>
-                    </div>
+                    {!msg.accepted && (
+                      <div className="flex gap-2 pt-1 flex-wrap">
+                        <Button
+                          size="sm"
+                          onClick={() => handleAcceptChanges(msg.updatedProfile!)}
+                          className="h-7 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Check className="w-3 h-3" />
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDiscardChanges(msg.updatedProfile!)}
+                          className="h-7 text-xs gap-1.5"
+                        >
+                          <X className="w-3 h-3" />
+                          Discard
+                        </Button>
+                      </div>
+                    )}
+                    {msg.accepted && (
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Changes accepted — preview score or generate resume
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -821,7 +892,7 @@ export function JobChatPanel({
               {msg.scoreComparison && (
                 <div className="ml-10 mr-4">
                   <div className={`rounded-xl border p-3.5 space-y-2 ${
-                    msg.scoreComparison.delta > 0
+                    msg.scoreComparison.delta > 0 || msg.scoreComparison.isFirstScore
                       ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30"
                       : msg.scoreComparison.delta < 0
                         ? "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/30"
@@ -831,33 +902,42 @@ export function JobChatPanel({
                       <BarChart3 className="w-3.5 h-3.5" />
                       Score Comparison
                     </p>
-                    <div className="flex items-center gap-3">
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Before</p>
-                        <p className="text-2xl font-bold text-muted-foreground">{msg.scoreComparison.before}%</p>
+                    {msg.scoreComparison.isFirstScore ? (
+                      <div className="flex items-center gap-3">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">Quality Score</p>
+                          <p className="text-2xl font-bold text-emerald-600">{msg.scoreComparison.after}%</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {msg.scoreComparison.delta > 0 ? (
-                          <TrendingUp className="w-5 h-5 text-emerald-600" />
-                        ) : msg.scoreComparison.delta < 0 ? (
-                          <TrendingDown className="w-5 h-5 text-red-600" />
-                        ) : (
-                          <Minus className="w-5 h-5 text-muted-foreground" />
-                        )}
-                        <span className={`text-sm font-bold ${
-                          msg.scoreComparison.delta > 0 ? "text-emerald-600" : msg.scoreComparison.delta < 0 ? "text-red-600" : ""
-                        }`}>
-                          {msg.scoreComparison.delta > 0 ? "+" : ""}{msg.scoreComparison.delta}
-                        </span>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">Before</p>
+                          <p className="text-2xl font-bold text-muted-foreground">{msg.scoreComparison.before}%</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {msg.scoreComparison.delta > 0 ? (
+                            <TrendingUp className="w-5 h-5 text-emerald-600" />
+                          ) : msg.scoreComparison.delta < 0 ? (
+                            <TrendingDown className="w-5 h-5 text-red-600" />
+                          ) : (
+                            <Minus className="w-5 h-5 text-muted-foreground" />
+                          )}
+                          <span className={`text-sm font-bold ${
+                            msg.scoreComparison.delta > 0 ? "text-emerald-600" : msg.scoreComparison.delta < 0 ? "text-red-600" : ""
+                          }`}>
+                            {msg.scoreComparison.delta > 0 ? "+" : ""}{msg.scoreComparison.delta}
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">After</p>
+                          <p className={`text-2xl font-bold ${
+                            msg.scoreComparison.delta > 0 ? "text-emerald-600" : "text-foreground"
+                          }`}>{msg.scoreComparison.after}%</p>
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">After</p>
-                        <p className={`text-2xl font-bold ${
-                          msg.scoreComparison.delta > 0 ? "text-emerald-600" : "text-foreground"
-                        }`}>{msg.scoreComparison.after}%</p>
-                      </div>
-                    </div>
-                    {msg.scoreComparison.delta > 0 && !msg.versionSaved && (
+                    )}
+                    {(msg.scoreComparison.delta > 0 || msg.scoreComparison.isFirstScore) && !msg.versionSaved && (
                       <Button
                         size="sm"
                         variant="outline"
