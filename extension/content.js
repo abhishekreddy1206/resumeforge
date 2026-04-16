@@ -19,7 +19,41 @@
   let isRunning = false;
   let currentJobId = null;
   let hasMarkedApplied = false;
+  let markAppliedInFlight = false;
   const observedFields = new Map(); // fieldKey -> observation data for learning
+  const unresolvedRequiredFields = new Map();
+  const optionalProfileMisses = new Map();
+  const formUtils = globalThis.ResumeForgeFormUtils || {};
+  const flowUtils = globalThis.ResumeForgeApplicationFlowUtils || {};
+
+  const detectPlatformFromUrl =
+    typeof flowUtils.detectPlatformFromUrl === "function"
+      ? flowUtils.detectPlatformFromUrl
+      : () => "default";
+  const buildActiveApplicationState =
+    typeof flowUtils.buildActiveApplicationState === "function"
+      ? flowUtils.buildActiveApplicationState
+      : ({ jobId, url, startedAt, submitAttemptedAt }) => ({
+          jobId,
+          platform: "default",
+          origin: location.origin,
+          host: location.hostname.toLowerCase(),
+          companySlug: null,
+          startedAt: typeof startedAt === "number" ? startedAt : Date.now(),
+          submitAttemptedAt: typeof submitAttemptedAt === "number" ? submitAttemptedAt : null,
+        });
+  const matchesActiveApplicationFlow =
+    typeof flowUtils.matchesActiveApplicationFlow === "function"
+      ? flowUtils.matchesActiveApplicationFlow
+      : () => false;
+  const shouldAttemptLoadConfirmation =
+    typeof flowUtils.shouldAttemptLoadConfirmation === "function"
+      ? flowUtils.shouldAttemptLoadConfirmation
+      : () => false;
+  const isSuccessfulMarkAppliedResponse =
+    typeof flowUtils.isSuccessfulMarkAppliedResponse === "function"
+      ? flowUtils.isSuccessfulMarkAppliedResponse
+      : (response) => !!response && !response.error;
 
   function getCurrentValue(el) {
     const type = detectFieldType(el);
@@ -68,19 +102,7 @@
     default:    { pollDelay: 150, comboboxOpenKey: "ArrowDown" },
   };
 
-  function detectPlatform() {
-    const host = location.hostname.toLowerCase();
-    if (host.includes("greenhouse.io")) return "greenhouse";
-    if (host.includes("myworkdayjobs.com") || host.includes("workday.com")) return "workday";
-    if (host.includes("lever.co")) return "lever";
-    if (host.includes("ashbyhq.com")) return "ashby";
-    if (host.includes("icims.com")) return "icims";
-    if (host.includes("smartrecruiters.com")) return "smartrecruiters";
-    if (host.includes("jobvite.com")) return "jobvite";
-    return "default";
-  }
-
-  const platform = detectPlatform();
+  const platform = detectPlatformFromUrl(location.href);
   const hints = PLATFORM_HINTS[platform] || PLATFORM_HINTS.default;
   let cachedPrefillData = null;
   let cachedJobId = null;
@@ -99,6 +121,131 @@
     return isVisible(el);
   }
 
+  function isFillableHiddenFileInput(el) {
+    if (typeof formUtils.isFillableHiddenFileInput !== "function") return false;
+    return formUtils.isFillableHiddenFileInput(el, isVisible);
+  }
+
+  function isFieldCandidate(el) {
+    return isInteractable(el) || isFillableHiddenFileInput(el);
+  }
+
+  function classifyRequiredField(question) {
+    if (typeof formUtils.classifyRequiredField !== "function") return "general_screening";
+    return formUtils.classifyRequiredField(question);
+  }
+
+  function isRequiredField(el) {
+    return el.hasAttribute("required") || el.getAttribute("aria-required") === "true";
+  }
+
+  function getFieldKey(el, fallbackLabel = "") {
+    return el.name || el.id || el.getAttribute("data-automation-id") || fallbackLabel || "";
+  }
+
+  function getHighlightTarget(el) {
+    if (detectFieldType(el) === "file") {
+      return el.closest(".file-upload, [role='group'], .field-wrapper") || el;
+    }
+    return el;
+  }
+
+  function getGroupLabel(group) {
+    const labelledBy = group.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const labels = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim())
+        .filter(Boolean);
+      if (labels.length > 0) return labels.join(" ");
+    }
+    const explicit = group.querySelector(".upload-label, label, legend");
+    return explicit?.textContent?.trim() || "";
+  }
+
+  function collectUnresolvedField(el, label, reason) {
+    const key = getFieldKey(el, label);
+    if (!key) return;
+    unresolvedRequiredFields.set(key, {
+      key,
+      label,
+      reason,
+    });
+  }
+
+  function clearUnresolvedField(el, label) {
+    const key = getFieldKey(el, label);
+    if (!key) return;
+    unresolvedRequiredFields.delete(key);
+  }
+
+  function collectOptionalProfileMiss(el, label, reason) {
+    const key = getFieldKey(el, label);
+    if (!key) return;
+    optionalProfileMisses.set(key, {
+      key,
+      label,
+      reason,
+    });
+  }
+
+  function clearOptionalProfileMiss(el, label) {
+    const key = getFieldKey(el, label);
+    if (!key) return;
+    optionalProfileMisses.delete(key);
+  }
+
+  function markFieldFilled(el, label) {
+    const key = getFieldKey(el, label);
+    filledElements.add(el);
+    if (key) filledFields.add(key);
+    clearUnresolvedField(el, label);
+    clearOptionalProfileMiss(el, label);
+    return key;
+  }
+
+  async function getActiveApplication() {
+    const response = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_APPLICATION" });
+    if (response?.error) throw new Error(response.error);
+    return response?.activeApplication || null;
+  }
+
+  async function setActiveApplication(jobId) {
+    const existing = await getActiveApplication().catch(() => null);
+    const activeApplication = buildActiveApplicationState({
+      jobId,
+      url: location.href,
+      startedAt:
+        existing?.jobId === jobId && typeof existing.startedAt === "number"
+          ? existing.startedAt
+          : Date.now(),
+      submitAttemptedAt:
+        existing?.jobId === jobId && typeof existing.submitAttemptedAt === "number"
+          ? existing.submitAttemptedAt
+          : null,
+    });
+    const response = await chrome.runtime.sendMessage({
+      type: "SET_ACTIVE_APPLICATION",
+      activeApplication,
+    });
+    if (response?.error) throw new Error(response.error);
+    return response?.activeApplication || activeApplication;
+  }
+
+  async function updateActiveApplication(patch) {
+    const response = await chrome.runtime.sendMessage({
+      type: "UPDATE_ACTIVE_APPLICATION",
+      patch,
+    });
+    if (response?.error) throw new Error(response.error);
+    return response?.activeApplication || null;
+  }
+
+  async function clearActiveApplication() {
+    const response = await chrome.runtime.sendMessage({ type: "CLEAR_ACTIVE_APPLICATION" });
+    if (response?.error) throw new Error(response.error);
+  }
+
   // ── DOM Traversal ──
 
   function deepQueryAll(root, selector) {
@@ -112,6 +259,14 @@
   // ── Label Detection ──
 
   function getLabelText(el) {
+    // 0. File upload groups often carry the real label on the wrapper, not the hidden input.
+    if (detectFieldType(el) === "file") {
+      const uploadGroup = el.closest(".file-upload, [role='group']");
+      if (uploadGroup) {
+        const groupLabel = getGroupLabel(uploadGroup);
+        if (groupLabel) return groupLabel;
+      }
+    }
     // 1. <label for="id">
     if (el.id) {
       try {
@@ -555,6 +710,7 @@
       const dt = new DataTransfer();
       dt.items.add(file);
       fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event("input", { bubbles: true }));
       fileInput.dispatchEvent(new Event("change", { bubbles: true }));
       return true;
     } catch {
@@ -615,6 +771,27 @@
     return path.split(".").reduce((curr, key) => curr?.[key], obj);
   }
 
+  function collectRequiredGroupUnresolved(prefillData) {
+    const groups = deepQueryAll(document, "[role='group'][aria-required='true']");
+    for (const group of groups) {
+      if (!isVisible(group)) continue;
+      const label = getGroupLabel(group);
+      if (!label) continue;
+
+      const fileInput = group.querySelector("input[type='file']");
+      if (!fileInput) continue;
+
+      const key = getFieldKey(fileInput, label);
+      if (filledFields.has(key)) {
+        unresolvedRequiredFields.delete(key);
+        continue;
+      }
+
+      const reason = prefillData.documents?.resumeId ? "upload_failed" : "missing_resume";
+      collectUnresolvedField(fileInput, label, reason);
+    }
+  }
+
   // ── Main Fill Logic ──
 
   async function fillPage(prefillData, jobId) {
@@ -624,13 +801,17 @@
     );
     const screeningQuestions = [];
     let filledCount = 0;
+    let aiAnsweredCount = 0;
+    unresolvedRequiredFields.clear();
+    optionalProfileMisses.clear();
 
     for (const el of inputs) {
-      if (!isInteractable(el)) continue;
+      if (!isFieldCandidate(el)) continue;
       seenElements.add(el); // Mark as visited so multi-page observer won't count it as new
       if (filledElements.has(el)) continue;
 
-      const fieldKey = el.name || el.id || el.getAttribute("data-automation-id") || "";
+      const label = getLabelText(el);
+      const fieldKey = getFieldKey(el, label);
       if (filledFields.has(fieldKey) && fieldKey) continue;
 
       const detectedType = detectFieldType(el);
@@ -642,6 +823,7 @@
       if (!identifiers) continue;
 
       let matched = false;
+      let unresolvedReason = null;
 
       // ── Tier 1: Workday automation ID ──
       const automationId = el.getAttribute("data-automation-id");
@@ -650,6 +832,9 @@
         const value = resolvePath(prefillData, fieldPath);
         if (value != null) {
           matched = await smartFill(el, value);
+          if (!matched && ["select", "combobox", "radio"].includes(detectedType)) {
+            unresolvedReason = "option_mismatch";
+          }
         }
       }
 
@@ -657,58 +842,90 @@
       if (!matched && typeof FIELD_MAP !== "undefined") {
         for (const [fieldPath, config] of Object.entries(FIELD_MAP)) {
           if (!config.keywords.some((re) => re.test(identifiers))) continue;
+          const questionCategory = classifyRequiredField(label || identifiers);
 
           // File inputs need special handling
           if (config.isFile || detectedType === "file") {
             if (fieldPath === "documents.resume" && prefillData.documents?.resumeId) {
               matched = await attachResume(el, prefillData.documents.resumeId);
+              if (!matched) unresolvedReason = "upload_failed";
+            } else if (fieldPath === "documents.resume") {
+              unresolvedReason = "missing_resume";
             }
           } else {
             const value = resolvePath(prefillData, fieldPath);
-            if (value != null) {
+            if (value != null && value !== "") {
               matched = await smartFill(el, value);
-              if (matched && detectedType === "radio" && el.name) {
-                processedRadioGroups.add(el.name);
+              if (!matched) {
+                unresolvedReason = ["select", "combobox", "radio"].includes(detectedType)
+                  ? "option_mismatch"
+                  : "unsupported_field";
+              }
+            } else if (questionCategory === "sensitive_demographic") {
+              unresolvedReason = "sensitive_unset";
+            } else if (questionCategory === "deterministic_profile") {
+              unresolvedReason = "missing_profile_value";
+              if (!isRequiredField(el)) {
+                collectOptionalProfileMiss(el, label || identifiers, unresolvedReason);
               }
             }
+            if (matched && detectedType === "radio" && el.name) {
+              processedRadioGroups.add(el.name);
+            }
           }
-          if (matched) break;
+          if (matched || unresolvedReason) break;
         }
       }
 
       if (matched) {
         filledCount++;
-        filledElements.add(el);
-        if (fieldKey) filledFields.add(fieldKey);
+        markFieldFilled(el, label);
         if (detectedType === "radio" && el.name) processedRadioGroups.add(el.name);
-        highlightField(el, "standard");
+        highlightField(getHighlightTarget(el), "standard");
         // Track for observation
-        const obsKey = fieldKey || getLabelText(el) || String(filledCount);
+        const obsKey = fieldKey || label || String(filledCount);
         observedFields.set(obsKey, {
           element: el,
-          question: getLabelText(el) || identifiers,
+          question: label || identifiers,
           filledValue: getCurrentValue(el),
           fieldType: detectedType,
           options: el.__rfOptions || extractOptions(el),
           source: "standard",
           userChanged: false,
         });
-      } else if (el.hasAttribute("required") || el.getAttribute("aria-required") === "true") {
+      } else if (isRequiredField(el)) {
         // Unmatched required field — screening question candidate
-        const label = getLabelText(el);
         if (label && label.length > 2) {
+          const questionCategory = classifyRequiredField(label);
+          if (detectedType === "file") {
+            const reason = unresolvedReason || (prefillData.documents?.resumeId ? "upload_failed" : "missing_resume");
+            collectUnresolvedField(el, label, reason);
+            highlightField(getHighlightTarget(el), "needs-input");
+            continue;
+          }
+          if (questionCategory === "sensitive_demographic") {
+            collectUnresolvedField(el, label, unresolvedReason || "sensitive_unset");
+            highlightField(getHighlightTarget(el), "needs-input");
+            continue;
+          }
+          if (questionCategory === "deterministic_profile") {
+            collectUnresolvedField(el, label, unresolvedReason || "missing_profile_value");
+            highlightField(getHighlightTarget(el), "needs-input");
+            continue;
+          }
+
           // For dropdowns: include available options so the API can match against them
           const options = (detectedType === "select" || detectedType === "combobox")
             ? extractOptions(el)
             : [];
-          screeningQuestions.push({ element: el, question: label, options });
+          screeningQuestions.push({ element: el, question: label, options, fieldKey });
         }
       }
     }
 
     // ── Handle screening questions via batch API call ──
     const filteredSqs = screeningQuestions.filter(
-      (sq) => !filledFields.has(sq.element.name || sq.element.id || sq.question)
+      (sq) => !filledFields.has(sq.fieldKey || sq.question)
     );
 
     if (filteredSqs.length > 0) {
@@ -727,16 +944,24 @@
           for (let i = 0; i < answers.length; i++) {
             const sq = filteredSqs[i];
             const resp = answers[i];
-            if (!resp?.answer) continue;
-            const fieldKey = sq.element.name || sq.element.id || sq.question;
+            const fieldKey = sq.fieldKey || sq.question;
             if (filledFields.has(fieldKey)) continue;
+            if (!resp?.answer) {
+              collectUnresolvedField(sq.element, sq.question, resp?.reason || "unsupported_field");
+              highlightField(getHighlightTarget(sq.element), "needs-input");
+              continue;
+            }
+
             const filled = await smartFill(sq.element, resp.answer);
             // Always mark as attempted so multi-page observer doesn't re-trigger
             filledElements.add(sq.element);
-            filledFields.add(fieldKey);
             if (filled) {
-              highlightField(sq.element, resp.source || "ai");
+              markFieldFilled(sq.element, sq.question);
+              highlightField(getHighlightTarget(sq.element), resp.source || "ai");
               filledCount++;
+              if (resp.source === "ai") aiAnsweredCount++;
+            } else {
+              collectUnresolvedField(sq.element, sq.question, resp.reason || "option_mismatch");
             }
             // Track for observation — both filled and unfilled
             const detectedType = detectFieldType(sq.element);
@@ -751,31 +976,41 @@
             });
             // Highlight unfilled fields as needing user attention
             if (!filled) {
-              highlightField(sq.element, "needs-input");
+              highlightField(getHighlightTarget(sq.element), "needs-input");
             }
           }
         }
       } catch {
-        // Batch failed — skip screening questions
+        for (const sq of filteredSqs) {
+          collectUnresolvedField(sq.element, sq.question, "unsupported_field");
+          highlightField(getHighlightTarget(sq.element), "needs-input");
+        }
       }
     }
+
+    collectRequiredGroupUnresolved(prefillData);
 
     // Cache for multi-page re-fill
     cachedPrefillData = prefillData;
     cachedJobId = jobId;
 
     // Persist active job so confirmation detection survives full-page navigations
-    chrome.storage.session.set({ activeJobId: jobId, activeJobOrigin: location.origin });
+    await setActiveApplication(jobId);
 
     // Set up submission detection after filling
-    if (filledCount > 0) setupSubmissionDetection(jobId);
+    setupSubmissionDetection();
 
     // Set up multi-page observer (once per session)
     if (!multiPageObserver) setupMultiPageObserver();
     // Set up field observers for learning
     setupFieldObservers();
 
-    return { filledCount, screeningQuestions: screeningQuestions.length };
+    return {
+      filledCount,
+      screeningQuestions: aiAnsweredCount,
+      unresolvedRequiredFields: [...unresolvedRequiredFields.values()],
+      optionalProfileMisses: [...optionalProfileMisses.values()],
+    };
   }
 
   // ── Submission Detection ──
@@ -784,113 +1019,155 @@
   const CONFIRM_URL_RE = /(?:application.?|submit.?|apply.?)(?:submitted|success|complete|confirm|received)|thank.?you.?for.?(?:applying|your.?application)/i;
   const CONFIRM_TEXT_RE = /application\s+(has\s+been\s+)?submitted|thank you for (applying|your application)|we('ve| have) received your application|successfully submitted|your application has been received/i;
 
-  // On page load, check if this is a post-submission confirmation page
-  // (handles full-page navigations where in-memory state is lost)
-  chrome.storage.session.get(["activeJobId", "activeJobOrigin"], (data) => {
-    if (!data.activeJobId) return;
-    if (data.activeJobOrigin && data.activeJobOrigin !== location.origin) return;
-
-    function checkAndMark() {
-      if (hasMarkedApplied) return;
-      const urlMatch = CONFIRM_URL_RE.test(location.href);
-      const bodyText = document.body?.innerText || "";
-      const textMatch = bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
-      if (urlMatch || textMatch) {
-        hasMarkedApplied = true;
-        chrome.storage.session.remove(["activeJobId", "activeJobOrigin"]);
-        chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId: data.activeJobId }).catch(() => {});
-      }
-    }
-
-    setTimeout(checkAndMark, 500);
-    setTimeout(checkAndMark, 2000);
-  });
-
   let submissionDetectionSetUp = false;
   let submissionAttempted = false;
+  let confirmationDetectionArmed = false;
 
-  function setupSubmissionDetection(jobId) {
-    if (hasMarkedApplied || submissionDetectionSetUp) return;
-    submissionDetectionSetUp = true;
+  function collectObservations() {
+    const observations = [];
+    for (const [, data] of observedFields) {
+      const finalValue = getCurrentValue(data.element);
+      if (!finalValue || !data.question) continue;
+      observations.push({
+        question: data.question,
+        answer: finalValue,
+        fieldType: data.fieldType,
+        options: data.options || [],
+        wasAutoFilled: data.filledValue !== null,
+        wasUserCorrected: data.userChanged,
+        originalFillValue: data.filledValue,
+      });
+    }
+    return observations;
+  }
 
-    function collectObservations() {
-      const observations = [];
-      for (const [, data] of observedFields) {
-        const finalValue = getCurrentValue(data.element);
-        if (!finalValue || !data.question) continue;
-        observations.push({
-          question: data.question,
-          answer: finalValue,
-          fieldType: data.fieldType,
-          options: data.options || [],
-          wasAutoFilled: data.filledValue !== null,
-          wasUserCorrected: data.userChanged,
-          originalFillValue: data.filledValue,
-        });
+  function scheduleConfirmationCheck(delayMs) {
+    setTimeout(() => {
+      if (checkConfirmation()) {
+        void markApplied();
       }
-      return observations;
-    }
+    }, delayMs);
+  }
 
-    async function markApplied() {
-      if (hasMarkedApplied || !jobId) return;
+  async function markApplied() {
+    if (hasMarkedApplied || markAppliedInFlight) return;
+    const activeApplication = await getActiveApplication().catch(() => null);
+    if (!activeApplication?.jobId) return;
+
+    markAppliedInFlight = true;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "MARK_APPLIED",
+        jobId: activeApplication.jobId,
+      });
+      if (!isSuccessfulMarkAppliedResponse(response)) {
+        throw new Error(response?.error || "Failed to update job");
+      }
+
       hasMarkedApplied = true;
-      chrome.storage.session.remove(["activeJobId", "activeJobOrigin"]);
-      try {
-        await chrome.runtime.sendMessage({ type: "MARK_APPLIED", jobId });
-        const observations = collectObservations();
-        if (observations.length > 0) {
-          await chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations });
-        }
-      } catch { /* silent */ }
+      await clearActiveApplication();
+
+      const observations = collectObservations();
+      if (observations.length > 0) {
+        await chrome.runtime.sendMessage({ type: "LEARN_ANSWERS", observations }).catch(() => {});
+      }
+    } catch {
+      // Keep the active flow so a later confirmation mutation or reload can retry.
+    } finally {
+      markAppliedInFlight = false;
+    }
+  }
+
+  function checkConfirmation() {
+    if (hasMarkedApplied) return false;
+    if (!confirmationDetectionArmed) return false;
+    if (CONFIRM_URL_RE.test(location.href)) return true;
+    const bodyText = document.body?.innerText || "";
+    return bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
+  }
+
+  function isFinalSubmitControl(el) {
+    if (!el) return false;
+
+    const textParts = [
+      el.textContent,
+      el.value,
+      el.getAttribute?.("aria-label"),
+      el.getAttribute?.("title"),
+      el.getAttribute?.("data-automation-id"),
+      el.name,
+      el.id,
+      typeof el.className === "string" ? el.className : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    if (!textParts) {
+      return String(el.getAttribute?.("type") || "").toLowerCase() === "submit";
     }
 
-    function checkConfirmation() {
-      if (hasMarkedApplied) return false;
-      if (CONFIRM_URL_RE.test(location.href)) return true;
-      // Only check body text if a submit was actually attempted
-      if (!submissionAttempted) return false;
-      const bodyText = document.body?.innerText || "";
-      return bodyText.length > 0 && CONFIRM_TEXT_RE.test(bodyText);
+    const hasFinalAction = /\b(submit|apply|send)(?:\b|_)/i.test(textParts);
+    if (!hasFinalAction && /\b(next|continue|review|back|previous|cancel|save)(?:\b|_)/i.test(textParts)) {
+      return false;
     }
 
-    function onSubmitAttempt() {
-      submissionAttempted = true;
-      setTimeout(() => { if (checkConfirmation()) markApplied(); }, 2000);
-      setTimeout(() => { if (checkConfirmation()) markApplied(); }, 5000);
+    if (String(el.getAttribute?.("type") || "").toLowerCase() === "submit") {
+      return true;
     }
+
+    return hasFinalAction;
+  }
+
+  function findSubmitControl(target) {
+    if (!(target instanceof Element)) return null;
+    return target.closest('button, input, a[role="button"], [role="button"]');
+  }
+
+  async function onSubmitAttempt() {
+    submissionAttempted = true;
+    confirmationDetectionArmed = true;
+    const currentFlow = buildActiveApplicationState({
+      jobId: currentJobId,
+      url: location.href,
+    });
+    await updateActiveApplication({
+      submitAttemptedAt: Date.now(),
+      platform: currentFlow.platform,
+      origin: currentFlow.origin,
+      host: currentFlow.host,
+      companySlug: currentFlow.companySlug,
+    }).catch(() => {});
+    scheduleConfirmationCheck(2000);
+    scheduleConfirmationCheck(5000);
+  }
+
+  function setupSubmissionDetection() {
+    if (submissionDetectionSetUp) return;
+    submissionDetectionSetUp = true;
 
     // Method 1: DOM mutation observer (watches for confirmation after URL change or submit)
     const domObserver = new MutationObserver(() => {
       if (hasMarkedApplied) { domObserver.disconnect(); return; }
       if (checkConfirmation()) {
         domObserver.disconnect();
-        markApplied();
+        void markApplied();
       }
     });
     domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-    // Method 2: Submit button click listeners
-    const submitSelectors = [
-      'button[type="submit"]', 'input[type="submit"]',
-      'button[class*="submit"]', 'button[class*="apply"]',
-      'button[data-automation-id*="submit"]', 'button[data-automation-id*="apply"]',
-    ];
-    const submitButtons = document.querySelectorAll(submitSelectors.join(", "));
-    for (const btn of submitButtons) {
-      btn.addEventListener("click", onSubmitAttempt, { once: true });
-    }
-    // Also match buttons by text content
-    for (const btn of document.querySelectorAll("button, a[role='button']")) {
-      const text = btn.textContent?.trim().toLowerCase() || "";
-      if (/^(submit|apply|send)\b/.test(text)) {
-        btn.addEventListener("click", onSubmitAttempt, { once: true });
+    // Method 2: Capture delegated click listeners for submit/apply controls
+    document.addEventListener("click", (event) => {
+      const control = findSubmitControl(event.target);
+      if (isFinalSubmitControl(control)) {
+        void onSubmitAttempt();
       }
-    }
+    }, true);
 
-    // Method 3: Form submit event listeners
-    for (const form of document.querySelectorAll("form")) {
-      form.addEventListener("submit", onSubmitAttempt, { once: true });
-    }
+    // Method 3: Capture delegated form submits
+    document.addEventListener("submit", () => {
+      void onSubmitAttempt();
+    }, true);
 
     // Method 4: beforeunload — save observations for learning, but do NOT mark as applied
     window.addEventListener("beforeunload", () => {
@@ -902,6 +1179,23 @@
       }
     });
   }
+
+  async function restoreActiveApplicationOnLoad() {
+    const activeApplication = await getActiveApplication().catch(() => null);
+    if (!matchesActiveApplicationFlow(activeApplication, location.href)) return;
+
+    currentJobId = activeApplication.jobId;
+    confirmationDetectionArmed = shouldAttemptLoadConfirmation(activeApplication, location.href);
+    submissionAttempted = false;
+    setupSubmissionDetection();
+
+    if (confirmationDetectionArmed) {
+      scheduleConfirmationCheck(500);
+      scheduleConfirmationCheck(2000);
+    }
+  }
+
+  void restoreActiveApplicationOnLoad();
 
   // ── Multi-Page Auto-Fill ──
 
@@ -920,7 +1214,7 @@
       );
       let newFieldCount = 0;
       for (const el of allInputs) {
-        if (!isInteractable(el)) continue;
+        if (!isFieldCandidate(el)) continue;
         if (seenElements.has(el)) continue; // Skip any element already visited by fillPage
         newFieldCount++;
       }
@@ -957,14 +1251,18 @@
     if (msg.type === "FILL_FORM" && !isRunning) {
       // Reset state if switching to a different job
       if (msg.jobId !== currentJobId) {
+        void clearActiveApplication().catch(() => {});
         filledFields.clear();
         filledElements = new WeakSet();
         seenElements = new WeakSet();
         processedRadioGroups.clear();
         observedFields.clear();
+        unresolvedRequiredFields.clear();
+        optionalProfileMisses.clear();
         hasMarkedApplied = false;
-        submissionDetectionSetUp = false;
         submissionAttempted = false;
+        confirmationDetectionArmed = false;
+        markAppliedInFlight = false;
         if (multiPageObserver) {
           multiPageObserver.disconnect();
           multiPageObserver = null;
@@ -981,7 +1279,13 @@
       return true;
     }
     if (msg.type === "GET_STATUS") {
-      sendResponse({ filledCount: filledFields.size, isRunning, url: window.location.href });
+      sendResponse({
+        filledCount: filledFields.size,
+        unresolvedCount: unresolvedRequiredFields.size,
+        optionalMissCount: optionalProfileMisses.size,
+        isRunning,
+        url: window.location.href,
+      });
       return false;
     }
   });

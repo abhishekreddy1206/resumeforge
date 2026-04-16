@@ -5,6 +5,7 @@
 
 const DEFAULT_API_URL = "http://localhost:3000";
 const ARTICLE_CAPTURE_MAX_CHARS = 100000;
+const ACTIVE_APPLICATION_PREFIX = "activeApplication:";
 
 function safeHostname(url) {
   try { return new URL(url).hostname.toLowerCase(); } catch { return ""; }
@@ -97,8 +98,47 @@ async function apiFetch(path, options = {}) {
   return res;
 }
 
+function getActiveApplicationStorageKey(tabId) {
+  return `${ACTIVE_APPLICATION_PREFIX}${tabId}`;
+}
+
+function resolveTabId(sender, msg) {
+  if (typeof sender?.tab?.id === "number") return sender.tab.id;
+  if (typeof msg?.tabId === "number") return msg.tabId;
+  return null;
+}
+
+async function getActiveApplication(tabId) {
+  const key = getActiveApplicationStorageKey(tabId);
+  const result = await chrome.storage.session.get(key);
+  return result[key] || null;
+}
+
+async function setActiveApplication(tabId, activeApplication) {
+  const key = getActiveApplicationStorageKey(tabId);
+  await chrome.storage.session.set({ [key]: activeApplication });
+  return activeApplication;
+}
+
+async function updateActiveApplication(tabId, patch) {
+  const current = await getActiveApplication(tabId);
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await setActiveApplication(tabId, next);
+  return next;
+}
+
+async function clearActiveApplication(tabId) {
+  const key = getActiveApplicationStorageKey(tabId);
+  await chrome.storage.session.remove(key);
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void clearActiveApplication(tabId);
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  handleMessage(msg)
+  handleMessage(msg, sender)
     .then(sendResponse)
     .catch((err) => sendResponse({
       error: err.message,
@@ -136,7 +176,30 @@ function buildArticleCapturePayload(extraction) {
   };
 }
 
-async function handleMessage(msg) {
+function buildJobCapturePayload(extraction) {
+  return {
+    url: extraction.url,
+    description: ((extraction.text || "").trim()).slice(0, 15000),
+    source: "extension",
+    titleHint: extraction.title || null,
+    companyHint: extraction.company || null,
+    locationHint: extraction.location || null,
+    captureDiagnostics: {
+      selectedSelector: extraction.selectedSelector || null,
+      selectedTextLength:
+        typeof extraction.selectedTextLength === "number" ? extraction.selectedTextLength : null,
+      bodyTextLength:
+        typeof extraction.bodyTextLength === "number" ? extraction.bodyTextLength : null,
+      candidateLengths:
+        extraction.candidateLengths && typeof extraction.candidateLengths === "object"
+          ? extraction.candidateLengths
+          : {},
+      metadata: extraction.metadata && typeof extraction.metadata === "object" ? extraction.metadata : {},
+    },
+  };
+}
+
+async function handleMessage(msg, sender) {
   switch (msg.type) {
     case "GET_JOBS": {
       const res = await apiFetch("/api/jobs?hasResumes=true&excludeApplied=true&pageSize=50");
@@ -240,9 +303,40 @@ async function handleMessage(msg) {
     case "INJECT_SCRIPTS": {
       await chrome.scripting.executeScript({
         target: { tabId: msg.tabId },
-        files: ["field-map.js", "content.js"],
+        files: ["application-flow-utils.js", "field-map.js", "form-fill-utils.js", "content.js"],
       });
       return { injected: true };
+    }
+
+    case "GET_ACTIVE_APPLICATION": {
+      const tabId = resolveTabId(sender, msg);
+      if (tabId == null) throw new Error("No tab context available");
+      return { activeApplication: await getActiveApplication(tabId) };
+    }
+
+    case "SET_ACTIVE_APPLICATION": {
+      const tabId = resolveTabId(sender, msg);
+      if (tabId == null) throw new Error("No tab context available");
+      if (!msg.activeApplication || typeof msg.activeApplication !== "object") {
+        throw new Error("activeApplication is required");
+      }
+      return { activeApplication: await setActiveApplication(tabId, msg.activeApplication) };
+    }
+
+    case "UPDATE_ACTIVE_APPLICATION": {
+      const tabId = resolveTabId(sender, msg);
+      if (tabId == null) throw new Error("No tab context available");
+      if (!msg.patch || typeof msg.patch !== "object") {
+        throw new Error("patch is required");
+      }
+      return { activeApplication: await updateActiveApplication(tabId, msg.patch) };
+    }
+
+    case "CLEAR_ACTIVE_APPLICATION": {
+      const tabId = resolveTabId(sender, msg);
+      if (tabId == null) throw new Error("No tab context available");
+      await clearActiveApplication(tabId);
+      return { cleared: true };
     }
 
     case "MARK_APPLIED": {
@@ -281,18 +375,18 @@ async function handleMessage(msg) {
       }
 
       if (captureType === "job") {
-        // Cap text and POST to jobs endpoint
-        const description = text.slice(0, 15000);
         const res = await apiFetch("/api/jobs", {
           method: "POST",
-          body: JSON.stringify({
-            url: extraction.url,
-            description,
-            source: "extension",
-          }),
+          body: JSON.stringify(buildJobCapturePayload(extraction)),
         });
         const job = await res.json();
-        return { success: true, captureType: "job", title: job.title, id: job.id };
+        return {
+          success: true,
+          captureType: "job",
+          title: extraction.title || job.captureTitle || job.title,
+          company: extraction.company || job.company,
+          id: job.id,
+        };
       }
 
       if (captureType === "article") {
