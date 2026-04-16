@@ -55,9 +55,18 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     resumeSynonyms: string[];
   }>;
 
-  const match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
-    model: job.aiModel,
-  });
+  let match;
+  try {
+    match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
+      model: job.aiModel,
+    });
+  } catch (err) {
+    // Retry once for transient API failures (stream timeout, etc.)
+    task.step("match_retry", { error: String(err) });
+    match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
+      model: job.aiModel,
+    });
+  }
 
   await prisma.job.update({
     where: { id: jobId },

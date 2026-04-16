@@ -15,6 +15,36 @@ const CLAUDE_PATH = (() => {
 
 const log = createLogger("claude");
 
+/**
+ * Simple Promise-based semaphore to limit concurrent Claude CLI processes.
+ * Prevents starvation when multiple auto-pipeline runs spawn `claude -p`
+ * simultaneously — the CLI can't reliably handle concurrent instances.
+ */
+class Semaphore {
+  private queue: (() => void)[] = [];
+  private current = 0;
+  constructor(private max: number) {}
+  async acquire(): Promise<void> {
+    if (this.current < this.max) {
+      this.current++;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+  release(): void {
+    this.current--;
+    const next = this.queue.shift();
+    if (next) {
+      this.current++;
+      next();
+    }
+  }
+}
+
+const cliSemaphore = new Semaphore(1);
+
 export interface AskOptions {
   timeoutMs?: number;
   model?: string;
@@ -221,99 +251,112 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
   const timeoutMs = Math.min(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const model = options?.model ?? "sonnet";
   const skill = options?.skill;
-  log.info("ai_call_start", { skill, model, promptLength: prompt.length });
+
+  await cliSemaphore.acquire();
   const startTime = Date.now();
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(
-      CLAUDE_PATH,
-      ["-p", "--output-format", "json", "--no-session-persistence", "--model", model],
-      {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: buildClaudeEnv(),
-      }
-    );
-
-    let stdout = "";
-    let stderr = "";
-
-    const timer = setTimeout(() => {
-      const durationMs = Date.now() - startTime;
-      log.error("ai_timeout", { skill, model, timeoutMs, durationMs });
-      proc.kill("SIGTERM");
-      reject(new Error("Claude CLI timed out after " + timeoutMs + "ms"));
-    }, timeoutMs);
-
-    proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    proc.on("error", (err) => {
-      clearTimeout(timer);
-      log.error("ai_spawn_failed", { claudePath: CLAUDE_PATH, error: err });
-      reject(
-        new Error(
-          `Failed to start claude CLI. Is Claude Code installed? ${err.message}`
-        )
-      );
-    });
-
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      const elapsed = Date.now() - startTime;
-
-      if (code !== 0) {
-        log.error("ai_cli_failed", {
-          skill,
-          model,
-          exitCode: code,
-          durationMs: elapsed,
-          stderrPreview: stderr.slice(0, 200),
-        });
-        reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout}`));
-        return;
-      }
-
-      // Parse JSON envelope from CLI output
-      let result: string;
-      try {
-        const envelope: CLIEnvelope = JSON.parse(stdout);
-        result = envelope.result || stdout.trim();
-
-        const usage = envelope.usage;
-        log.info("ai_call_complete", {
-          skill,
-          model,
-          durationMs: elapsed,
-          inputTokens: usage?.input_tokens,
-          outputTokens: usage?.output_tokens,
-          cacheReadTokens: usage?.cache_read_input_tokens,
-          costUsd: envelope.total_cost_usd,
-          responseLength: result.length,
-        });
-
-        // Fire-and-forget token logging
-        if (skill) {
-          logTokenUsage(skill, envelope).catch((err) =>
-            log.warn("token_logging_failed", { error: err })
-          );
+  log.info("ai_call_start", { skill, model, promptLength: prompt.length });
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const proc = spawn(
+        CLAUDE_PATH,
+        ["-p", "--output-format", "json", "--no-session-persistence", "--model", model],
+        {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: buildClaudeEnv(),
         }
-      } catch {
-        // Fallback: if JSON parse fails, treat as raw text
-        log.warn("cli_envelope_parse_failed", { stdoutLength: stdout.length });
-        result = stdout.trim();
-      }
+      );
 
-      resolve(result);
+      let stdout = "";
+      let stderr = "";
+
+      const timer = setTimeout(() => {
+        const durationMs = Date.now() - startTime;
+        log.error("ai_timeout", { skill, model, timeoutMs, durationMs });
+        proc.kill("SIGTERM");
+        // Force-kill if SIGTERM doesn't work within 5 seconds
+        const killTimer = setTimeout(() => {
+          if (proc.exitCode === null) {
+            log.warn("ai_force_kill", { skill, model });
+            proc.kill("SIGKILL");
+          }
+        }, 5_000);
+        killTimer.unref();
+        reject(new Error("Claude CLI timed out after " + timeoutMs + "ms"));
+      }, timeoutMs);
+
+      proc.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timer);
+        log.error("ai_spawn_failed", { claudePath: CLAUDE_PATH, error: err });
+        reject(
+          new Error(
+            `Failed to start claude CLI. Is Claude Code installed? ${err.message}`
+          )
+        );
+      });
+
+      proc.on("close", (code) => {
+        clearTimeout(timer);
+        const elapsed = Date.now() - startTime;
+
+        if (code !== 0) {
+          log.error("ai_cli_failed", {
+            skill,
+            model,
+            exitCode: code,
+            durationMs: elapsed,
+            stderrPreview: stderr.slice(0, 200),
+          });
+          reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout}`));
+          return;
+        }
+
+        // Parse JSON envelope from CLI output
+        let result: string;
+        try {
+          const envelope: CLIEnvelope = JSON.parse(stdout);
+          result = envelope.result || stdout.trim();
+
+          const usage = envelope.usage;
+          log.info("ai_call_complete", {
+            skill,
+            model,
+            durationMs: elapsed,
+            inputTokens: usage?.input_tokens,
+            outputTokens: usage?.output_tokens,
+            cacheReadTokens: usage?.cache_read_input_tokens,
+            costUsd: envelope.total_cost_usd,
+            responseLength: result.length,
+          });
+
+          // Fire-and-forget token logging
+          if (skill) {
+            logTokenUsage(skill, envelope).catch((err) =>
+              log.warn("token_logging_failed", { error: err })
+            );
+          }
+        } catch {
+          // Fallback: if JSON parse fails, treat as raw text
+          log.warn("cli_envelope_parse_failed", { stdoutLength: stdout.length });
+          result = stdout.trim();
+        }
+
+        resolve(result);
+      });
+
+      proc.stdin.write(prompt);
+      proc.stdin.end();
     });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
+  } finally {
+    cliSemaphore.release();
+  }
 }
 
 /**
