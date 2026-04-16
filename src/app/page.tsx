@@ -12,7 +12,6 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
-  TrendingUp,
   User,
   ArrowRight,
 } from "lucide-react";
@@ -127,17 +126,18 @@ interface AnalyticsData {
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-8">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="space-y-10">
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-16 w-3/4" />
+        <Skeleton className="h-20 w-2/3" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-lg" />
+          <Skeleton key={i} className="h-28" />
         ))}
       </div>
-      <Skeleton className="h-48 rounded-lg" />
-      <div className="grid md:grid-cols-2 gap-4">
-        <Skeleton className="h-64 rounded-lg" />
-        <Skeleton className="h-64 rounded-lg" />
-      </div>
+      <Skeleton className="h-48" />
     </div>
   );
 }
@@ -149,11 +149,42 @@ function MiniBarChart({ data }: { data: Array<{ day: string; cost: number }> }) 
       {data.map((d) => (
         <div
           key={d.day}
-          className="flex-1 bg-primary/60 hover:bg-primary rounded-t transition-colors cursor-pointer group relative"
+          className="flex-1 bg-primary/60 hover:bg-primary transition-colors cursor-pointer group relative"
           style={{ height: `${(d.cost / maxCost) * 100}%`, minHeight: d.cost > 0 ? "2px" : "0px" }}
           title={`${d.day}: $${d.cost.toFixed(4)}`}
         />
       ))}
+    </div>
+  );
+}
+
+// Roman numerals for section folios
+const ROMAN = ["I.", "II.", "III.", "IV.", "V.", "VI.", "VII.", "VIII.", "IX.", "X."];
+
+function SectionHead({
+  index,
+  title,
+  kicker,
+}: {
+  index: number;
+  title: string;
+  kicker?: string;
+}) {
+  return (
+    <div className="section-head">
+      <span
+        style={{
+          fontFamily: "var(--font-dm-mono)",
+          fontSize: "0.625rem",
+          letterSpacing: "0.2em",
+          color: "var(--marginalia)",
+          fontWeight: 500,
+        }}
+      >
+        §&nbsp;{ROMAN[index] ?? `${index + 1}.`}
+      </span>
+      <span className="section-title">{title}</span>
+      {kicker && <span className="section-kicker">{kicker}</span>}
     </div>
   );
 }
@@ -166,22 +197,36 @@ export default function Dashboard() {
   const [aiUsageOpen, setAiUsageOpen] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     Promise.all([
       fetch("/api/profile").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/jobs?pageSize=5").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/analytics").then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([p, j, a]) => {
+      .then(([p, j]) => {
+        if (cancelled) return;
         setProfile(p);
         setJobs(Array.isArray(j) ? j : (j?.jobs ?? []));
-        setAnalytics(a);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    fetch("/api/analytics")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((a) => {
+        if (!cancelled) setAnalytics(a);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto py-8 px-4">
+      <div className="py-4">
         <DashboardSkeleton />
       </div>
     );
@@ -201,309 +246,422 @@ export default function Dashboard() {
     }
   }
 
+  let sectionIndex = 0;
+
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8">
-      {/* Hero */}
-      <section>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {firstName ? `Welcome back, ${firstName}` : "Welcome to ResumeForge"}
+    <div className="space-y-12">
+      {/* ─── FRONT-PAGE FLAG ─── */}
+      <section className="anim-fade-up">
+        <div className="folio">
+          <span>{firstName ? "From the Desk of" : "No. 1 — Inaugural Issue"}</span>
+          {firstName && <span className="folio-sep" />}
+          {firstName && <span>{firstName}</span>}
+          <span className="folio-sep" />
+          <span>Job Search Command Center</span>
+          <span className="folio-sep" />
+          <span style={{ marginLeft: "auto" }}>Ed. Claude · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+        </div>
+
+        <h1
+          className="mt-6 text-[3.25rem] sm:text-[4rem] leading-[0.94] tracking-tight text-foreground"
+          style={{
+            fontFamily: "var(--font-cormorant)",
+            fontStyle: "italic",
+            fontWeight: 400,
+            letterSpacing: "-0.025em",
+          }}
+        >
+          {firstName ? (
+            <>
+              Good afternoon,
+              <br />
+              <span className="text-gradient">{firstName}.</span>
+            </>
+          ) : (
+            <>
+              A Quiet Press
+              <br />
+              <span className="text-gradient">for Loud Work.</span>
+            </>
+          )}
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {hasProfile ? "Your job search command center" : "AI-powered resume tailoring for every job application"}
+
+        <p
+          className="mt-6 max-w-xl text-[1.05rem] leading-relaxed text-foreground/80 drop-cap"
+          style={{ fontFamily: "var(--font-geist-sans)" }}
+        >
+          {hasProfile
+            ? "The week's intelligence is below: active targets, strongest matches, where your résumé stands against the market, and what to study next to close the gap. Edited automatically, quietly, on the page."
+            : "This is a personal broadsheet for the work of getting hired. Upload a résumé, paste in the jobs you care about, and the press handles the rest — parsing, matching, tailoring, and what to learn next."}
         </p>
+
         {!hasProfile && (
-          <div className="mt-4 flex gap-3">
-            <a href="/profile" className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors">
-              <User className="w-4 h-4" /> Get Started
+          <div className="mt-7 flex gap-3">
+            <a
+              href="/profile"
+              className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 text-sm font-medium"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              <User className="w-4 h-4" /> Begin the First Edition
             </a>
           </div>
         )}
         {hasProfile && !hasJobs && (
-          <div className="mt-4">
-            <a href="/jobs" className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors">
-              <Briefcase className="w-4 h-4" /> Add Your First Job
+          <div className="mt-7">
+            <a
+              href="/jobs"
+              className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 text-sm font-medium"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              <Briefcase className="w-4 h-4" /> File Your First Job
             </a>
           </div>
         )}
       </section>
 
-      {/* How it Works (new users only) */}
+      {/* ─── How it Works — new readers only ─── */}
       {!hasProfile && (
-        <section className="bg-card border rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4">How it Works</h2>
-          <div className="grid md:grid-cols-3 gap-6">
+        <section className="anim-fade-up-1">
+          <SectionHead index={sectionIndex++} title="The Process" kicker="In three movements" />
+          <div className="grid md:grid-cols-3 gap-6 border-t border-foreground/80 border-t-[3px] pt-6">
             {[
-              { step: "1", title: "Upload Resume", desc: "Upload your PDF or DOCX resume. AI parses it into a structured profile." },
-              { step: "2", title: "Add Jobs", desc: "Paste job URLs or descriptions. AI extracts requirements and scores your fit." },
-              { step: "3", title: "Generate", desc: "Generate tailored resumes optimized for each job's ATS keywords." },
+              { step: "I", title: "Upload Résumé", desc: "A PDF or DOCX. The press parses it into a structured dossier and catalogs every skill it can find." },
+              { step: "II", title: "File the Jobs", desc: "Paste URLs or descriptions. Requirements are extracted, compatibility is scored, and gaps surface automatically." },
+              { step: "III", title: "Run the Print", desc: "Tailored résumés optimized for each role's keywords, published to a private archive on demand." },
             ].map((item) => (
-              <div key={item.step} className="flex gap-3">
-                <div className="text-2xl font-bold text-primary/30 font-mono">{item.step}</div>
-                <div>
-                  <div className="font-medium text-sm">{item.title}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{item.desc}</div>
+              <article key={item.step} className="space-y-2 border-l border-foreground/15 pl-5">
+                <div
+                  className="numerals text-3xl text-primary"
+                  style={{ lineHeight: 1 }}
+                >
+                  {item.step}
                 </div>
-              </div>
+                <div
+                  className="text-[1.125rem] text-foreground"
+                  style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontWeight: 400 }}
+                >
+                  {item.title}
+                </div>
+                <div className="text-sm text-foreground/70 leading-relaxed" style={{ fontFamily: "var(--font-geist-sans)" }}>
+                  {item.desc}
+                </div>
+              </article>
             ))}
           </div>
         </section>
       )}
 
-      {/* Hero Stats */}
+      {/* ─── Hero Stats ─── */}
       {hasAnalytics && (
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard
-            label="Active Jobs"
-            value={analytics.funnel.totalJobs - analytics.funnel.appliedJobs}
-            trend={`+${analytics.funnel.weeklyAdded} this week`}
-            trendColor="text-green-500"
-          />
-          <StatCard
-            label="Applied"
-            value={analytics.funnel.appliedJobs}
-            trend={analytics.funnel.totalJobs > 0 ? `${Math.round((analytics.funnel.appliedJobs / analytics.funnel.totalJobs) * 100)}% of total` : ""}
-          />
-          <StatCard
-            label="Avg Match Score"
-            value={analytics.matchTrends.averageScore || "—"}
-            trend={analytics.matchTrends.jobCount > 0 ? `${analytics.matchTrends.strongFitCount} strong-fit jobs` : ""}
-          />
-          <StatCard
-            label="Avg Resume Quality"
-            value={analytics.resumeQualityTrends.averageQuality || "—"}
-            trend={
-              analytics.resumeQualityTrends.jobCount > 0
-                ? `${analytics.resumeQualityTrends.averageDelta >= 0 ? "+" : ""}${analytics.resumeQualityTrends.averageDelta} pts avg v2 delta`
-                : ""
-            }
-            trendColor="text-green-500"
-          />
-          <StatCard
-            label="Resumes Generated"
-            value={analytics.resumeCount}
-          />
+        <section className="anim-fade-up-2">
+          <SectionHead index={sectionIndex++} title="The Ledger" kicker="This week's figures" />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <StatCard
+              label="Active Jobs"
+              value={analytics.funnel.totalJobs - analytics.funnel.appliedJobs}
+              trend={`+${analytics.funnel.weeklyAdded} this week`}
+              trendColor="text-foreground/60"
+            />
+            <StatCard
+              label="Applied"
+              value={analytics.funnel.appliedJobs}
+              trend={analytics.funnel.totalJobs > 0 ? `${Math.round((analytics.funnel.appliedJobs / analytics.funnel.totalJobs) * 100)}% of total` : ""}
+            />
+            <StatCard
+              label="Avg Match"
+              value={analytics.matchTrends.averageScore || "—"}
+              trend={analytics.matchTrends.jobCount > 0 ? `${analytics.matchTrends.strongFitCount} strong-fit` : ""}
+            />
+            <StatCard
+              label="Résumé Qual."
+              value={analytics.resumeQualityTrends.averageQuality || "—"}
+              trend={
+                analytics.resumeQualityTrends.jobCount > 0
+                  ? `${analytics.resumeQualityTrends.averageDelta >= 0 ? "+" : ""}${analytics.resumeQualityTrends.averageDelta} avg Δ`
+                  : ""
+              }
+              trendColor="text-primary"
+            />
+            <StatCard
+              label="Issues Printed"
+              value={analytics.resumeCount}
+            />
+          </div>
         </section>
       )}
 
-      {/* Funnel */}
+      {/* ─── Funnel ─── */}
       {hasAnalytics && analytics.funnel.totalJobs > 0 && (
-        <section>
+        <section className="anim-fade-up-3">
+          <SectionHead index={sectionIndex++} title="The Pipeline" kicker="From lead to letter" />
           <FunnelChart data={analytics.funnel} />
         </section>
       )}
 
-      {/* Two-column insights */}
+      {/* ─── Two-column: Skill gaps + ATS trend ─── */}
       {hasAnalytics && (analytics.skillGaps.length > 0 || analytics.resumeQualityTrends.jobCount > 0) && (
-        <section className="grid md:grid-cols-2 gap-4">
-          {analytics.skillGaps.length > 0 && <SkillGapChart data={analytics.skillGaps} />}
-          {analytics.resumeQualityTrends.jobCount > 0 && <ATSTrendChart data={analytics.resumeQualityTrends} />}
+        <section>
+          <SectionHead index={sectionIndex++} title="The Audit" kicker="Strengths & shortfalls" />
+          <div className="grid md:grid-cols-2 gap-4">
+            {analytics.skillGaps.length > 0 && <SkillGapChart data={analytics.skillGaps} />}
+            {analytics.resumeQualityTrends.jobCount > 0 && <ATSTrendChart data={analytics.resumeQualityTrends} />}
+          </div>
         </section>
       )}
 
+      {/* ─── Learn & Capture Health ─── */}
       {hasAnalytics && (
-        <section className="grid md:grid-cols-2 gap-4">
-          <div className="bg-card border rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-1">Learn &amp; Source Health</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Guide progress and saved-source quality from your learn pipeline.
-            </p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-2xl font-bold">{analytics.learn.totalGuides}</div>
-                <div className="text-xs text-muted-foreground">guides</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold">{analytics.learn.savedSources}</div>
-                <div className="text-xs text-muted-foreground">saved sources</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-green-500">{analytics.learn.completedGuides}</div>
-                <div className="text-xs text-muted-foreground">completed guides</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-amber-500">{analytics.learn.inProgressGuides}</div>
-                <div className="text-xs text-muted-foreground">in progress</div>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-xs text-muted-foreground">
-              <div>{analytics.sourceHealth.needsReview} sources flagged for review</div>
-              <div>{analytics.sourceHealth.domFallback} DOM fallback captures</div>
-              <div>{analytics.sourceHealth.staleGuideAttachments} stale guide attachments across {analytics.sourceHealth.guidesWithStaleSources} guides</div>
-              <div>{analytics.sourceHealth.manualEdits} manual source edits recorded</div>
-            </div>
-          </div>
-
-          <div className="bg-card border rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-1">Capture Health</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Import quality across manual, extension, and email capture paths.
-            </p>
-            <div className="space-y-2">
-              {analytics.capture.jobsBySource.map((entry) => (
-                <div key={entry.source} className="flex items-center justify-between text-sm">
-                  <span className="font-mono text-xs text-muted-foreground">{entry.source}</span>
-                  <span className="font-medium">{entry.count}</span>
+        <section>
+          <SectionHead index={sectionIndex++} title="The Archive" kicker="Study & source hygiene" />
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="index-card">
+              <div className="label-mono-sm text-muted-foreground">Learn &amp; Source Health</div>
+              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                Guide progress and saved-source quality from your learn pipeline.
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="numerals text-3xl text-foreground leading-none">{analytics.learn.totalGuides}</div>
+                  <div className="label-mono-sm text-muted-foreground mt-1">Guides</div>
                 </div>
-              ))}
+                <div>
+                  <div className="numerals text-3xl text-foreground leading-none">{analytics.learn.savedSources}</div>
+                  <div className="label-mono-sm text-muted-foreground mt-1">Saved Sources</div>
+                </div>
+                <div>
+                  <div className="numerals text-3xl text-primary leading-none">{analytics.learn.completedGuides}</div>
+                  <div className="label-mono-sm text-muted-foreground mt-1">Completed</div>
+                </div>
+                <div>
+                  <div className="numerals text-3xl text-foreground/70 leading-none">{analytics.learn.inProgressGuides}</div>
+                  <div className="label-mono-sm text-muted-foreground mt-1">In Progress</div>
+                </div>
+              </div>
+              <div className="rule-hair mt-4 mb-3" />
+              <ul className="space-y-1.5 text-xs text-foreground/65" style={{ fontFamily: "var(--font-geist-sans)" }}>
+                <li>— {analytics.sourceHealth.needsReview} sources flagged for review</li>
+                <li>— {analytics.sourceHealth.domFallback} DOM fallback captures</li>
+                <li>— {analytics.sourceHealth.staleGuideAttachments} stale attachments across {analytics.sourceHealth.guidesWithStaleSources} guides</li>
+                <li>— {analytics.sourceHealth.manualEdits} manual source edits recorded</li>
+              </ul>
             </div>
-            <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-xs text-muted-foreground">
-              <div>{analytics.capture.placeholderJobs} jobs still have placeholder metadata or failed capture text</div>
-              <div>{analytics.insights.coveredStudyTopics} study topics already covered by guides</div>
-              <div>{analytics.insights.uncoveredStudyTopics} study topics still need guides</div>
+
+            <div className="index-card">
+              <div className="label-mono-sm text-muted-foreground">Capture Health</div>
+              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                Import quality across manual, extension, and email capture paths.
+              </p>
+              <div className="space-y-1.5">
+                {analytics.capture.jobsBySource.map((entry) => (
+                  <div key={entry.source} className="flex items-center justify-between text-sm border-b border-foreground/10 pb-1">
+                    <span className="label-mono-sm text-foreground/70">{entry.source}</span>
+                    <span className="numerals text-lg text-foreground leading-none">{entry.count}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="rule-hair mt-4 mb-3" />
+              <ul className="space-y-1.5 text-xs text-foreground/65" style={{ fontFamily: "var(--font-geist-sans)" }}>
+                <li>— {analytics.capture.placeholderJobs} jobs with placeholder metadata</li>
+                <li>— {analytics.insights.coveredStudyTopics} topics already covered</li>
+                <li>— {analytics.insights.uncoveredStudyTopics} still to cover</li>
+              </ul>
             </div>
           </div>
         </section>
       )}
 
-      {/* AI Usage (collapsible) */}
+      {/* ─── AI Usage (collapsible) ─── */}
       {hasAnalytics && analytics.tokenUsage.totals.calls > 0 && (
-        <section className="bg-card border rounded-lg">
-          <button
-            onClick={() => setAiUsageOpen(!aiUsageOpen)}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors rounded-lg"
-          >
-            <div className="flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">AI Usage &amp; Costs</span>
-              <span className="text-xs text-muted-foreground">
-                Total: ${analytics.tokenUsage.totals.cost.toFixed(2)} · {analytics.tokenUsage.totals.calls} calls
-              </span>
-            </div>
-            {aiUsageOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-          </button>
-          {aiUsageOpen && (
-            <div className="px-4 pb-4 space-y-4">
-              {analytics.tokenUsage.daily.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2">Daily Cost (Last 30 Days)</h4>
-                  <MiniBarChart data={analytics.tokenUsage.daily} />
-                </div>
-              )}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2">Cost by Skill</h4>
-                  <div className="space-y-1">
-                    {analytics.tokenUsage.bySkill.slice(0, 8).map((s) => {
-                      const maxCost = analytics.tokenUsage.bySkill[0]?.cost || 1;
-                      return (
-                        <div key={s.skill} className="flex items-center gap-2">
-                          <span className="text-xs w-28 truncate font-mono">{s.skill}</span>
-                          <div className="flex-1 bg-muted rounded h-2 overflow-hidden">
-                            <div className="bg-primary h-full rounded" style={{ width: `${(s.cost / maxCost) * 100}%` }} />
-                          </div>
-                          <span className="text-xs text-muted-foreground w-14 text-right">${s.cost.toFixed(3)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2">Cost by Model</h4>
-                  <div className="space-y-1">
-                    {analytics.tokenUsage.byModel.map((m) => (
-                      <div key={m.model} className="flex items-center justify-between text-xs">
-                        <span className="font-mono">{m.model}</span>
-                        <span className="text-muted-foreground">${m.cost.toFixed(3)} · {m.calls} calls</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+        <section>
+          <div className="border border-foreground/15 bg-card">
+            <button
+              onClick={() => setAiUsageOpen(!aiUsageOpen)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <span
+                  style={{
+                    fontFamily: "var(--font-cormorant)",
+                    fontStyle: "italic",
+                    fontSize: "1.15rem",
+                    color: "var(--ink)",
+                  }}
+                >
+                  The Meter
+                </span>
+                <span className="label-mono-sm text-muted-foreground">
+                  ${analytics.tokenUsage.totals.cost.toFixed(2)} · {analytics.tokenUsage.totals.calls} calls
+                </span>
               </div>
-              {analytics.tokenUsage.bySkill.some((s) => s.cacheReads > 0 || s.cacheCreations > 0) && (
-                <div>
-                  <h4 className="text-xs font-medium text-muted-foreground mb-2">Prompt Cache Efficiency</h4>
-                  <div className="space-y-1">
-                    {analytics.tokenUsage.bySkill
-                      .filter((s) => s.cacheReads > 0 || s.cacheCreations > 0)
-                      .map((s) => {
-                        const totalCacheTokens = s.cacheReads + s.cacheCreations;
-                        const hitPct = totalCacheTokens > 0 ? Math.round((s.cacheReads / totalCacheTokens) * 100) : 0;
+              {aiUsageOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+            </button>
+            {aiUsageOpen && (
+              <div className="px-4 pb-4 space-y-4 border-t border-foreground/10">
+                {analytics.tokenUsage.daily.length > 0 && (
+                  <div className="pt-3">
+                    <h4 className="label-mono-sm text-muted-foreground mb-2">Daily Cost · Last 30 Days</h4>
+                    <MiniBarChart data={analytics.tokenUsage.daily} />
+                  </div>
+                )}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="label-mono-sm text-muted-foreground mb-2">Cost by Skill</h4>
+                    <div className="space-y-1">
+                      {analytics.tokenUsage.bySkill.slice(0, 8).map((s) => {
+                        const maxCost = analytics.tokenUsage.bySkill[0]?.cost || 1;
                         return (
                           <div key={s.skill} className="flex items-center gap-2">
                             <span className="text-xs w-28 truncate font-mono">{s.skill}</span>
-                            <div className="flex-1 bg-muted rounded h-2 overflow-hidden">
-                              <div className="bg-green-500 h-full rounded" style={{ width: `${hitPct}%` }} />
+                            <div className="flex-1 bg-muted h-2 overflow-hidden">
+                              <div className="bg-primary h-full" style={{ width: `${(s.cost / maxCost) * 100}%` }} />
                             </div>
-                            <span className="text-xs text-muted-foreground w-20 text-right">{hitPct}% hits</span>
+                            <span className="text-xs text-muted-foreground w-14 text-right font-mono">${s.cost.toFixed(3)}</span>
                           </div>
                         );
                       })}
+                    </div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Cache reads vs. creations — higher is better (less redundant input)</p>
+                  <div>
+                    <h4 className="label-mono-sm text-muted-foreground mb-2">Cost by Model</h4>
+                    <div className="space-y-1">
+                      {analytics.tokenUsage.byModel.map((m) => (
+                        <div key={m.model} className="flex items-center justify-between text-xs border-b border-foreground/10 py-1">
+                          <span className="font-mono">{m.model}</span>
+                          <span className="text-muted-foreground font-mono">${m.cost.toFixed(3)} · {m.calls} calls</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+                {analytics.tokenUsage.bySkill.some((s) => s.cacheReads > 0 || s.cacheCreations > 0) && (
+                  <div>
+                    <h4 className="label-mono-sm text-muted-foreground mb-2">Prompt Cache Efficiency</h4>
+                    <div className="space-y-1">
+                      {analytics.tokenUsage.bySkill
+                        .filter((s) => s.cacheReads > 0 || s.cacheCreations > 0)
+                        .map((s) => {
+                          const totalCacheTokens = s.cacheReads + s.cacheCreations;
+                          const hitPct = totalCacheTokens > 0 ? Math.round((s.cacheReads / totalCacheTokens) * 100) : 0;
+                          return (
+                            <div key={s.skill} className="flex items-center gap-2">
+                              <span className="text-xs w-28 truncate font-mono">{s.skill}</span>
+                              <div className="flex-1 bg-muted h-2 overflow-hidden">
+                                <div className="bg-primary/80 h-full" style={{ width: `${hitPct}%` }} />
+                              </div>
+                              <span className="text-xs text-muted-foreground w-20 text-right font-mono">{hitPct}% hits</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">Cache reads vs. creations — higher is better.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </section>
       )}
 
-      {/* Market Insights Card */}
+      {/* ─── Market Insights ─── */}
       {hasAnalytics && analytics.insights.realisticJobs >= 2 ? (
         <a href="/insights" className="block">
-          <section className="bg-card border border-primary/20 rounded-lg p-5 hover:bg-primary/[0.02] transition-colors cursor-pointer">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-primary" />
-                <h2 className="text-lg font-semibold">Market Insights</h2>
+          <section className="relative border-y-[3px] border-foreground/85 py-6 card-hover">
+            <div className="absolute -top-[3px] left-0 right-0 h-[3px] bg-foreground/85" />
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-baseline gap-3">
+                <span className="label-mono-sm text-primary">§ Feature Report</span>
+                <h2
+                  style={{
+                    fontFamily: "var(--font-cormorant)",
+                    fontStyle: "italic",
+                    fontSize: "1.85rem",
+                    lineHeight: 1,
+                    color: "var(--ink)",
+                  }}
+                >
+                  The Market Reads You
+                </h2>
               </div>
-              <span className="text-xs text-primary">View all →</span>
+              <span className="label-mono-sm text-primary">Full Story →</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
               <div>
-                <div className="text-xl font-bold">{analytics.insights.realisticJobs}</div>
-                <div className="text-[10px] text-muted-foreground">realistic targets</div>
+                <div className="numerals text-3xl text-foreground leading-none">{analytics.insights.realisticJobs}</div>
+                <div className="label-mono-sm text-muted-foreground mt-1">Realistic Targets</div>
               </div>
               <div>
-                <div className="text-xl font-bold">{analytics.insights.clusterCount}</div>
-                <div className="text-[10px] text-muted-foreground">role profiles</div>
+                <div className="numerals text-3xl text-foreground leading-none">{analytics.insights.clusterCount}</div>
+                <div className="label-mono-sm text-muted-foreground mt-1">Role Profiles</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-red-400">{analytics.insights.gapCount}</div>
-                <div className="text-[10px] text-muted-foreground">key gaps</div>
+                <div className="numerals text-3xl text-primary leading-none">{analytics.insights.gapCount}</div>
+                <div className="label-mono-sm text-muted-foreground mt-1">Key Gaps</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-emerald-400">{analytics.insights.avgScore}%</div>
-                <div className="text-[10px] text-muted-foreground">avg match</div>
+                <div className="numerals text-3xl text-foreground leading-none">{analytics.insights.avgScore}%</div>
+                <div className="label-mono-sm text-muted-foreground mt-1">Avg Match</div>
               </div>
             </div>
             <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-start">
               {analytics.insights.topFinding && (
-                <div className="border-l-[3px] border-primary/40 bg-foreground/[0.02] rounded-r px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-                  <strong className="text-primary">Top finding:</strong> {analytics.insights.topFinding}
-                </div>
+                <blockquote
+                  className="border-l-[3px] border-primary pl-4 py-1 text-[0.95rem] leading-relaxed text-foreground/85"
+                  style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontWeight: 400 }}
+                >
+                  <span className="label-mono text-primary not-italic mr-2">Headline</span>
+                  {analytics.insights.topFinding}
+                </blockquote>
               )}
-              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                {analytics.insights.coveredStudyTopics} covered · {analytics.insights.uncoveredStudyTopics} still open
+              <div className="label-mono-sm text-muted-foreground whitespace-nowrap self-end">
+                {analytics.insights.coveredStudyTopics} covered · {analytics.insights.uncoveredStudyTopics} open
               </div>
             </div>
           </section>
         </a>
       ) : hasAnalytics && analytics.versions.length > 0 ? (
         <section>
-          <h2 className="text-lg font-semibold mb-3">Profile Versions &amp; Resume History</h2>
-          <div className="space-y-2">
+          <SectionHead index={sectionIndex++} title="The Archive" kicker="Recent issues printed" />
+          <div className="space-y-0 border-t border-foreground/15">
             {analytics.versions.slice(0, 10).map((v) => (
-              <div key={v.id} className="bg-card border rounded-lg p-3 flex items-center justify-between">
+              <div key={v.id} className="flex items-center justify-between border-b border-foreground/15 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
+                  <div
+                    className="w-9 h-9 bg-primary/8 border border-primary/30 flex items-center justify-center"
+                    style={{
+                      fontFamily: "var(--font-cormorant)",
+                      fontStyle: "italic",
+                      fontSize: "1.1rem",
+                      color: "var(--primary)",
+                    }}
+                  >
                     {v.job.company.charAt(0)}
                   </div>
                   <div>
-                    <div className="text-sm font-medium">{v.job.title}</div>
-                    <div className="text-xs text-muted-foreground">{v.job.company} · {new Date(v.createdAt).toLocaleDateString()}</div>
+                    <div
+                      className="text-[1rem] text-foreground"
+                      style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontWeight: 400 }}
+                    >
+                      {v.job.title}
+                    </div>
+                    <div className="label-mono-sm text-muted-foreground mt-0.5">
+                      {v.job.company} · {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <div className="text-sm font-bold">{v.score}</div>
+                    <div className="numerals text-xl text-foreground leading-none">{v.score}</div>
                     {v.delta != null && v.delta > 0 && (
-                      <div className="text-xs text-green-500">+{v.delta.toFixed(1)}</div>
+                      <div className="label-mono-sm text-primary mt-0.5">+{v.delta.toFixed(1)}</div>
                     )}
                   </div>
                   {v.resumes.length > 0 && (
                     <div className="flex gap-1">
                       {v.resumes.map((r) => (
-                        <span key={r.id} className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono uppercase">{r.format}</span>
+                        <span key={r.id} className="label-mono-sm text-foreground/70 border border-foreground/25 px-1.5 py-0.5">
+                          {r.format}
+                        </span>
                       ))}
                     </div>
                   )}
@@ -514,27 +672,41 @@ export default function Dashboard() {
         </section>
       ) : null}
 
-      {/* Two-column footer: Recent Jobs + Skills */}
+      {/* ─── Recent Jobs + Skills ─── */}
       {(hasJobs || (profile?.skills && profile.skills.length > 0)) && (
-        <section className="grid md:grid-cols-2 gap-6">
+        <section className="grid md:grid-cols-[1.15fr_1fr] gap-8">
           {hasJobs && (
             <div>
-              <h2 className="text-lg font-semibold mb-3">Recent Jobs</h2>
-              <div className="space-y-2">
+              <SectionHead index={sectionIndex++} title="Recent Dispatches" kicker="Latest jobs filed" />
+              <div className="space-y-0 border-t border-foreground/15">
                 {jobs.slice(0, 5).map((job) => (
-                  <a key={job.id} href="/jobs" className="block bg-card border rounded-lg p-3 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium">{job.title}</div>
-                        <div className="text-xs text-muted-foreground">{job.company}</div>
+                  <a
+                    key={job.id}
+                    href="/jobs"
+                    className="group flex items-center justify-between border-b border-foreground/15 py-3 hover:bg-foreground/[0.025] -mx-2 px-2 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 pr-3">
+                      <div
+                        className="text-[1.05rem] text-foreground truncate"
+                        style={{ fontFamily: "var(--font-cormorant)", fontStyle: "italic", fontWeight: 400 }}
+                      >
+                        {job.title}
                       </div>
-                      <div className="flex items-center gap-2">
-                        {job.applied && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
-                        {job.resumes.length > 0 && (
-                          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">{job.resumes.length} resume{job.resumes.length > 1 ? "s" : ""}</span>
-                        )}
-                        <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
-                      </div>
+                      <div className="label-mono-sm text-muted-foreground mt-0.5 truncate">{job.company}</div>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {job.applied && (
+                        <span className="stamp stamp-accent">
+                          <CheckCircle className="w-2.5 h-2.5" />
+                          Applied
+                        </span>
+                      )}
+                      {job.resumes.length > 0 && (
+                        <span className="label-mono-sm text-foreground/60 border border-foreground/20 px-1.5 py-0.5">
+                          {job.resumes.length} ed.
+                        </span>
+                      )}
+                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </a>
                 ))}
@@ -543,17 +715,29 @@ export default function Dashboard() {
           )}
           {profile?.skills && profile.skills.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold mb-3">Skills Overview</h2>
-              <div className="space-y-3">
+              <SectionHead index={sectionIndex++} title="Typecase" kicker="Your standing set" />
+              <div className="space-y-4 border-t border-foreground/15 pt-4">
                 {Object.entries(skillsByCategory).slice(0, 4).map(([category, skills]) => (
                   <div key={category}>
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider font-mono mb-1">{category}</div>
+                    <div className="flex items-baseline justify-between mb-2">
+                      <div className="label-mono-sm text-primary">{category}</div>
+                      <div className="rule-hair flex-1 mx-3" />
+                      <div className="label-mono-sm text-muted-foreground">{skills.length}</div>
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {skills.slice(0, 8).map((s) => (
-                        <span key={s.id} className="text-xs bg-muted px-2 py-0.5 rounded">{s.name}</span>
+                        <span
+                          key={s.id}
+                          className="text-xs border border-foreground/25 px-2 py-0.5 text-foreground/85"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
+                          {s.name}
+                        </span>
                       ))}
                       {skills.length > 8 && (
-                        <span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">+{skills.length - 8}</span>
+                        <span className="text-xs border border-dashed border-foreground/25 px-2 py-0.5 text-muted-foreground">
+                          +{skills.length - 8} more
+                        </span>
                       )}
                     </div>
                   </div>
@@ -563,6 +747,16 @@ export default function Dashboard() {
           )}
         </section>
       )}
+
+      {/* ─── END MARK ─── */}
+      <div className="flex flex-col items-center gap-3 py-6">
+        <div className="label-mono text-muted-foreground">— Fin —</div>
+        <div className="flex items-center gap-1 text-foreground/30">
+          <span className="inline-block w-1.5 h-1.5 bg-current rounded-full" />
+          <span className="inline-block w-1.5 h-1.5 bg-current rounded-full" />
+          <span className="inline-block w-1.5 h-1.5 bg-current rounded-full" />
+        </div>
+      </div>
     </div>
   );
 }

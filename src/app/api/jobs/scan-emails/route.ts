@@ -5,9 +5,10 @@ import { askJson } from "@/lib/claude/client";
 import { searchMessages, readMessage, type EmailMessage } from "@/lib/gmail";
 import { scrapeJobUrlResolved } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
-import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
+import { enqueueJob } from "@/lib/job-queue";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
+import { getAppSettings } from "@/lib/app-settings";
 import fs from "fs/promises";
 import path from "path";
 
@@ -180,6 +181,7 @@ Rules for locationMatch:
   log.info("url_extraction_complete", { urlsExtracted, urlsFiltered });
 
   // Step 6: Import jobs — dedup, scrape, create, analyze
+  const settings = await getAppSettings();
   const existingJobs = await prisma.job.findMany({
     where: { url: { not: null } },
     select: { url: true, canonicalUrl: true },
@@ -238,7 +240,7 @@ Rules for locationMatch:
           atsKeywords: null,
           seniority: null,
           sponsorship: "unspecified",
-          aiModel: "sonnet",
+          aiModel: settings.defaultAiModel,
         },
       });
 
@@ -262,7 +264,16 @@ Rules for locationMatch:
             },
           });
           taskLog.complete({ title: analysis.title as string });
-          return runAutoPipeline(created.id);
+          enqueueJob(
+            "auto-pipeline",
+            { jobId: created.id },
+            { entityId: created.id, entityType: "job", maxAttempts: 2 }
+          ).catch((enqueueErr) => {
+            log.error("auto_pipeline_enqueue_failed", {
+              jobId: created.id,
+              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+            });
+          });
         })
         .catch((err) => {
           taskLog.fail(err);
@@ -289,7 +300,7 @@ Rules for locationMatch:
             atsKeywords: null,
             seniority: null,
             sponsorship: "unspecified",
-            aiModel: "sonnet",
+            aiModel: settings.defaultAiModel,
           },
         });
         imported++;

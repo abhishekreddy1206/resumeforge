@@ -13,6 +13,7 @@ enum SavedSourceChangeType {
   replace
   refresh
   migrated
+  manual_edit
 }
 
 enum SavedSourceCaptureDecisionReason {
@@ -171,6 +172,11 @@ model Job {
   appliedAt    DateTime?
   coverLetter    String?  // JSON — cached generated cover letter (CoverLetterData)
   interviewPrep  String?  // JSON — cached STAR+R interview prep (InterviewPrep)
+  pipelineStatus    String?   // null | "running" | "skipped" | "blocked" | "completed" | "failed"
+  pipelineStage     String?   // null | "match" | "build" | "quality_gate" | "save" | "pdf"
+  pipelineError     String?   // error message or blocker codes
+  pipelineStartedAt DateTime?
+  pipelineEndedAt   DateTime?
   createdAt      DateTime @default(now())
 
   resumes              Resume[]
@@ -247,6 +253,8 @@ model ApplicationProfile {
   // Name split (computed from Profile.name, editable)
   firstName         String?
   lastName          String?
+  preferredFirstName String?
+  country           String?
 
   // Work authorization
   workAuthorized    Boolean?
@@ -269,7 +277,7 @@ model ApplicationProfile {
   // Defaults
   heardAboutDefault String?
   over18            Boolean  @default(true)
-  customDefaults    String?  // JSON array of {question, answer} — pinned reusable answers
+  customDefaults    String?  // DEPRECATED — migrated to LearnedAnswer via POST /api/applications/migrate-pins; cleared after migration
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -280,7 +288,7 @@ model ApplicationAnswer {
   jobId     String
   question  String
   answer    String
-  source    String   @default("auto") // "auto" | "ai" | "manual"
+  source    String   @default("auto") // "auto" | "ai" | "learned" | "reused"  (factual answers return source:"profile" but are not persisted)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -336,6 +344,9 @@ model Guide {
   learningPath     LearningPath?  @relation(fields: [learningPathId], references: [id])
   sources          GuideSource[]
   versions         GuideVersion[]
+  sectionStatuses  String?
+  sectionErrors    String?
+  sectionAttempts  String?
   lastAsyncError   String?
   lastAsyncStage   String?
   createdAt        DateTime       @default(now())
@@ -455,4 +466,14 @@ model BackgroundJob {
   @@index([parentJobId])
   @@index([groupKey])
   @@index([lockedAt])
+}
+
+model AppSettings {
+  id                   String   @id @default("singleton")
+  matchScoreFloor      Int      @default(60)
+  qualityScoreFloor    Int      @default(75)
+  defaultAiModel       String   @default("sonnet")
+  claudeCliConcurrency Int      @default(2)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

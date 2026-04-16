@@ -77,7 +77,7 @@
 
     <!-- Results -->
     <div id="results" class="card results-card hidden">
-      <div class="results-header">Fill Complete</div>
+      <div class="results-header" id="results-header">Fill Complete</div>
       <div class="results-grid">
         <div class="stat">
           <span class="stat-value" id="filled-count">0</span>
@@ -87,7 +87,15 @@
           <span class="stat-value stat-ai" id="ai-count">0</span>
           <span class="stat-label">AI answers</span>
         </div>
+        <div class="stat">
+          <span class="stat-value stat-warning" id="unresolved-count">0</span>
+          <span class="stat-label">Still required</span>
+        </div>
       </div>
+      <div id="results-warning" class="results-warning hidden"></div>
+      <div id="unresolved-list" class="unresolved-list hidden"></div>
+      <div id="optional-miss-summary" class="optional-summary hidden"></div>
+      <div id="optional-miss-list" class="unresolved-list optional-list hidden"></div>
       <p class="review-note">Review highlighted fields before submitting.</p>
     </div>
 
@@ -103,6 +111,7 @@
     </div>
   </div>
 
+  <script src="popup-helpers.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

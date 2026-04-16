@@ -111,6 +111,9 @@ export const POST = withLogging(async (
           tags: JSON.stringify([]),
           profileId: profile.id,
           learningPathId: path.id,
+          sectionStatuses: JSON.stringify(sectionStatuses),
+          sectionErrors: JSON.stringify({}),
+          sectionAttempts: JSON.stringify({}),
         },
       });
 
@@ -133,8 +136,8 @@ export const POST = withLogging(async (
       const groupKey = `create-${guide.id}`;
       const siblingTitles = outline.sectionPlan.map((sp) => sp.title);
 
-      const jobs = outline.sectionPlan.map((sp) => ({
-        type: "guide-section" as const,
+      const coreJobs = outline.sectionPlan.map((sp) => ({
+        type: "guide-section-core" as const,
         payload: {
           guideId: guide.id,
           topic,
@@ -143,7 +146,7 @@ export const POST = withLogging(async (
           siblingTitles,
         },
         opts: {
-          priority: 5, // lower than individual guide creation
+          priority: 10, // core first (lower than individual guide creation at 20)
           maxAttempts: 3,
           groupKey,
           entityId: guide.id,
@@ -151,9 +154,26 @@ export const POST = withLogging(async (
         },
       }));
 
-      await enqueueJobs(jobs);
+      const interactiveJobs = outline.sectionPlan.map((sp) => ({
+        type: "guide-section-interactive" as const,
+        payload: {
+          guideId: guide.id,
+          topic,
+          sectionPlan: sp,
+          difficulty: outline.difficulty,
+        },
+        opts: {
+          priority: 5, // interactive after core
+          maxAttempts: 3,
+          groupKey,
+          entityId: guide.id,
+          entityType: "guide",
+        },
+      }));
 
-      log.info("path_guide_jobs_enqueued", { guideId: guide.id, jobCount: jobs.length, groupKey });
+      await enqueueJobs([...coreJobs, ...interactiveJobs]);
+
+      log.info("path_guide_jobs_enqueued", { guideId: guide.id, jobCount: coreJobs.length + interactiveJobs.length, groupKey });
     }
 
     refreshRecommendationsCache().catch((err) => {

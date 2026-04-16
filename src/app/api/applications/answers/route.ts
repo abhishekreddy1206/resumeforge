@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateFormAnswer, generateFormAnswerBatch } from "@/lib/claude";
+import {
+  classifyFormQuestion,
+  type FormAnswerResult,
+  getExplicitAnswerForQuestion,
+  matchAnswerToOptionOrNull,
+  normalizeQuestion,
+  unresolved,
+} from "@/lib/applications/form-answering";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 
 function calculateTotalYears(
@@ -35,67 +43,87 @@ function safeJsonParse(value: unknown, fallback: unknown = null): unknown {
   }
 }
 
-function normalizeQuestion(q: string): string {
-  return q.toLowerCase().replace(/[''""]/g, "'").replace(/\s+/g, " ").trim();
+interface FullProfileRecord {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  linkedin: string | null;
+  github: string | null;
+  website: string | null;
+  twitter: string | null;
+  experiences: Array<{
+    current: boolean;
+    title: string;
+    company: string;
+    startDate: string;
+    endDate: string | null;
+  }>;
+  applicationProfile: {
+    firstName: string | null;
+    lastName: string | null;
+    preferredFirstName: string | null;
+    country: string | null;
+    workAuthorized: boolean | null;
+    sponsorshipNeeded: boolean | null;
+    willingToRelocate: string | null;
+    noticePeriod: string | null;
+    earliestStartDate: string | null;
+    salaryMin: number | null;
+    salaryMax: number | null;
+    preferredWorkMode: string | null;
+    over18: boolean;
+    heardAboutDefault: string | null;
+    gender: string | null;
+    race: string | null;
+    veteranStatus: string | null;
+    disabilityStatus: string | null;
+  } | null;
 }
 
-function matchAnswerToOption(answer: string, options: string[]): string {
-  if (!options.length) return answer;
-  const lower = answer.toLowerCase().trim();
+function buildExplicitAnswerContext(fullProfile: FullProfileRecord) {
+  const currentExp = fullProfile?.experiences.find((e) => e.current) || fullProfile?.experiences[0];
+  const ap = fullProfile?.applicationProfile;
 
-  // Pass 1: exact match
-  const exact = options.find((o) => o.toLowerCase().trim() === lower);
-  if (exact) return exact;
-
-  // Pass 2: starts-with (either direction, min 3 chars to avoid false matches)
-  if (lower.length >= 3) {
-    const startsWith = options.find((o) => {
-      const ol = o.toLowerCase().trim();
-      return ol.startsWith(lower) || lower.startsWith(ol);
-    });
-    if (startsWith) return startsWith;
-  }
-
-  // Pass 3: contains — only if the shorter string is >50% of the longer (avoids false positives)
-  const containsMatch = options.find((o) => {
-    const ol = o.toLowerCase().trim();
-    if (ol.includes(lower) && lower.length > ol.length * 0.5) return true;
-    if (lower.includes(ol) && ol.length > lower.length * 0.5) return true;
-    return false;
-  });
-  if (containsMatch) return containsMatch;
-
-  // Pass 4: word-boundary boolean matching
-  const yesValues = ["true", "yes", "1", "y"];
-  const noValues = ["false", "no", "0", "n"];
-  if (yesValues.includes(lower)) {
-    const yesOption = options.find((o) => /^yes\b/i.test(o.trim()));
-    if (yesOption) return yesOption;
-  }
-  if (noValues.includes(lower)) {
-    const noOption = options.find((o) => /^no\b/i.test(o.trim()));
-    if (noOption) return noOption;
-  }
-
-  // Pass 5: first significant word match (min 3 chars)
-  const firstWord = lower.split(/[\s,]+/)[0];
-  if (firstWord && firstWord.length >= 3) {
-    const wordMatch = options.find((o) => o.toLowerCase().trim().split(/[\s,]+/)[0] === firstWord);
-    if (wordMatch) return wordMatch;
-  }
-
-  return answer;
+  return {
+    firstName: ap?.firstName ?? fullProfile?.name.trim().split(/\s+/)[0] ?? null,
+    lastName: ap?.lastName ?? (() => {
+      const parts = fullProfile?.name.trim().split(/\s+/) || [];
+      return parts.length > 1 ? parts.slice(1).join(" ") : null;
+    })(),
+    preferredFirstName: ap?.preferredFirstName ?? ap?.firstName ?? fullProfile?.name.trim().split(/\s+/)[0] ?? null,
+    email: fullProfile?.email ?? null,
+    phone: fullProfile?.phone ?? null,
+    location: fullProfile?.location ?? null,
+    country: ap?.country ?? null,
+    linkedin: fullProfile?.linkedin ?? null,
+    github: fullProfile?.github ?? null,
+    website: fullProfile?.website ?? null,
+    twitter: fullProfile?.twitter ?? null,
+    currentTitle: currentExp?.title ?? null,
+    currentCompany: currentExp?.company ?? null,
+    totalYears: fullProfile ? calculateTotalYears(fullProfile.experiences) : null,
+    workAuthorized: ap?.workAuthorized ?? null,
+    sponsorshipNeeded: ap?.sponsorshipNeeded ?? null,
+    willingToRelocate: ap?.willingToRelocate ?? null,
+    noticePeriod: ap?.noticePeriod ?? null,
+    earliestStartDate: ap?.earliestStartDate ?? null,
+    salaryMin: ap?.salaryMin ?? null,
+    salaryMax: ap?.salaryMax ?? null,
+    preferredWorkMode: ap?.preferredWorkMode ?? null,
+    over18: ap?.over18 ?? null,
+    heardAboutDefault: ap?.heardAboutDefault ?? null,
+    gender: ap?.gender ?? null,
+    race: ap?.race ?? null,
+    veteranStatus: ap?.veteranStatus ?? null,
+    disabilityStatus: ap?.disabilityStatus ?? null,
+  };
 }
 
 interface QuestionInput {
   question: string;
   characterLimit?: number;
   options?: string[];
-}
-
-interface AnswerResult {
-  answer: string;
-  source: string;
 }
 
 /**
@@ -163,32 +191,7 @@ export async function POST(request: NextRequest) {
       learnedMap.set(la.normalizedQ, list);
     }
 
-    const currentExp = fullProfile.experiences.find((e) => e.current) || fullProfile.experiences[0];
-    const appProfile = fullProfile.applicationProfile;
-    const profileLookups: Array<{ pattern: RegExp; value: string | null }> = [
-      { pattern: /linkedin/i, value: fullProfile.linkedin },
-      { pattern: /github/i, value: fullProfile.github },
-      { pattern: /website|portfolio/i, value: fullProfile.website },
-      { pattern: /twitter/i, value: fullProfile.twitter },
-      { pattern: /phone|mobile|cell/i, value: fullProfile.phone },
-      { pattern: /e-?mail/i, value: fullProfile.email },
-      { pattern: /city|location/i, value: fullProfile.location },
-      { pattern: /years?.{0,3}(?:of.?)?experience/i, value: String(calculateTotalYears(fullProfile.experiences)) },
-      { pattern: /current.{0,3}(?:title|position|role)/i, value: currentExp?.title ?? null },
-      { pattern: /current.{0,3}(?:company|employer)/i, value: currentExp?.company ?? null },
-      // ApplicationProfile fields
-      { pattern: /authorized.?to.?work|legally.?(?:authorized|eligible)|right.?to.?work|eligible.?to.?work|work.?authorization/i, value: appProfile?.workAuthorized != null ? (appProfile.workAuthorized ? "Yes" : "No") : null },
-      { pattern: /sponsor|visa|immigration/i, value: appProfile?.sponsorshipNeeded != null ? (appProfile.sponsorshipNeeded ? "Yes" : "No") : null },
-      { pattern: /relocat/i, value: appProfile?.willingToRelocate ?? null },
-      { pattern: /notice.?period/i, value: appProfile?.noticePeriod ?? null },
-      { pattern: /(?:when|earliest|soonest).{0,6}(?:can.?you.?)?start|start.?date|availability/i, value: appProfile?.earliestStartDate ?? null },
-      { pattern: /salary|compensation|pay.?expect/i, value: appProfile?.salaryMin != null ? (appProfile.salaryMax ? `$${appProfile.salaryMin.toLocaleString()} - $${appProfile.salaryMax.toLocaleString()}` : `$${appProfile.salaryMin.toLocaleString()}`) : null },
-      { pattern: /remote|hybrid|on.?site|work.?(?:mode|arrangement|preference|style)/i, value: appProfile?.preferredWorkMode ?? null },
-      { pattern: /over.?18|at.?least.?18|18.?years|legal.?age|are.?you.?18/i, value: appProfile?.over18 != null ? (appProfile.over18 ? "Yes" : "No") : null },
-      { pattern: /how.?did.?you.?(?:hear|find|learn)|hear.?about|referral.?source|where.?did.?you.?find/i, value: appProfile?.heardAboutDefault ?? null },
-      { pattern: /visa.?status|immigration.?status/i, value: appProfile?.sponsorshipNeeded != null ? (appProfile.sponsorshipNeeded ? "Requires sponsorship" : "No sponsorship needed") : null },
-      { pattern: /country/i, value: fullProfile.location ? fullProfile.location.split(",").pop()?.trim() || null : null },
-    ];
+    const explicitAnswerContext = buildExplicitAnswerContext(fullProfile);
 
     const profileData = serializeProfile(fullProfile);
     const jobAnalysis = {
@@ -201,7 +204,7 @@ export async function POST(request: NextRequest) {
     };
 
     // ── Resolve each question through the tier system ──
-    const results: AnswerResult[] = [];
+    const results: FormAnswerResult[] = [];
     const toGenerate: Array<{ index: number; input: QuestionInput }> = [];
 
     for (let i = 0; i < questions.length; i++) {
@@ -209,14 +212,34 @@ export async function POST(request: NextRequest) {
       const q = input.question;
       const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
       const norm = normalizeQuestion(q);
+      const category = classifyFormQuestion(q);
       let resolved = false;
+
+      if (category !== "general_screening") {
+        const explicitAnswer = getExplicitAnswerForQuestion(q, explicitAnswerContext);
+        if (explicitAnswer === undefined) {
+          results[i] = unresolved("unsupported_field");
+        } else if (!explicitAnswer) {
+          results[i] = unresolved(category === "sensitive_demographic" ? "sensitive_unset" : "missing_profile_value");
+        } else {
+          const matchedAnswer = opts.length
+            ? matchAnswerToOptionOrNull(explicitAnswer, opts)
+            : explicitAnswer;
+          results[i] = matchedAnswer
+            ? { answer: matchedAnswer, source: "profile" }
+            : unresolved("option_mismatch");
+        }
+        resolved = true;
+      }
 
       // Tier 1: Per-job cache
       const cached = cachedMap.get(norm);
-      if (cached) {
-        const answer = opts.length ? matchAnswerToOption(cached.answer, opts) : cached.answer;
-        results[i] = { answer, source: cached.source };
-        resolved = true;
+      if (!resolved && cached) {
+        const answer = opts.length ? matchAnswerToOptionOrNull(cached.answer, opts) : cached.answer;
+        if (answer) {
+          results[i] = { answer, source: cached.source };
+          resolved = true;
+        }
       }
 
       // Tier 2: Learned answers
@@ -224,13 +247,7 @@ export async function POST(request: NextRequest) {
         const learned = learnedMap.get(norm);
         if (learned && learned.length > 0) {
           const best = learned[0];
-          let answer: string | null = best.answer;
-          if (opts.length > 0) {
-            const matched = matchAnswerToOption(answer, opts);
-            const isRealMatch = opts.some((o) => o.toLowerCase().trim() === matched.toLowerCase().trim());
-            if (!isRealMatch) answer = null;
-            else answer = matched;
-          }
+          const answer = opts.length ? matchAnswerToOptionOrNull(best.answer, opts) : best.answer;
           if (answer) {
             await prisma.applicationAnswer.create({
               data: { jobId, question: q, answer, source: "learned" },
@@ -245,26 +262,13 @@ export async function POST(request: NextRequest) {
       if (!resolved) {
         const crossMatch = allCrossJobAnswers.find((a) => normalizeQuestion(a.question) === norm);
         if (crossMatch) {
-          const answer = opts.length ? matchAnswerToOption(crossMatch.answer, opts) : crossMatch.answer;
-          await prisma.applicationAnswer.create({
-            data: { jobId, question: q, answer, source: "reused" },
-          });
-          results[i] = { answer, source: "reused" };
-          resolved = true;
-        }
-      }
-
-      // Tier 3.5: Profile data lookup
-      if (!resolved) {
-        for (const lookup of profileLookups) {
-          if (lookup.pattern.test(q) && lookup.value) {
-            const answer = opts.length ? matchAnswerToOption(lookup.value, opts) : lookup.value;
+          const answer = opts.length ? matchAnswerToOptionOrNull(crossMatch.answer, opts) : crossMatch.answer;
+          if (answer) {
             await prisma.applicationAnswer.create({
-              data: { jobId, question: q, answer, source: "profile" },
+              data: { jobId, question: q, answer, source: "reused" },
             });
-            results[i] = { answer, source: "profile" };
+            results[i] = { answer, source: "reused" };
             resolved = true;
-            break;
           }
         }
       }
@@ -287,11 +291,11 @@ export async function POST(request: NextRequest) {
             profileData as Record<string, unknown>,
             jobAnalysis,
             toGenerate.map(({ input }) => {
-              const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+              const batchOptions: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
               return {
                 question: input.question,
                 characterLimit: input.characterLimit ? Number(input.characterLimit) : undefined,
-                availableOptions: opts.length > 0 ? opts : undefined,
+                availableOptions: batchOptions.length > 0 ? batchOptions : undefined,
               };
             }),
           );
@@ -299,9 +303,15 @@ export async function POST(request: NextRequest) {
           if (Array.isArray(batchResults) && batchResults.length === toGenerate.length) {
             for (let j = 0; j < toGenerate.length; j++) {
               const { index, input } = toGenerate[j];
-              const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+              const batchOptions: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
               const raw = batchResults[j]?.answer || "";
-              const finalAnswer = opts.length ? matchAnswerToOption(raw, opts) : raw;
+              const finalAnswer = batchOptions.length ? matchAnswerToOptionOrNull(raw, batchOptions) : raw;
+
+              if (!finalAnswer) {
+                results[index] = unresolved("option_mismatch");
+                continue;
+              }
+
               await prisma.applicationAnswer.create({
                 data: { jobId, question: input.question, answer: finalAnswer, source: "ai" },
               });
@@ -317,7 +327,7 @@ export async function POST(request: NextRequest) {
       if (!batchOk) {
         const aiResults = await Promise.allSettled(
           toGenerate.map(({ input }) => {
-            const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+            const aiOptions: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
             return generateFormAnswer(
               profileData as Record<string, unknown>,
               jobAnalysis,
@@ -325,7 +335,7 @@ export async function POST(request: NextRequest) {
               {
                 characterLimit: input.characterLimit ? Number(input.characterLimit) : undefined,
                 model: undefined, // Let skill use its Haiku default
-                availableOptions: opts.length > 0 ? opts : undefined,
+                availableOptions: aiOptions.length > 0 ? aiOptions : undefined,
               }
             );
           })
@@ -334,16 +344,21 @@ export async function POST(request: NextRequest) {
         for (let j = 0; j < toGenerate.length; j++) {
           const { index, input } = toGenerate[j];
           const result = aiResults[j];
-          const opts: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
+          const aiOptions: string[] = Array.isArray(input.options) ? input.options.filter(Boolean) : [];
 
           if (result.status === "fulfilled") {
-            const finalAnswer = opts.length ? matchAnswerToOption(result.value.answer, opts) : result.value.answer;
+            const finalAnswer = aiOptions.length ? matchAnswerToOptionOrNull(result.value.answer, aiOptions) : result.value.answer;
+            if (!finalAnswer) {
+              results[index] = unresolved("option_mismatch");
+              continue;
+            }
+
             await prisma.applicationAnswer.create({
               data: { jobId, question: input.question, answer: finalAnswer, source: "ai" },
             });
             results[index] = { answer: finalAnswer, source: "ai" };
           } else {
-            results[index] = { answer: "", source: "error" };
+            results[index] = unresolved("unsupported_field");
           }
         }
       }

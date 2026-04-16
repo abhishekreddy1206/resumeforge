@@ -5,6 +5,10 @@ import {
   fetchStackOverflowProfile,
 } from "@/lib/parsers/web";
 import { enrichFromExternalSource, parseResumeText } from "@/lib/claude";
+import {
+  extractLinkedInProfileUrl,
+  shouldPersistLinkedInProfile,
+} from "@/lib/applications/linkedin-profile";
 
 async function mergeEnrichedData(
   profileId: string,
@@ -164,11 +168,19 @@ export async function POST(request: NextRequest) {
     } else if (source === "linkedin") {
       // LinkedIn text is parsed like a resume
       const parsed = await parseResumeText(value);
+      const linkedinCandidate = extractLinkedInProfileUrl(value, parsed.linkedin);
       const enriched = await enrichFromExternalSource(
         existingProfile,
         parsed,
         "linkedin"
       );
+
+      if (shouldPersistLinkedInProfile(profile.linkedin, linkedinCandidate)) {
+        await prisma.profile.update({
+          where: { id: profile.id },
+          data: { linkedin: linkedinCandidate },
+        });
+      }
 
       await mergeEnrichedData(profile.id, enriched);
     } else {

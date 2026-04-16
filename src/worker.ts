@@ -3,18 +3,24 @@ import { dequeueJob, completeJob, failJob, recoverStaleJobs, getGroupCompletion,
 import type { JobRecord } from "@/lib/job-queue";
 import {
   handleGuideSection,
+  handleGuideSectionCore,
+  handleGuideSectionInteractive,
   handleGuideFinalize,
   handleGuideRefineSection,
   handleGuideRefineFull,
   handleGuideRefineFinalize,
+  handleAutoPipeline,
 } from "@/lib/worker/handlers";
+import { recoverOrphanedPipelines } from "@/lib/pipeline-recovery";
 import { createLogger } from "@/lib/logger";
 import { hostname } from "os";
 
 const log = createLogger("worker");
 
 const POLL_INTERVAL_MS = 2000;
-const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+// 20 min covers worst-case auto-pipeline runs (multiple 8-min AI calls back-to-back)
+// while still recovering genuinely wedged jobs within a reasonable window.
+const STALE_THRESHOLD_MS = 20 * 60 * 1000;
 const STALE_CHECK_INTERVAL = 30; // every 30 iterations (~60s)
 
 const workerId = `worker-${hostname()}-${process.pid}`;
@@ -28,23 +34,42 @@ function sleep(ms: number): Promise<void> {
 type JobHandler = (job: JobRecord) => Promise<void>;
 
 const handlers: Record<string, JobHandler> = {
+  // Two-phase section generation
+  "guide-section-core": handleGuideSectionCore,
+  "guide-section-interactive": handleGuideSectionInteractive,
+  "guide-recovery-section-core": handleGuideSectionCore,
+  "guide-recovery-section-interactive": handleGuideSectionInteractive,
+  // Legacy single-pass generation (for in-flight jobs)
   "guide-section": handleGuideSection,
-  "guide-recovery-section": handleGuideSection, // same handler, different groupKey
+  "guide-recovery-section": handleGuideSection,
+  // Finalize + refine
   "guide-finalize": handleGuideFinalize,
   "guide-refine-section": handleGuideRefineSection,
-  "guide-recovery-refine": handleGuideRefineSection, // same handler
+  "guide-recovery-refine": handleGuideRefineSection,
   "guide-refine-full": handleGuideRefineFull,
   "guide-refine-finalize": handleGuideRefineFinalize,
+  "auto-pipeline": handleAutoPipeline,
 };
 
 // Finalize job types that should be auto-enqueued when a group completes
 const FINALIZE_TRIGGERS: Record<string, string> = {
+  // Two-phase triggers
+  "guide-section-core": "guide-finalize",
+  "guide-section-interactive": "guide-finalize",
+  "guide-recovery-section-core": "guide-refine-finalize",
+  "guide-recovery-section-interactive": "guide-refine-finalize",
+  // Legacy triggers
   "guide-section": "guide-finalize",
   "guide-recovery-section": "guide-refine-finalize",
+  // Refine triggers
   "guide-refine-section": "guide-refine-finalize",
   "guide-recovery-refine": "guide-refine-finalize",
   "guide-refine-full": "guide-refine-finalize",
 };
+
+// Auto-pipeline runs on the worker so it survives Next.js restarts and gets
+// retry semantics via BackgroundJob. pipelineStatus columns on Job track
+// progress independently of BackgroundJob state.
 
 async function checkAndTriggerFinalize(job: JobRecord): Promise<void> {
   const finalizeType = FINALIZE_TRIGGERS[job.type];
@@ -93,6 +118,17 @@ async function processJob(job: JobRecord): Promise<void> {
 async function mainLoop(): Promise<void> {
   log.info("worker_started", { workerId });
 
+  // Auto-pipeline runs on this worker; if the worker crashed mid-run, the Job
+  // row is left with pipelineStatus='running'. Recover on startup so the UI
+  // stops polling and a manual retry is allowed.
+  try {
+    await recoverOrphanedPipelines();
+  } catch (err) {
+    log.error("pipeline_recovery_failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  }
+
   while (running) {
     iteration++;
 
@@ -129,21 +165,27 @@ async function mainLoop(): Promise<void> {
       const errorMessage = err instanceof Error ? err.message : String(err);
       log.error("job_failed", { jobId: job.id, type: job.type, error: errorMessage.slice(0, 500) });
 
-      // Mark section as failed in guide content if applicable
+      // Mark section as failed in tracking columns (no content blob r/w)
       try {
         const payload = JSON.parse(job.payload) as { guideId?: string; sectionPlan?: { id: string }; sectionId?: string };
         const sectionId = payload.sectionPlan?.id || payload.sectionId;
         if (payload.guideId && sectionId) {
           const { prisma } = await import("@/lib/db");
-          const guide = await prisma.guide.findUnique({ where: { id: payload.guideId } });
+          const guide = await prisma.guide.findUnique({
+            where: { id: payload.guideId },
+            select: { sectionStatuses: true, sectionErrors: true },
+          });
           if (guide) {
-            const { ensureGuideContentTracking } = await import("@/lib/learn-guides");
-            const content = ensureGuideContentTracking(JSON.parse(guide.content));
-            if (content._sectionStatuses) content._sectionStatuses[sectionId] = "failed";
-            if (content._sectionErrors) content._sectionErrors[sectionId] = errorMessage.slice(0, 500);
+            const { mergeTrackingStatus, mergeTrackingError } = await import("@/lib/learn-guides");
+            // Phase-aware: interactive failures keep core content visible
+            const isInteractiveJob = job.type.includes("interactive");
+            const failStatus = isInteractiveJob ? "core_complete" : "failed";
             await prisma.guide.update({
               where: { id: payload.guideId },
-              data: { content: JSON.stringify(content) },
+              data: {
+                sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionId, failStatus),
+                sectionErrors: mergeTrackingError(guide.sectionErrors, sectionId, errorMessage.slice(0, 500)),
+              },
             });
           }
         }

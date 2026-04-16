@@ -13,8 +13,14 @@ const jobDetail = document.getElementById("job-detail");
 const noResumeWarning = document.getElementById("no-resume-warning");
 const fillBtn = document.getElementById("fill-btn");
 const resultsDiv = document.getElementById("results");
+const resultsHeaderEl = document.getElementById("results-header");
 const filledCountEl = document.getElementById("filled-count");
 const aiCountEl = document.getElementById("ai-count");
+const unresolvedCountEl = document.getElementById("unresolved-count");
+const resultsWarningEl = document.getElementById("results-warning");
+const unresolvedListEl = document.getElementById("unresolved-list");
+const optionalMissSummaryEl = document.getElementById("optional-miss-summary");
+const optionalMissListEl = document.getElementById("optional-miss-list");
 const loadingDiv = document.getElementById("loading");
 const errorBar = document.getElementById("error-bar");
 const errorText = document.getElementById("error-text");
@@ -25,6 +31,24 @@ const captureResult = document.getElementById("capture-result");
 
 let jobs = [];
 let selectedJob = null;
+const popupHelpers = globalThis.ResumeForgePopupHelpers || {
+  classifyCaptureDuplicate: (_details, captureType) => captureType === "article" ? "saved-source" : "job",
+  buildDuplicateReviewUrl: (api, details, captureType) => {
+    if (details?.reviewUrl) return `${api}${details.reviewUrl}`;
+    if (captureType === "article" && details?.existingSourceId) return `${api}/learn/sources/${details.existingSourceId}`;
+    if (details?.existingJobId) return `${api}/jobs?jobId=${encodeURIComponent(details.existingJobId)}`;
+    return `${api}/jobs`;
+  },
+};
+
+const UNRESOLVED_REASON_LABELS = {
+  missing_profile_value: "Needs profile data",
+  sensitive_unset: "Left blank for privacy",
+  upload_failed: "Resume upload failed",
+  missing_resume: "Missing resume",
+  option_mismatch: "Could not match site options",
+  unsupported_field: "Needs manual review",
+};
 
 // ── Init ──
 
@@ -182,6 +206,9 @@ fillBtn.addEventListener("click", async () => {
   fillBtn.disabled = true;
   loadingDiv.classList.remove("hidden");
   resultsDiv.classList.add("hidden");
+  resultsWarningEl.classList.add("hidden");
+  unresolvedListEl.classList.add("hidden");
+  unresolvedListEl.innerHTML = "";
   hideError();
 
   try {
@@ -210,9 +237,7 @@ fillBtn.addEventListener("click", async () => {
 
     if (result.error) throw new Error(result.error);
 
-    filledCountEl.textContent = result.filledCount || 0;
-    aiCountEl.textContent = result.screeningQuestions || 0;
-    resultsDiv.classList.remove("hidden");
+    renderFillResults(result);
   } catch (err) {
     showError(err.message || "Failed to fill form.");
   } finally {
@@ -305,8 +330,26 @@ function renderDuplicateCapture(details) {
   });
 
   reviewBtn?.addEventListener("click", async () => {
-    const reviewPath = details.reviewUrl || `/learn/sources/${details.existingSourceId}`;
-    await chrome.tabs.create({ url: `${apiBase()}${reviewPath}` });
+    await chrome.tabs.create({
+      url: popupHelpers.buildDuplicateReviewUrl(apiBase(), details, "article"),
+    });
+  });
+}
+
+function renderDuplicateJob(details) {
+  captureResult.className = "capture-result duplicate";
+  captureResult.innerHTML = `
+    <div>This job is already in ResumeForge as "${escapeHtml(details.title || "Untitled Position")}" at "${escapeHtml(details.company || "Unknown Company")}".</div>
+    <div class="capture-actions">
+      <button type="button" class="capture-action-btn capture-action-primary" id="capture-review-job-btn">Open existing job</button>
+    </div>
+  `;
+
+  const reviewBtn = document.getElementById("capture-review-job-btn");
+  reviewBtn?.addEventListener("click", async () => {
+    await chrome.tabs.create({
+      url: popupHelpers.buildDuplicateReviewUrl(apiBase(), details, "job"),
+    });
   });
 }
 
@@ -330,7 +373,12 @@ async function captureCurrentPage(captureType) {
 
     if (result.error) {
       if (result.status === 409 && result.details?.duplicate) {
-        renderDuplicateCapture(result.details);
+        const duplicateKind = popupHelpers.classifyCaptureDuplicate(result.details, captureType);
+        if (duplicateKind === "saved-source") {
+          renderDuplicateCapture(result.details);
+        } else {
+          renderDuplicateJob(result.details);
+        }
       } else {
         throw new Error(result.error);
       }
@@ -365,6 +413,74 @@ function showError(msg) {
 
 function hideError() {
   errorBar.classList.add("hidden");
+}
+
+function unresolvedReasonLabel(reason) {
+  return UNRESOLVED_REASON_LABELS[reason] || "Needs manual review";
+}
+
+function renderFillResults(result) {
+  const unresolved = Array.isArray(result.unresolvedRequiredFields)
+    ? result.unresolvedRequiredFields
+    : [];
+  const optionalMisses = Array.isArray(result.optionalProfileMisses)
+    ? result.optionalProfileMisses
+    : [];
+
+  filledCountEl.textContent = result.filledCount || 0;
+  aiCountEl.textContent = result.screeningQuestions || 0;
+  unresolvedCountEl.textContent = unresolved.length;
+
+  if (unresolved.length > 0) {
+    resultsHeaderEl.textContent = "Review Required Fields";
+
+    const hasUploadFailure = unresolved.some((field) => field.reason === "upload_failed");
+    const missingResume = unresolved.some((field) => field.reason === "missing_resume");
+    if (hasUploadFailure) {
+      resultsWarningEl.textContent = "Resume upload failed. Reattach it before submitting.";
+    } else if (missingResume) {
+      resultsWarningEl.textContent = "This application still needs a resume attachment.";
+    } else {
+      resultsWarningEl.textContent = `${unresolved.length} required field${unresolved.length !== 1 ? "s are" : " is"} still unresolved.`;
+    }
+    resultsWarningEl.classList.remove("hidden");
+
+    unresolvedListEl.innerHTML = unresolved
+      .map((field) => `
+        <div class="unresolved-item">
+          <span class="unresolved-label">${escapeHtml(field.label || "Required field")}</span>
+          <span class="unresolved-reason">${escapeHtml(unresolvedReasonLabel(field.reason))}</span>
+        </div>
+      `)
+      .join("");
+    unresolvedListEl.classList.remove("hidden");
+  } else {
+    resultsHeaderEl.textContent = "Fill Complete";
+    resultsWarningEl.classList.add("hidden");
+    unresolvedListEl.classList.add("hidden");
+    unresolvedListEl.innerHTML = "";
+  }
+
+  if (optionalMisses.length > 0) {
+    optionalMissSummaryEl.textContent = `${optionalMisses.length} optional profile field${optionalMisses.length !== 1 ? "s were" : " was"} skipped because ResumeForge is missing those values.`;
+    optionalMissSummaryEl.classList.remove("hidden");
+    optionalMissListEl.innerHTML = optionalMisses
+      .map((field) => `
+        <div class="unresolved-item">
+          <span class="unresolved-label">${escapeHtml(field.label || "Optional field")}</span>
+          <span class="unresolved-reason">${escapeHtml(unresolvedReasonLabel(field.reason))}</span>
+        </div>
+      `)
+      .join("");
+    optionalMissListEl.classList.remove("hidden");
+  } else {
+    optionalMissSummaryEl.classList.add("hidden");
+    optionalMissSummaryEl.textContent = "";
+    optionalMissListEl.classList.add("hidden");
+    optionalMissListEl.innerHTML = "";
+  }
+
+  resultsDiv.classList.remove("hidden");
 }
 
 function escapeHtml(text) {

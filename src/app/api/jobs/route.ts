@@ -3,9 +3,10 @@ import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrl } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
-import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
+import { enqueueJob } from "@/lib/job-queue";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
+import { getAppSettings } from "@/lib/app-settings";
 
 const log = createLogger("jobs");
 
@@ -151,7 +152,16 @@ export const PATCH = withLogging(async (request: NextRequest) => {
         },
       });
       taskLog.complete({ model: aiModel, title: analysis.title as string });
-      return runAutoPipeline(jobId);
+      enqueueJob(
+        "auto-pipeline",
+        { jobId },
+        { entityId: jobId, entityType: "job", maxAttempts: 2 }
+      ).catch((enqueueErr) => {
+        log.error("auto_pipeline_enqueue_failed", {
+          jobId,
+          error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+        });
+      });
     })
     .catch((err) => {
       taskLog.fail(err);
@@ -250,6 +260,8 @@ export const POST = withLogging(async (request: NextRequest) => {
     );
   }
 
+  const settings = await getAppSettings();
+
   // Save the job immediately with the raw text — user sees it appear right away
   const job = await prisma.job.create({
     data: {
@@ -270,7 +282,7 @@ export const POST = withLogging(async (request: NextRequest) => {
       seniority: null,
       roleArchetype: null,
       sponsorship: "unspecified",
-      aiModel: aiModel || "sonnet",
+      aiModel: aiModel || settings.defaultAiModel,
       source: source || null,
     },
   });
@@ -302,12 +314,23 @@ export const POST = withLogging(async (request: NextRequest) => {
         },
       });
       taskLog.complete({ title: analysis.title as string });
-      // Auto-run match scoring after analysis
-      return runAutoPipeline(job.id);
+      // Enqueue the v2 resume quality pipeline on the BackgroundJob worker so it
+      // survives Next.js restarts and gets retry semantics. Pipeline progress is
+      // tracked on Job.pipelineStatus / pipelineStage.
+      enqueueJob(
+        "auto-pipeline",
+        { jobId: job.id },
+        { entityId: job.id, entityType: "job", maxAttempts: 2 }
+      ).catch((enqueueErr) => {
+        log.error("auto_pipeline_enqueue_failed", {
+          jobId: job.id,
+          error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+        });
+      });
     })
     .catch((err) => {
       taskLog.fail(err);
-      // Update with a failure indicator so the user knows
+      // Only overwrite title when analysis itself fails
       prisma.job
         .update({
           where: { id: job.id },

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { refineGuideSection } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
 import { getActiveGuideSourceTexts, getGuideVersionSourceRefs, serializeGuideVersionSourceRefs } from "@/lib/learn-sources";
-import { ensureGuideContentTracking } from "@/lib/learn-guides";
+import { ensureGuideContentTracking, mergeTrackingStatus, mergeTrackingError } from "@/lib/learn-guides";
 
 export async function POST(
   request: NextRequest,
@@ -24,8 +24,10 @@ export async function POST(
       return NextResponse.json({ error: "Section not found" }, { status: 404 });
     }
 
-    const statuses = content._sectionStatuses || {};
-    if (statuses[sectionId] && statuses[sectionId] !== "completed") {
+    const statuses: Record<string, string> = guide.sectionStatuses
+      ? JSON.parse(guide.sectionStatuses)
+      : { ...(content._sectionStatuses || {}) };
+    if (statuses[sectionId] && statuses[sectionId] !== "completed" && statuses[sectionId] !== "core_complete") {
       return NextResponse.json(
         { error: `Section is currently ${statuses[sectionId]}` },
         { status: 409 }
@@ -35,13 +37,11 @@ export async function POST(
     const body = await request.json();
     const { instructions, model } = body as { instructions?: string; model?: string };
 
-    // Mark section as refining
-    statuses[sectionId] = "refining";
-    content._sectionStatuses = statuses;
+    // Mark section as refining via column
     await prisma.guide.update({
       where: { id },
       data: {
-        content: JSON.stringify(content),
+        sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionId, "refining"),
       },
     });
 
@@ -66,8 +66,6 @@ export async function POST(
       const currentContent = ensureGuideContentTracking(JSON.parse(currentGuide.content) as GuideContentStorage);
       const idx = currentContent.sections.findIndex((s) => s.id === sectionId);
       if (idx !== -1) currentContent.sections[idx] = refined;
-      if (currentContent._sectionStatuses) currentContent._sectionStatuses[sectionId] = "completed";
-      if (currentContent._sectionErrors) delete currentContent._sectionErrors[sectionId];
 
       const newVersion = guide.version + 1;
       const sourceRefs = await getGuideVersionSourceRefs(guide.id);
@@ -88,6 +86,8 @@ export async function POST(
           data: {
             content: JSON.stringify(currentContent),
             version: newVersion,
+            sectionStatuses: mergeTrackingStatus(currentGuide.sectionStatuses, sectionId, "completed"),
+            sectionErrors: mergeTrackingError(currentGuide.sectionErrors, sectionId, null),
             lastAsyncError: null,
             lastAsyncStage: null,
           },
@@ -96,21 +96,19 @@ export async function POST(
 
       return NextResponse.json({ section: refined, version: newVersion });
     } catch (err) {
-      // Restore status on failure
-      const fallback = await prisma.guide.findUnique({ where: { id } });
+      // Restore status on failure — update columns, no content blob r/w
+      const fallback = await prisma.guide.findUnique({
+        where: { id },
+        select: { sectionStatuses: true, sectionErrors: true },
+      });
       if (fallback) {
-        const fallbackContent = ensureGuideContentTracking(JSON.parse(fallback.content) as GuideContentStorage);
-        if (fallbackContent._sectionStatuses) fallbackContent._sectionStatuses[sectionId] = "completed";
-        if (fallbackContent._sectionErrors) {
-          fallbackContent._sectionErrors[sectionId] = err instanceof Error
-            ? err.message.slice(0, 500)
-            : "Section refinement failed";
-        }
+        const errorMsg = err instanceof Error ? err.message.slice(0, 500) : "Section refinement failed";
         await prisma.guide.update({
           where: { id },
           data: {
-            content: JSON.stringify(fallbackContent),
-            lastAsyncError: err instanceof Error ? err.message.slice(0, 500) : "Section refinement failed",
+            sectionStatuses: mergeTrackingStatus(fallback.sectionStatuses, sectionId, "completed"),
+            sectionErrors: mergeTrackingError(fallback.sectionErrors, sectionId, errorMsg),
+            lastAsyncError: errorMsg,
             lastAsyncStage: "refine_section",
           },
         });

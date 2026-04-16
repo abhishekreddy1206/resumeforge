@@ -43,6 +43,8 @@ interface InsightsData {
       frequency: number;
       clusters: string[];
       bridgeableBy?: { yourSkill: string; coverageCount: number };
+      matchedGuide: { id: string; slug: string; topic: string } | null;
+      coveredByGuide: boolean;
     }>;
     bridges: Array<{
       jobRequirement: string;
@@ -63,7 +65,8 @@ interface InsightsData {
     difficulty: "beginner" | "intermediate" | "advanced";
     gapSkills: Array<{ skill: string; frequency: number }>;
     clusters: string[];
-    existingGuide: boolean;
+    matchedGuide: { id: string; slug: string; topic: string } | null;
+    coveredByGuide: boolean;
   }>;
 }
 

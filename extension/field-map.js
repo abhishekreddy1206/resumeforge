@@ -12,6 +12,9 @@
 
 const FIELD_MAP = {
   // Personal info
+  "personal.preferredFirstName": {
+    keywords: [/preferred.?first.?name/i, /preferred.?name/i],
+  },
   "personal.firstName": {
     keywords: [/first.?name/i, /fname/i, /given.?name/i, /^first$/i],
     workdayId: "legalNameSection_firstName",
@@ -31,6 +34,9 @@ const FIELD_MAP = {
   "personal.location": {
     keywords: [/city/i, /location/i, /address/i],
     workdayId: "addressSection_city",
+  },
+  "personal.country": {
+    keywords: [/country\/?region/i, /country.?of.?residence/i, /^country$/i, /\bcountry\b/i],
   },
   "personal.linkedin": {
     keywords: [/linkedin/i, /linked.?in/i, /linked\s+in/i],

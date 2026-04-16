@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ArrowLeft, RefreshCw, Trash2, ExternalLink, FileWarning, BookOpen } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface SavedSourceVersionItem {
   id: string;
@@ -97,6 +98,10 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorContent, setEditorContent] = useState("");
 
   const loadSource = useCallback(async () => {
     try {
@@ -106,7 +111,10 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to load source");
       }
-      setSource(await res.json());
+      const nextSource = await res.json();
+      setSource(nextSource);
+      setEditorTitle(nextSource.title);
+      setEditorContent(nextSource.content);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load source");
     } finally {
@@ -172,6 +180,35 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
     }
   };
 
+  const handleSave = async () => {
+    if (!source || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/learn/sources/${source.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editorTitle,
+          content: editorContent,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Save failed");
+      }
+      setSource((prev) => (prev ? { ...prev, ...data } : data));
+      setEditorTitle(data.title);
+      setEditorContent(data.content);
+      setEditing(false);
+      await loadSource();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto py-8 px-4 space-y-4">
@@ -231,10 +268,44 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {!source.deletedAt && (
+              editing ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setEditing(false);
+                      setEditorTitle(source.title);
+                      setEditorContent(source.content);
+                    }}
+                    disabled={saving}
+                    data-slot="button"
+                    className="bg-muted text-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    data-slot="button"
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save Edit"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setEditing(true)}
+                  data-slot="button"
+                  className="bg-muted text-foreground px-4 py-2 rounded text-sm font-medium"
+                >
+                  Edit Extract
+                </button>
+              )
+            )}
             {source.refreshable && (
               <button
                 onClick={handleRefresh}
-                disabled={refreshing}
+                disabled={refreshing || editing || saving}
                 data-slot="button"
                 className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2"
               >
@@ -253,7 +324,7 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
             </a>
             <button
               onClick={handleDelete}
-              disabled={deleting}
+              disabled={deleting || editing || saving}
               data-slot="button"
               className="bg-destructive/10 text-destructive px-4 py-2 rounded text-sm font-medium disabled:opacity-50 inline-flex items-center gap-2"
             >
@@ -378,45 +449,108 @@ export default function LearnSourceReviewPage({ params }: { params: Promise<{ id
         </div>
       </section>
 
-      <section className="grid lg:grid-cols-[1.25fr_0.75fr] gap-6 anim-fade-up-3">
-        <div className="bg-card border border-border rounded p-5">
-          <div className="label-mono text-muted-foreground mb-3">Current Extract Preview</div>
-          <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground font-sans max-h-[28rem] overflow-y-auto">
-            {source.preview}
-          </pre>
-        </div>
+      <section className="anim-fade-up-3">
+        <Tabs defaultValue="current">
+          <TabsList variant="line">
+            <TabsTrigger value="current">Current Source</TabsTrigger>
+            <TabsTrigger value="versions">Version History</TabsTrigger>
+          </TabsList>
 
-        <div className="bg-card border border-border rounded p-5">
-          <div className="label-mono text-muted-foreground mb-3">Version History</div>
-          <div className="space-y-3 max-h-[28rem] overflow-y-auto">
-            {source.versions.map((version) => (
-              <div key={version.id} className="rounded border border-border px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="label-mono text-foreground">v{version.version}</span>
-                  <span className="label-mono text-muted-foreground">{version.changeType}</span>
+          <TabsContent value="current">
+            <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-6 pt-4">
+              <div className="bg-card border border-border rounded p-5">
+                <div className="label-mono text-muted-foreground mb-3">Current Extract</div>
+                <div className="space-y-3">
+                  {editing ? (
+                    <>
+                      <input
+                        value={editorTitle}
+                        onChange={(e) => setEditorTitle(e.target.value)}
+                        className="w-full bg-background border border-input rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                        placeholder="Source title"
+                      />
+                      <textarea
+                        value={editorContent}
+                        onChange={(e) => setEditorContent(e.target.value)}
+                        className="w-full min-h-[28rem] bg-background border border-input rounded px-3 py-2.5 text-sm leading-6 resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                        placeholder="Correct the extracted source text"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium">{source.title}</div>
+                      <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground font-sans max-h-[28rem] overflow-y-auto">
+                        {source.content}
+                      </pre>
+                    </>
+                  )}
                 </div>
-                <div className="text-sm mt-1">{version.title}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {version.captureMethod || "unknown"} · {version.wordCount} words
-                </div>
-                {version.captureDecisionReason && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {version.captureDecisionReason}
-                  </div>
-                )}
-                {version.reviewFlags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {version.reviewFlags.map((flag) => (
-                      <span key={`${version.id}-${flag}`} className="label-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                        {flag}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
-        </div>
+
+              <div className="bg-card border border-border rounded p-5">
+                <div className="label-mono text-muted-foreground mb-3">Current Head Summary</div>
+                <div className="space-y-2 text-sm">
+                  <div>Version: v{source.version}</div>
+                  <div>Words: {source.wordCount}</div>
+                  <div>Capture: {source.captureMethod || "unknown"}</div>
+                  {source.captureDecisionReason && <div>Decision: {source.captureDecisionReason}</div>}
+                </div>
+                {source.reviewFlags.length > 0 && (
+                  <div className="mt-4">
+                    <div className="label-mono text-muted-foreground mb-2">Review Flags</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {source.reviewFlags.map((flag) => (
+                        <span key={flag} className="label-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {flag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {source.reviewSummary && (
+                  <p className="mt-3 text-xs text-muted-foreground">{source.reviewSummary}</p>
+                )}
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Manual edits create a new saved-source version. Guides stay pinned to their existing source version until you refine them.
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="versions">
+            <div className="bg-card border border-border rounded p-5 mt-4">
+              <div className="label-mono text-muted-foreground mb-3">Version History</div>
+              <div className="space-y-3 max-h-[32rem] overflow-y-auto">
+                {source.versions.map((version) => (
+                  <div key={version.id} className="rounded border border-border px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="label-mono text-foreground">v{version.version}</span>
+                      <span className="label-mono text-muted-foreground">{version.changeType}</span>
+                    </div>
+                    <div className="text-sm mt-1">{version.title}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {version.captureMethod || "unknown"} · {version.wordCount} words
+                    </div>
+                    {version.captureDecisionReason && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {version.captureDecisionReason}
+                      </div>
+                    )}
+                    {version.reviewFlags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {version.reviewFlags.map((flag) => (
+                          <span key={`${version.id}-${flag}`} className="label-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                            {flag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </section>
     </div>
   );

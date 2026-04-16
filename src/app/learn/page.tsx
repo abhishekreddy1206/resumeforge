@@ -461,6 +461,8 @@ function LearnPageContent() {
                           {s.reviewUrl && (
                             <a
                               href={s.reviewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="shrink-0 text-xs text-primary hover:text-primary/80"
                               title="Review saved source"
                             >

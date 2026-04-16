@@ -44,7 +44,7 @@ export const GUIDE_SCHEMA = `{
 export const SECTION_SCHEMA = `{
   "id": "string",
   "title": "string",
-  "explanation": "string (markdown)",
+  "explanation": "string (markdown, 500-1200 words)",
   "codeExamples": [{"language":"string","code":"string","caption":"string"}],
   "knowledgeChecks": [
     {"type":"quiz","question":"string","options":["string"],"answer":0,"explanation":"string"},
@@ -57,8 +57,8 @@ export const SECTION_SCHEMA = `{
 export const SECTION_SESSION_INSTRUCTIONS = `Write a focused technical learning session for a senior SWE study guide.
 
 INCLUDE:
-1. Explanation — concise but complete markdown prose that teaches the idea, trade-offs, and one or two real-system examples. Aim for a session-sized section, not a giant essay.
-2. Code examples — optional but encouraged when they clarify the concept. Use real compilable code, not pseudocode.
+1. Explanation — 500-1200 words of markdown prose that teaches the core idea, trade-offs, and one or two real-system examples. Focus on depth over breadth. Do not attempt encyclopedic coverage.
+2. Code examples — 1-3 examples, each under 50 lines. Use real compilable code, not pseudocode.
 3. Knowledge checks (2-4 total, mix of types):
    - quiz: 4 options, correct answer index (0-based), explanation of WHY each wrong answer fails
    - open_ended: "Explain X as if..." prompt + detailed evaluation rubric
@@ -67,6 +67,8 @@ INCLUDE:
    - hints: 3-4 progressive hints (subtle to direct)
    - sampleAnswer: strong candidate response with specific technical details
 5. Key takeaways — 2-4 bullets summarizing the most important concepts.
+
+LENGTH BUDGET: The explanation MUST be between 500 and 1200 words. Going over 1200 words means you are covering too much — narrow your focus to the single most important concept.
 
 QUALITY:
 - FAANG-prep level, but readable in one sitting
@@ -86,6 +88,53 @@ export const OUTLINE_SCHEMA = `{
     "scope": "string (2-3 sentences: what this section covers, code examples, quiz topics)"
   }],
   "references": [{"title":"string","url":"string","description":"string"}]
+}`;
+
+export const CORE_SECTION_INSTRUCTIONS = `Write the explanation and code examples for a technical learning session in a senior SWE study guide.
+
+INCLUDE:
+1. Explanation — 500-1200 words of markdown prose. Teach the core idea, key trade-offs, and one or two real-system examples (Google/Netflix/Uber). Focus on the single most important concept and its trade-offs. Do not attempt encyclopedic coverage.
+2. Code examples — 1-3 examples, each under 50 lines. Use real compilable code, not pseudocode. Python/Go/Java/TS.
+
+LENGTH BUDGET: The explanation MUST be between 500 and 1200 words. This is a hard constraint. Going over 1200 words means you are covering too much — narrow your focus.
+
+QUALITY:
+- FAANG-prep level, but readable in one sitting
+- Prefer depth over filler
+- Teach the "why" not just the "what"
+- Return the section in one response`;
+
+export const CORE_SECTION_SCHEMA = `{
+  "id": "string",
+  "title": "string",
+  "explanation": "string (markdown, 500-1200 words)",
+  "codeExamples": [{"language":"string","code":"string","caption":"string"}]
+}`;
+
+export const INTERACTIVE_SECTION_INSTRUCTIONS = `Given a section's explanation and code examples, create interactive learning content for a senior SWE study guide.
+
+CREATE:
+1. Knowledge checks (2-4 total, mix of types):
+   - quiz: 4 options, correct answer index (0-based), explanation of WHY each wrong answer fails
+   - open_ended: "Explain X as if..." prompt + detailed evaluation rubric
+2. Interview scenarios (1-2):
+   - setup: "You're in a system design interview asked to..."
+   - hints: 3-4 progressive hints (subtle to direct)
+   - sampleAnswer: strong candidate response with specific technical details
+3. Key takeaways — 2-4 bullets summarizing the most important concepts from the section.
+
+QUALITY:
+- Questions must test understanding from the explanation, not trivia
+- Interview scenarios must be realistic and based on the section content
+- FAANG-prep level`;
+
+export const INTERACTIVE_SECTION_SCHEMA = `{
+  "knowledgeChecks": [
+    {"type":"quiz","question":"string","options":["string"],"answer":0,"explanation":"string"},
+    {"type":"open_ended","prompt":"string","rubric":"string"}
+  ],
+  "interviewScenarios": [{"setup":"string","hints":["string"],"sampleAnswer":"string"}],
+  "keyTakeaways": ["string"]
 }`;
 
 /**

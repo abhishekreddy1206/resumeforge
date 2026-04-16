@@ -52,6 +52,7 @@ function duplicateResponse(source: {
     {
       error: "This article has already been saved",
       duplicate: true,
+      duplicateKind: "saved-source",
       existingSourceId: source.id,
       title: source.title,
       version: source.version,

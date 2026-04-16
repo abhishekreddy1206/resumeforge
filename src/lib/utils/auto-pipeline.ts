@@ -3,7 +3,6 @@ import path from "path";
 import { prisma } from "@/lib/db";
 import { matchProfileToJob } from "@/lib/claude";
 import { generatePdf } from "@/lib/generators/pdf";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { createTaskLogger } from "@/lib/logger";
 import {
   RESUME_QUALITY_SCORE_VERSION,
@@ -12,22 +11,42 @@ import {
 } from "@/lib/resume-quality";
 import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
+import { getAppSettings } from "@/lib/app-settings";
 
 const sanitize = (value: string) =>
   value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
 
+async function setPipelineResult(
+  jobId: string,
+  status: string,
+  stage: string,
+  error?: string
+): Promise<void> {
+  await prisma.job
+    .update({
+      where: { id: jobId },
+      data: {
+        pipelineStatus: status,
+        pipelineStage: stage,
+        pipelineError: error ?? null,
+        pipelineEndedAt: new Date(),
+      },
+    })
+    .catch(() => {}); // prevent double-fault if DB is also down
+}
+
 /**
  * Automation pipeline for v2 resume quality:
  * 1. Persist fit analysis
- * 2. Stop if match score < 60
+ * 2. Stop if match score is below the configured match floor (AppSettings.matchScoreFloor)
  * 3. Build planner -> writer -> evaluator artifact
- * 4. Save only valid v2 profile versions with quality >= 78
+ * 4. Save only valid v2 profile versions meeting the configured quality floor (AppSettings.qualityScoreFloor)
  * 5. Generate PDF only for saved v2 versions
  */
 export async function runAutoPipeline(jobId: string): Promise<void> {
   const task = createTaskLogger("auto-pipeline", jobId);
 
-  const [profile, job] = await Promise.all([
+  const [profile, job, settings] = await Promise.all([
     prisma.profile.findFirst({
       include: {
         experiences: true,
@@ -39,14 +58,33 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       },
     }),
     prisma.job.findUnique({ where: { id: jobId } }),
+    getAppSettings(),
   ]);
 
-  if (!profile || !job) return;
+  if (!profile || !job) {
+    if (job) await setPipelineResult(jobId, "failed", "match", "missing_profile");
+    return;
+  }
 
   if (job.sponsorship === "unavailable") {
     task.step("skipped_no_sponsorship");
+    await setPipelineResult(jobId, "skipped", "match", "no_sponsorship");
     return;
   }
+
+  // Mark pipeline as running
+  await prisma.job
+    .update({
+      where: { id: jobId },
+      data: {
+        pipelineStatus: "running",
+        pipelineStage: "match",
+        pipelineStartedAt: new Date(),
+        pipelineError: null,
+        pipelineEndedAt: null,
+      },
+    })
+    .catch(() => {});
 
   const profileForMatch = serializeProfile(profile);
   const jobAnalysis = buildJobAnalysisFromRecord(job as unknown as Record<string, unknown>);
@@ -63,9 +101,20 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
   } catch (err) {
     // Retry once for transient API failures (stream timeout, etc.)
     task.step("match_retry", { error: String(err) });
-    match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
-      model: job.aiModel,
-    });
+    try {
+      match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
+        model: job.aiModel,
+      });
+    } catch (retryErr) {
+      task.fail(retryErr);
+      await setPipelineResult(
+        jobId,
+        "failed",
+        "match",
+        retryErr instanceof Error ? retryErr.message : String(retryErr)
+      );
+      return;
+    }
   }
 
   await prisma.job.update({
@@ -79,10 +128,15 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
   task.step("match_complete", { score: match.overallScore });
 
   try {
-    if (match.overallScore < 60) {
-      task.step("below_threshold", { score: match.overallScore, threshold: 60 });
+    if (match.overallScore < settings.matchScoreFloor) {
+      task.step("below_threshold", { score: match.overallScore, threshold: settings.matchScoreFloor });
+      await setPipelineResult(jobId, "skipped", "match", `below_match_threshold:${match.overallScore}`);
       return;
     }
+
+    await prisma.job
+      .update({ where: { id: jobId }, data: { pipelineStage: "build" } })
+      .catch(() => {});
 
     const build = await buildResumeQualityVersion({
       profile: profile as unknown as Record<string, unknown>,
@@ -96,16 +150,32 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         stage: build.blockedStage,
         hardBlockers: build.hardBlockers.map((entry) => entry.code),
       });
+      await setPipelineResult(
+        jobId,
+        "blocked",
+        build.blockedStage ?? "build",
+        JSON.stringify(build.hardBlockers.map((entry) => entry.code))
+      );
       return;
     }
 
-    if (build.evaluation.overallScore < 78) {
+    if (build.evaluation.overallScore < settings.qualityScoreFloor) {
       task.step("below_quality_threshold", {
         score: build.evaluation.overallScore,
-        threshold: 78,
+        threshold: settings.qualityScoreFloor,
       });
+      await setPipelineResult(
+        jobId,
+        "blocked",
+        "quality_gate",
+        `score:${build.evaluation.overallScore}`
+      );
       return;
     }
+
+    await prisma.job
+      .update({ where: { id: jobId }, data: { pipelineStage: "save" } })
+      .catch(() => {});
 
     const previousV2Version = await prisma.profileVersion.findFirst({
       where: {
@@ -136,6 +206,10 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       score: build.evaluation.overallScore,
       warnings: build.warnings.length,
     });
+
+    await prisma.job
+      .update({ where: { id: jobId }, data: { pipelineStage: "pdf" } })
+      .catch(() => {});
 
     try {
       const buffer = await generatePdf(build.resumeData);
@@ -169,14 +243,23 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         filePath,
         qualityScore: build.evaluation.overallScore,
       });
+      await setPipelineResult(jobId, "completed", "pdf");
     } catch (pdfError) {
       task.fail(pdfError, { phase: "pdf_generation" });
+      await setPipelineResult(
+        jobId,
+        "failed",
+        "pdf",
+        pdfError instanceof Error ? pdfError.message : String(pdfError)
+      );
     }
   } catch (error) {
     task.fail(error);
-  } finally {
-    refreshRecommendationsCache().catch((error) =>
-      task.fail(error, { phase: "recommendation_refresh" })
+    await setPipelineResult(
+      jobId,
+      "failed",
+      "build",
+      error instanceof Error ? error.message : String(error)
     );
   }
 }

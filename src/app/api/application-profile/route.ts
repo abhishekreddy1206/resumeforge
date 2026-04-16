@@ -23,6 +23,8 @@ export async function GET() {
           profileId: profile.id,
           firstName,
           lastName,
+          preferredFirstName: null,
+          country: null,
         },
       });
     }
@@ -37,6 +39,10 @@ export async function GET() {
   }
 }
 
+// Note: `customDefaults` is intentionally NOT updated here. It is a deprecated
+// column migrated once via POST /api/applications/migrate-pins into the
+// LearnedAnswer table. New pins are written through the extension's
+// /api/applications/learn observation flow, not through this route.
 export async function PUT(request: NextRequest) {
   try {
     const data = await request.json();
@@ -52,6 +58,7 @@ export async function PUT(request: NextRequest) {
         profileId: profile.id,
         firstName: data.firstName,
         lastName: data.lastName,
+        preferredFirstName: data.preferredFirstName,
         workAuthorized: data.workAuthorized,
         sponsorshipNeeded: data.sponsorshipNeeded,
         salaryMin: data.salaryMin,
@@ -60,6 +67,7 @@ export async function PUT(request: NextRequest) {
         noticePeriod: data.noticePeriod,
         preferredWorkMode: data.preferredWorkMode,
         earliestStartDate: data.earliestStartDate,
+        country: data.country,
         gender: data.gender,
         race: data.race,
         veteranStatus: data.veteranStatus,
@@ -70,6 +78,7 @@ export async function PUT(request: NextRequest) {
       update: {
         firstName: data.firstName,
         lastName: data.lastName,
+        preferredFirstName: data.preferredFirstName,
         workAuthorized: data.workAuthorized,
         sponsorshipNeeded: data.sponsorshipNeeded,
         salaryMin: data.salaryMin,
@@ -78,6 +87,7 @@ export async function PUT(request: NextRequest) {
         noticePeriod: data.noticePeriod,
         preferredWorkMode: data.preferredWorkMode,
         earliestStartDate: data.earliestStartDate,
+        country: data.country,
         gender: data.gender,
         race: data.race,
         veteranStatus: data.veteranStatus,

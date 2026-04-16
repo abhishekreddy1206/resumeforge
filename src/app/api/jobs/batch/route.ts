@@ -3,9 +3,10 @@ import { prisma } from "@/lib/db";
 import { analyzeJobDescription } from "@/lib/claude";
 import { scrapeJobUrlResolved } from "@/lib/parsers/web";
 import { normalizeJobUrl } from "@/lib/utils/normalize-url";
-import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
+import { enqueueJob } from "@/lib/job-queue";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
+import { getAppSettings } from "@/lib/app-settings";
 
 const log = createLogger("jobs-batch");
 
@@ -70,6 +71,8 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   log.info("batch_import_start", { totalUrls: uniqueUrls.length, newUrls: newUrls.length, preDeduplicated: uniqueUrls.length - newUrls.length });
 
+  const settings = await getAppSettings();
+
   // Scrape remaining URLs in parallel (no AI tokens used)
   const scrapeResults = await Promise.allSettled(
     newUrls.map(async (url) => {
@@ -126,7 +129,7 @@ export const POST = withLogging(async (request: NextRequest) => {
           atsKeywords: null,
           seniority: null,
           sponsorship: "unspecified",
-          aiModel: aiModel || "sonnet",
+          aiModel: aiModel || settings.defaultAiModel,
         },
       });
 
@@ -150,8 +153,16 @@ export const POST = withLogging(async (request: NextRequest) => {
             },
           });
           taskLog.complete({ title: analysis.title as string });
-          // Auto-run match scoring after analysis
-          return runAutoPipeline(job.id);
+          enqueueJob(
+            "auto-pipeline",
+            { jobId: job.id },
+            { entityId: job.id, entityType: "job", maxAttempts: 2 }
+          ).catch((enqueueErr) => {
+            log.error("auto_pipeline_enqueue_failed", {
+              jobId: job.id,
+              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+            });
+          });
         })
         .catch((err) => {
           taskLog.fail(err);

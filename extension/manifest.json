@@ -28,7 +28,7 @@
         "*://*.ashbyhq.com/*",
         "*://*.jobvite.com/*"
       ],
-      "js": ["field-map.js", "content.js"],
+      "js": ["application-flow-utils.js", "field-map.js", "form-fill-utils.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

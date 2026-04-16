@@ -151,7 +151,7 @@ Core rules:
   - focusClause is optional
   - if used, focusClause must be grounded in selected bullets or selected projects
   - focusClause max 4 words
-- Use source keys exactly as provided.
+- sourceKey values must be copied character-for-character from the Source Snapshot. Never use placeholder text like "exp:..." — use the actual key such as "exp:abc123".
 - Select the strongest evidence, not the most content.
 - Omit irrelevant supporting material to protect page budget.
 
@@ -188,7 +188,7 @@ export const RESUME_V2_PLANNER_SCHEMA = `{
   },
   "experiences": [
     {
-      "sourceKey": "exp:...",
+      "sourceKey": "<copy verbatim from snapshot, e.g. exp:abc123>",
       "officialTitle": "exact source title",
       "focusClause": "optional max 4 words",
       "selectedBulletIndices": [0, 1, 2],
@@ -198,14 +198,14 @@ export const RESUME_V2_PLANNER_SCHEMA = `{
   ],
   "projects": [
     {
-      "sourceKey": "project:...",
+      "sourceKey": "<copy verbatim from snapshot, e.g. project:abc123>",
       "selectedReason": "string",
       "descriptionOverride": "optional string"
     }
   ],
-  "publications": [{"sourceKey": "pub:...", "selectedReason": "string"}],
-  "certifications": [{"sourceKey": "cert:...", "selectedReason": "string"}],
-  "recommendations": [{"sourceKey": "rec:...", "snippet": "max 40 words"}],
+  "publications": [{"sourceKey": "<copy verbatim from snapshot>", "selectedReason": "string"}],
+  "certifications": [{"sourceKey": "<copy verbatim from snapshot>", "selectedReason": "string"}],
+  "recommendations": [{"sourceKey": "<copy verbatim from snapshot>", "snippet": "max 40 words"}],
   "omissions": ["string"],
   "pageBudgetRationale": "string"
 }`;
@@ -224,7 +224,7 @@ Critical constraints:
   - project names must match the source snapshot
   - publication titles must match the source snapshot
   - certification names must match the source snapshot
-- Include sourceKey on every rendered experience, project, publication, certification, and recommendation.
+- Include sourceKey on every rendered experience, project, publication, certification, and recommendation. Each sourceKey must be copied character-for-character from the source snapshot or plan — never use placeholder text.
 - Recommendations are optional, and if included must be a short snippet no longer than 40 words.
 
 Content rules:
@@ -253,7 +253,7 @@ export const RESUME_V2_WRITER_SCHEMA = `{
   "coreCompetencies": ["string"],
   "experiences": [
     {
-      "sourceKey": "exp:...",
+      "sourceKey": "<copy verbatim from snapshot, e.g. exp:abc123>",
       "company": "string",
       "title": "Official Title | Focus Area",
       "startDate": "YYYY-MM",
@@ -262,11 +262,11 @@ export const RESUME_V2_WRITER_SCHEMA = `{
     }
   ],
   "educations": [{"school": "string", "degree": "string", "field": "string", "endDate": "string", "gpa": "string"}],
-  "projects": [{"sourceKey": "project:...", "name": "string", "description": "string", "url": "string"}],
+  "projects": [{"sourceKey": "<copy verbatim from snapshot>", "name": "string", "description": "string", "url": "string"}],
   "skills": {"languages": ["string"], "frameworks": ["string"], "tools": ["string"], "databases": ["string"], "cloud": ["string"]},
-  "publications": [{"sourceKey": "pub:...", "title": "string", "publisher": "string", "date": "string", "url": "string", "doi": "string", "description": "string"}],
-  "certifications": [{"sourceKey": "cert:...", "name": "string", "issuer": "string", "date": "string", "expiryDate": "string", "credentialId": "string", "url": "string"}],
-  "recommendations": [{"sourceKey": "rec:...", "recommenderName": "string", "recommenderTitle": "string", "relationship": "string", "text": "string", "linkedinUrl": "string"}]
+  "publications": [{"sourceKey": "<copy verbatim from snapshot>", "title": "string", "publisher": "string", "date": "string", "url": "string", "doi": "string", "description": "string"}],
+  "certifications": [{"sourceKey": "<copy verbatim from snapshot>", "name": "string", "issuer": "string", "date": "string", "expiryDate": "string", "credentialId": "string", "url": "string"}],
+  "recommendations": [{"sourceKey": "<copy verbatim from snapshot>", "recommenderName": "string", "recommenderTitle": "string", "relationship": "string", "text": "string", "linkedinUrl": "string"}]
 }`;
 
 export const RESUME_ARTIFACT_EVALUATOR_INSTRUCTIONS = `You are the canonical resume artifact evaluator for Resume Quality v2.

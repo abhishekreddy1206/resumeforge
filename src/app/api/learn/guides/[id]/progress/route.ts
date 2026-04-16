@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { getJobStats } from "@/lib/job-queue";
-import type { GuideContentStorage } from "@/lib/claude";
-import { ensureGuideContentTracking } from "@/lib/learn-guides";
+import { parseTrackingColumn } from "@/lib/learn-guides";
+import type { SectionGenStatus } from "@/lib/claude";
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -31,8 +31,10 @@ export async function GET(
         if (closed) return;
 
         try {
+          // Select only tracking columns — no content blob
           const guide = await prisma.guide.findFirst({
             where: { OR: [{ id }, { slug: id }] },
+            select: { id: true, status: true, sectionStatuses: true, sectionErrors: true },
           });
 
           if (!guide) {
@@ -42,15 +44,18 @@ export async function GET(
             return;
           }
 
-          const content = ensureGuideContentTracking(
-            JSON.parse(guide.content) as GuideContentStorage
+          const sectionStatuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
+            guide.sectionStatuses, {}
+          );
+          const sectionErrors = parseTrackingColumn<Record<string, string>>(
+            guide.sectionErrors, {}
           );
           const jobs = await getJobStats(guide.id, "guide");
 
           const state = {
             status: guide.status,
-            sectionStatuses: content._sectionStatuses || {},
-            sectionErrors: content._sectionErrors || {},
+            sectionStatuses,
+            sectionErrors,
             jobs,
             done: guide.status === "published" || guide.status === "failed",
           };

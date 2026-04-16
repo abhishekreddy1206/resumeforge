@@ -5,7 +5,7 @@ import { SectionBlock } from "./section-block";
 import { ProgressTracker } from "./progress-tracker";
 import { RefinePanel } from "./refine-panel";
 import { Sparkles } from "lucide-react";
-import type { GuideContent } from "@/lib/claude/skills/guide-generator";
+import type { GuideContent, SectionGenStatus } from "@/lib/claude/skills/guide-generator";
 
 interface SectionProgress {
   quizzesCompleted: number[];
@@ -75,6 +75,7 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
           progress={progress}
           activeSection={activeSection}
           onSectionClick={handleSectionClick}
+          generationStatuses={(content as GuideContent & { _sectionStatuses?: Record<string, SectionGenStatus> })._sectionStatuses}
         />
       </aside>
 

@@ -61,6 +61,9 @@ github-profile-README.md
 # generated planning/spec docs
 docs/superpowers/
 
+# local codex skill copies
+.codex/skills/
+
 # claude runtime state and agent memory
 .claude/email-scan-state.json
 .claude/agent-memory/

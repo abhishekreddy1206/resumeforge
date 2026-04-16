@@ -12,7 +12,7 @@ export const SAVED_SOURCE_REVIEW_FLAG_ORDER = [
 
 export type SavedSourceReviewFlag = typeof SAVED_SOURCE_REVIEW_FLAG_ORDER[number];
 
-export const SAVED_SOURCE_CHANGE_TYPES = ["initial", "replace", "refresh", "migrated"] as const;
+export const SAVED_SOURCE_CHANGE_TYPES = ["initial", "replace", "refresh", "manual_edit", "migrated"] as const;
 
 export const SOURCE_CAPTURE_METHODS = ["scraped", "dom_fallback"] as const;
 
@@ -80,6 +80,15 @@ export interface SavedSourceVersionComparable {
 export interface SavedSourceRefreshDegradationAssessment {
   rejected: boolean;
   reasons: string[];
+}
+
+export interface SavedSourceManualEditComparable {
+  title: string;
+  contentHash: string;
+  wordCount: number;
+  reviewFlags: string;
+  reviewSummary: string | null;
+  captureMethod: string | null;
 }
 
 interface ArticleCaptureCandidate extends SavedSourceReviewResult {
@@ -389,6 +398,36 @@ export function reviewSavedSourceContent(
     wordCount,
     reviewFlags,
     reviewSummary: summarizeReviewFlags(reviewFlags),
+  };
+}
+
+export function evaluateManualSavedSourceEdit(
+  current: SavedSourceManualEditComparable,
+  next: { title: string; content: string }
+): {
+  title: string;
+  content: string;
+  review: SavedSourceReviewResult;
+  reviewFlags: string;
+  unchanged: boolean;
+} {
+  const title = next.title.trim();
+  const content = next.content.trim();
+  const review = reviewSavedSourceContent(title, content, current.captureMethod || "scraped");
+  const reviewFlags = stringifyReviewFlags(review.reviewFlags);
+  const unchanged =
+    title === current.title &&
+    review.contentHash === current.contentHash &&
+    review.wordCount === current.wordCount &&
+    reviewFlags === current.reviewFlags &&
+    review.reviewSummary === current.reviewSummary;
+
+  return {
+    title,
+    content,
+    review,
+    reviewFlags,
+    unchanged,
   };
 }
 

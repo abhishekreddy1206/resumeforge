@@ -266,7 +266,23 @@ export function summarizeInsightsForAnalytics(data: InsightsResponse | null) {
   };
 }
 
-export async function getInsightsData(): Promise<InsightsResponse | null> {
+export async function getInsightsData(
+  options: { cacheOnly?: boolean } = {}
+): Promise<InsightsResponse | null> {
+  const { cacheOnly = false } = options;
+
+  if (cacheOnly) {
+    const profile = await prisma.profile.findFirst({
+      select: { cachedInsights: true },
+    });
+    if (!profile?.cachedInsights) return null;
+    try {
+      return JSON.parse(profile.cachedInsights) as InsightsResponse;
+    } catch {
+      return null;
+    }
+  }
+
   const [profile, allJobs, profileSkills, guides] = await Promise.all([
     prisma.profile.findFirst({
       select: {

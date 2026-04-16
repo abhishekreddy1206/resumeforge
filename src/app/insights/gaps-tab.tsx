@@ -10,6 +10,8 @@ interface GapAnalysis {
     frequency: number;
     clusters: string[];
     bridgeableBy?: { yourSkill: string; coverageCount: number };
+    matchedGuide: { id: string; slug: string; topic: string } | null;
+    coveredByGuide: boolean;
   }>;
   bridges: Array<{
     jobRequirement: string;
@@ -118,12 +120,21 @@ export function GapsTab({
                     );
                   })}
                 </div>
-                <a
-                  href={`/learn?topic=${encodeURIComponent(gap.skill)}`}
-                  className="text-[10px] text-primary hover:underline"
-                >
-                  Study this →
-                </a>
+                {gap.coveredByGuide && gap.matchedGuide ? (
+                  <a
+                    href={`/learn/${gap.matchedGuide.slug}`}
+                    className="text-[10px] text-primary hover:underline"
+                  >
+                    Open Guide →
+                  </a>
+                ) : (
+                  <a
+                    href={`/learn?topic=${encodeURIComponent(gap.skill)}`}
+                    className="text-[10px] text-primary hover:underline"
+                  >
+                    Study this →
+                  </a>
+                )}
               </div>
             </div>
           ))}
