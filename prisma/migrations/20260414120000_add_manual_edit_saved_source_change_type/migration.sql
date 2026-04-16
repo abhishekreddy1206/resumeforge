@@ -1,0 +1,2 @@
+-- SQLite stores Prisma enums as TEXT in this schema, so adding
+-- SavedSourceChangeType.manual_edit does not require a physical ALTER TABLE.
