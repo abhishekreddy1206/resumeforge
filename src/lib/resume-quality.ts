@@ -851,8 +851,7 @@ export async function buildResumeQualityVersion(params: {
       sourceSnapshot,
       params.jobAnalysis,
       params.matchResult,
-      optimizationPlan,
-      { model: params.model }
+      optimizationPlan
     );
   } catch (err) {
     log.error("evaluator_failed", { error: err });

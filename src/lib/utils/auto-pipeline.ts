@@ -16,6 +16,10 @@ import { getAppSettings } from "@/lib/app-settings";
 const sanitize = (value: string) =>
   value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
 
+// Absorbs LLM evaluator noise so re-runs that land within a couple of points
+// of the prior v2 score aren't treated as regressions.
+const REGRESSION_TOLERANCE = 2;
+
 async function setPipelineResult(
   jobId: string,
   status: string,
@@ -186,6 +190,22 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       orderBy: { createdAt: "desc" },
     });
     const delta = previousV2Version ? build.evaluation.overallScore - previousV2Version.score : null;
+
+    if (previousV2Version && delta !== null && delta < -REGRESSION_TOLERANCE) {
+      task.step("skipped_regression", {
+        previousScore: previousV2Version.score,
+        newScore: build.evaluation.overallScore,
+        delta,
+        tolerance: REGRESSION_TOLERANCE,
+      });
+      await setPipelineResult(
+        jobId,
+        "skipped",
+        "quality_gate",
+        `regression:prev=${previousV2Version.score},new=${build.evaluation.overallScore},delta=${delta}`
+      );
+      return;
+    }
 
     const version = await prisma.profileVersion.create({
       data: {

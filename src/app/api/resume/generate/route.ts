@@ -102,7 +102,6 @@ async function evaluateStoredV2Resume(params: {
   optimizationPlan: ResumeOptimizationPlan;
   jobAnalysis: JobAnalysisData;
   matchResult: Record<string, unknown>;
-  model?: string;
 }): Promise<ResumeArtifactEvaluation | null> {
   const validationIssues = validateResumeData(
     params.resumeData,
@@ -116,8 +115,7 @@ async function evaluateStoredV2Resume(params: {
       params.sourceSnapshot,
       params.jobAnalysis,
       params.matchResult,
-      params.optimizationPlan,
-      { model: params.model }
+      params.optimizationPlan
     );
     return finalizeResumeArtifactEvaluation(llmEvaluation, validationIssues, params.resumeData);
   } catch (err) {
@@ -204,7 +202,6 @@ export async function POST(request: NextRequest) {
             optimizationPlan,
             jobAnalysis,
             matchResult,
-            model: job.aiModel,
           });
         }
       }
@@ -244,7 +241,6 @@ export async function POST(request: NextRequest) {
             optimizationPlan,
             jobAnalysis,
             matchResult,
-            model: job.aiModel,
           });
           resolvedVersionId = latestV2Version.id;
         }

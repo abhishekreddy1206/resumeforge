@@ -49,6 +49,14 @@ interface ArtifactEvaluationResponse {
   verdict: "ready" | "needs_review" | "blocked";
 }
 
+// The v2 evaluator is pinned so scores stay comparable across pipeline runs
+// even when a job's aiModel differs. The planner/writer still honor the
+// caller-supplied model — only the scoring step is pinned.
+// The Claude Code CLI subprocess does not expose temperature or seed, so
+// evaluator output remains stochastic run-to-run; the auto-pipeline's
+// regression tolerance absorbs that noise.
+const EVALUATOR_MODEL = "sonnet";
+
 /**
  * Evaluate a resume artifact against source evidence and job requirements.
  * Returns a partial evaluation — call `finalizeResumeArtifactEvaluation` to
@@ -59,8 +67,7 @@ export async function evaluateResumeArtifact(
   sourceSnapshot: SourceProfileSnapshot,
   jobAnalysis: JobAnalysisData,
   matchResult: Record<string, unknown>,
-  optimizationPlan: ResumeOptimizationPlan,
-  options?: { model?: string }
+  optimizationPlan: ResumeOptimizationPlan
 ): Promise<ResumeArtifactEvaluation> {
   const evaluation = await askJson<ArtifactEvaluationResponse>(
     `${RESUME_ARTIFACT_EVALUATOR_INSTRUCTIONS}
@@ -85,7 +92,7 @@ ${JSON.stringify(jobAnalysis)}
 
 Match Analysis:
 ${JSON.stringify(matchResult)}`,
-    { timeoutMs: 600_000, skill: "resume-artifact-evaluator", model: options?.model }
+    { timeoutMs: 600_000, skill: "resume-artifact-evaluator", model: EVALUATOR_MODEL }
   );
 
   return {
