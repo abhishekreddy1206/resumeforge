@@ -16,6 +16,7 @@ function duplicateResponse(source: {
     {
       error: "This article already exists under a different saved source",
       duplicate: true,
+      duplicateKind: "saved-source",
       existingSourceId: source.id,
       title: source.title,
       version: source.version,

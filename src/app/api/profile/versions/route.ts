@@ -150,6 +150,19 @@ export async function POST(request: NextRequest) {
         ? RESUME_QUALITY_SCORE_VERSION
         : 1;
 
+    // Idempotency: if the most recent version for this job has an identical snapshot, return it
+    const existingVersion = await prisma.profileVersion.findFirst({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        job: { select: { id: true, title: true, company: true } },
+      },
+    });
+
+    if (existingVersion && existingVersion.snapshot === snapshotStr) {
+      return NextResponse.json(existingVersion);
+    }
+
     const version = await prisma.profileVersion.create({
       data: {
         profileId: profile.id,

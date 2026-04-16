@@ -382,7 +382,7 @@ export function validateOptimizationPlan(
       continue;
     }
 
-    if (experience.officialTitle !== source.title) {
+    if (experience.officialTitle.trim() !== source.title.trim()) {
       issues.push(
         issue(
           "official_title_mismatch",
@@ -537,7 +537,7 @@ export function validateResumeData(
     }
 
     const [leftTitle] = experience.title.split("|").map((part) => part.trim());
-    if (leftTitle !== source.title) {
+    if (leftTitle !== source.title.trim()) {
       issues.push(
         issue(
           "title_left_side_mismatch",

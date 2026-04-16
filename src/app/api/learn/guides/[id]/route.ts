@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
 import type { GuideContentStorage } from "@/lib/claude";
-import { deriveGuideGenerationSnapshot, ensureGuideContentTracking } from "@/lib/learn-guides";
+import { deriveGuideGenerationSnapshot, ensureGuideContentTracking, parseTrackingColumn } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
 import { cancelJobsByEntity } from "@/lib/job-queue";
 
@@ -50,6 +50,14 @@ export async function GET(
     }
 
     const parsedContent = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
+
+    // Prefer tracking columns over content blob (fallback for pre-migration guides)
+    const sectionErrors = parseTrackingColumn<Record<string, string>>(
+      guide.sectionErrors, parsedContent._sectionErrors || {}
+    );
+    const sectionAttempts = parseTrackingColumn<Record<string, number>>(
+      guide.sectionAttempts, parsedContent._sectionAttempts || {}
+    );
     const generationSnapshot = deriveGuideGenerationSnapshot(parsedContent, guide.status);
 
     const staleGuideSources = await prisma.guideSource.findMany({
@@ -83,8 +91,8 @@ export async function GET(
       sectionProgress: JSON.parse(guide.sectionProgress),
       generationState: generationSnapshot.generationState,
       failedSectionIds: generationSnapshot.failedSectionIds,
-      sectionErrors: parsedContent._sectionErrors || {},
-      sectionAttempts: parsedContent._sectionAttempts || {},
+      sectionErrors,
+      sectionAttempts,
       staleSources: staleGuideSources.map((source) => {
         const attachedVersion = source.savedSourceVersion?.version ?? null;
         const headVersion = source.savedSource?.version ?? attachedVersion ?? null;

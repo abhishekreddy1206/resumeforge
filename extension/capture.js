@@ -35,8 +35,45 @@
     '[class*="posting"]',
   ];
 
+  const JOB_TITLE_SELECTORS = [
+    "h1",
+    '[data-automation-id="jobPostingHeader"]',
+    '[data-automation-id="jobPostingTitle"]',
+    '[data-testid*="job-title"]',
+    '[class*="job-title"]',
+    '[class*="posting-headline"]',
+  ];
+
+  const COMPANY_SELECTORS = [
+    '[data-testid*="company"]',
+    '[class*="company"]',
+    '[class*="employer"]',
+    '[data-automation-id="company"]',
+    'a[href*="/company/"]',
+  ];
+
+  const LOCATION_SELECTORS = [
+    '[data-testid*="location"]',
+    '[class*="location"]',
+    '[data-automation-id="locations"]',
+    '[data-automation-id="location"]',
+  ];
+
   function normalizeText(text) {
     return text.replace(/\s+/g, " ").trim();
+  }
+
+  function pickFirstText(selectors, maxLength = 120) {
+    for (const selector of selectors) {
+      const nodes = document.querySelectorAll(selector);
+      for (const node of nodes) {
+        const text = normalizeText(node.textContent || "");
+        if (text && text.length >= 2 && text.length <= maxLength) {
+          return text;
+        }
+      }
+    }
+    return null;
   }
 
   function extractCleanText(node) {
@@ -97,7 +134,15 @@
       siteName: get("og:site_name"),
       publishedTime: get("article:published_time"),
       description: get("og:description"),
+      articleAuthor: get("author"),
     };
+  }
+
+  function extractJobMeta() {
+    const title = pickFirstText(JOB_TITLE_SELECTORS, 160);
+    const company = pickFirstText(COMPANY_SELECTORS, 120);
+    const location = pickFirstText(LOCATION_SELECTORS, 120);
+    return { title, company, location };
   }
 
   /** Extract rendered text from the best candidate container. */
@@ -152,6 +197,7 @@
 
     const ogMeta = extractOgMeta();
     const jsonLd = tryJsonLd();
+    const jobMeta = extractJobMeta();
     const extractedText = jsonLd
       ? {
           text: jsonLd.text,
@@ -161,7 +207,11 @@
           candidateLengths: {},
         }
       : extractBestText();
-    const title = jsonLd?.title || ogMeta.ogTitle || pageTitle;
+    const title = jsonLd?.title || jobMeta.title || ogMeta.ogTitle || pageTitle;
+    const company =
+      jsonLd?.company ||
+      jobMeta.company ||
+      (ogMeta.siteName && !/linkedin|glassdoor|indeed/i.test(ogMeta.siteName) ? ogMeta.siteName : null);
 
     return {
       url,
@@ -171,11 +221,13 @@
       selectedTextLength: extractedText.selectedTextLength,
       bodyTextLength: extractedText.bodyTextLength,
       candidateLengths: extractedText.candidateLengths,
-      company: jsonLd?.company || null,
+      company,
+      location: jobMeta.location,
       metadata: {
         siteName: ogMeta.siteName,
         publishedTime: ogMeta.publishedTime,
         ogDescription: ogMeta.description,
+        articleAuthor: ogMeta.articleAuthor,
         hasJsonLd: !!jsonLd,
       },
     };

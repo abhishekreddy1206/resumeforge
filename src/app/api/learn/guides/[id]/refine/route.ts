@@ -86,13 +86,16 @@ export const POST = withLogging(async (
     });
   }
 
-  // Mark relevant sections as "refining"
+  // Mark relevant sections as "refining" in column
+  let updatedSectionStatuses = guide.sectionStatuses;
   if (!shouldFullRefine) {
-    const sectionStatuses = existingContent._sectionStatuses || {};
+    const statuses: Record<string, string> = guide.sectionStatuses
+      ? JSON.parse(guide.sectionStatuses)
+      : { ...(existingContent._sectionStatuses || {}) };
     for (const sId of relevantSectionIds) {
-      sectionStatuses[sId] = "refining";
+      statuses[sId] = "refining";
     }
-    existingContent._sectionStatuses = sectionStatuses;
+    updatedSectionStatuses = JSON.stringify(statuses);
   }
 
   // Save sources and update guide status in one transaction
@@ -104,6 +107,7 @@ export const POST = withLogging(async (
       data: {
         content: JSON.stringify(existingContent),
         status: "generating",
+        sectionStatuses: updatedSectionStatuses,
       },
     });
   });
@@ -173,7 +177,12 @@ export const POST = withLogging(async (
     // Save skeleton immediately so SSE/polling shows the outline
     await prisma.guide.update({
       where: { id: guide.id },
-      data: { content: JSON.stringify(skeletonContent) },
+      data: {
+        content: JSON.stringify(skeletonContent),
+        sectionStatuses: JSON.stringify(newStatuses),
+        sectionErrors: JSON.stringify({}),
+        sectionAttempts: JSON.stringify({}),
+      },
     });
 
     // Enqueue jobs: generate new sections + refine existing ones
@@ -181,14 +190,32 @@ export const POST = withLogging(async (
     const completedSections = outline.sectionPlan.filter((sp) => newStatuses[sp.id] === "completed");
 
     const jobs = [
+      // Two-phase generation for pending sections: core first, interactive second
       ...pendingSections.map((sp) => ({
-        type: "guide-recovery-section",
+        type: "guide-recovery-section-core",
         payload: {
           guideId: guide.id,
           topic: guide.topic,
           sectionPlan: sp,
           difficulty: outline.difficulty,
           siblingTitles,
+          model,
+        },
+        opts: {
+          priority: 20,
+          maxAttempts: 3,
+          groupKey,
+          entityId: guide.id,
+          entityType: "guide",
+        },
+      })),
+      ...pendingSections.map((sp) => ({
+        type: "guide-recovery-section-interactive",
+        payload: {
+          guideId: guide.id,
+          topic: guide.topic,
+          sectionPlan: sp,
+          difficulty: outline.difficulty,
           model,
         },
         opts: {
@@ -199,6 +226,7 @@ export const POST = withLogging(async (
           entityType: "guide",
         },
       })),
+      // Refine existing completed sections
       ...completedSections.map((sp) => ({
         type: "guide-recovery-refine",
         payload: {

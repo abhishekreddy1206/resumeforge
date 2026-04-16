@@ -16,9 +16,13 @@ const CLAUDE_PATH = (() => {
 const log = createLogger("claude");
 
 /**
- * Simple Promise-based semaphore to limit concurrent Claude CLI processes.
- * Prevents starvation when multiple auto-pipeline runs spawn `claude -p`
- * simultaneously — the CLI can't reliably handle concurrent instances.
+ * Promise-based semaphore limiting concurrent Claude CLI subprocesses per process.
+ * Each Node process (Next.js server, worker) has its own instance.
+ *
+ * Auto-pipeline runs in the worker (which processes one BackgroundJob at a time,
+ * so contention there is naturally zero). In the Next.js process, the semaphore
+ * caps concurrent UI-triggered calls (match, chat, enrich, etc.) so a burst of
+ * parallel requests can't saturate the local machine with `claude -p` subprocesses.
  */
 class Semaphore {
   private queue: (() => void)[] = [];
@@ -43,7 +47,26 @@ class Semaphore {
   }
 }
 
-const cliSemaphore = new Semaphore(1);
+// Lazily constructed so we can read AppSettings.claudeCliConcurrency at first use.
+// Env var (CLAUDE_CLI_CONCURRENCY) wins when set; otherwise fall back to the DB
+// setting. Once created, the semaphore is memoized per process — changes to the
+// setting take effect only on the next worker/dev-server restart.
+let cliSemaphore: Semaphore | null = null;
+
+async function getCliSemaphore(): Promise<Semaphore> {
+  if (cliSemaphore) return cliSemaphore;
+  const envParsed = Number.parseInt(process.env.CLAUDE_CLI_CONCURRENCY || "", 10);
+  let limit: number;
+  if (Number.isFinite(envParsed) && envParsed > 0) {
+    limit = envParsed;
+  } else {
+    const { getAppSettings } = await import("@/lib/app-settings");
+    const settings = await getAppSettings();
+    limit = settings.claudeCliConcurrency;
+  }
+  cliSemaphore = new Semaphore(Math.max(1, limit));
+  return cliSemaphore;
+}
 
 export interface AskOptions {
   timeoutMs?: number;
@@ -252,7 +275,8 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
   const model = options?.model ?? "sonnet";
   const skill = options?.skill;
 
-  await cliSemaphore.acquire();
+  const semaphore = await getCliSemaphore();
+  await semaphore.acquire();
   const startTime = Date.now();
   log.info("ai_call_start", { skill, model, promptLength: prompt.length });
   try {
@@ -355,7 +379,7 @@ export async function ask(prompt: string, options?: AskOptions): Promise<string>
       proc.stdin.end();
     });
   } finally {
-    cliSemaphore.release();
+    semaphore.release();
   }
 }
 

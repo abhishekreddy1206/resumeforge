@@ -2,12 +2,21 @@ import { askJson } from "../client";
 import {
   GUIDE_INSTRUCTIONS, GUIDE_SCHEMA, SECTION_SCHEMA, OUTLINE_SCHEMA, truncateSource,
   SECTION_SESSION_INSTRUCTIONS,
+  CORE_SECTION_INSTRUCTIONS, CORE_SECTION_SCHEMA,
+  INTERACTIVE_SECTION_INSTRUCTIONS, INTERACTIVE_SECTION_SCHEMA,
 } from "./guide-prompts";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("guide-generator");
 
-export type SectionGenStatus = "pending" | "generating" | "completed" | "failed" | "refining";
+export type SectionGenStatus =
+  | "pending"
+  | "generating"
+  | "core_complete"
+  | "generating_interactive"
+  | "completed"
+  | "failed"
+  | "refining";
 export type GuideGenerationState = "running" | "blocked" | "complete";
 
 export interface GuideContentStorage extends GuideContent {
@@ -89,6 +98,29 @@ export interface GeneratedGuideSectionResult {
   attempts: number;
 }
 
+export interface CoreSectionResult {
+  id: string;
+  title: string;
+  explanation: string;
+  codeExamples: CodeExample[];
+}
+
+export interface InteractiveSectionResult {
+  knowledgeChecks: KnowledgeCheck[];
+  interviewScenarios: InterviewScenario[];
+  keyTakeaways: string[];
+}
+
+export interface GeneratedCoreSectionResult {
+  core: CoreSectionResult;
+  attempts: number;
+}
+
+export interface GeneratedInteractiveSectionResult {
+  interactive: InteractiveSectionResult;
+  attempts: number;
+}
+
 export class GuideOutlineValidationError extends Error {
   attempts: number;
   issues: string[];
@@ -133,6 +165,7 @@ const MAX_OUTLINE_ATTEMPTS = 2;
 const DEFAULT_SECTION_ATTEMPTS = 2;
 const MAX_SECTION_ATTEMPTS = 3;
 const SECTION_TIMEOUT_MS = 900_000;
+const PHASE_TIMEOUT_MS = 300_000;
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/u).filter(Boolean).length;
@@ -400,6 +433,171 @@ ${SECTION_SCHEMA}`, { timeoutMs: SECTION_TIMEOUT_MS, skill: "guide-section", mod
   throw new GuideSectionValidationError(
     `Could not generate a complete interactive section for "${sectionPlan.title}".`,
     lastIssues.length > 0 ? lastIssues : ["section generation failed"],
+    maxAttempts,
+    lastError
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Two-phase section generation: core + interactive
+// ---------------------------------------------------------------------------
+
+export function validateSectionCore(core: CoreSectionResult): string[] {
+  const issues: string[] = [];
+  if (!core.id?.trim()) issues.push("missing section id");
+  if (!core.title?.trim()) issues.push("missing section title");
+  if (countWords(core.explanation) < MIN_SECTION_EXPLANATION_WORDS) {
+    issues.push("explanation is too short");
+  }
+  return issues;
+}
+
+export function validateSectionInteractive(interactive: InteractiveSectionResult): string[] {
+  const issues: string[] = [];
+  if ((interactive.knowledgeChecks?.length ?? 0) < MIN_SECTION_KNOWLEDGE_CHECKS) {
+    issues.push("knowledge checks are missing or incomplete");
+  }
+  if ((interactive.interviewScenarios?.length ?? 0) < MIN_SECTION_INTERVIEW_SCENARIOS) {
+    issues.push("interview scenarios are missing");
+  }
+  if ((interactive.keyTakeaways?.length ?? 0) < MIN_SECTION_KEY_TAKEAWAYS) {
+    issues.push("key takeaways are missing");
+  }
+  return issues;
+}
+
+/**
+ * Phase 1: Generate core content (explanation + code examples) for a section.
+ * Faster (~2-3 min) and more reliable than full-section generation.
+ */
+export async function generateSectionCore(
+  topic: string,
+  sectionPlan: { id: string; title: string; scope: string },
+  context: { difficulty: string; siblingTitles: string[] },
+  options?: { sources?: string[]; model?: string; maxAttempts?: number }
+): Promise<GeneratedCoreSectionResult> {
+  const sourceBlock = options?.sources?.length
+    ? `\n\nSOURCE MATERIAL:\n${options.sources.map((s, i) => `--- Source ${i + 1} ---\n${truncateSource(s, 6000)}`).join("\n\n")}`
+    : "";
+  const maxAttempts = Math.max(
+    1,
+    Math.min(options?.maxAttempts ?? DEFAULT_SECTION_ATTEMPTS, MAX_SECTION_ATTEMPTS)
+  );
+
+  const sectionContext = `
+GUIDE TOPIC: ${topic}
+DIFFICULTY: ${context.difficulty}
+OTHER SECTIONS: ${context.siblingTitles.join(", ")}
+
+SECTION TO WRITE:
+- ID: ${sectionPlan.id}
+- Title: ${sectionPlan.title}
+- Scope: ${sectionPlan.scope}${sourceBlock}`;
+
+  let lastIssues: string[] = [];
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const candidate = await askJson<CoreSectionResult>(`${CORE_SECTION_INSTRUCTIONS}
+${sectionContext}
+
+Return ONLY valid JSON:
+${CORE_SECTION_SCHEMA}`, { timeoutMs: PHASE_TIMEOUT_MS, skill: "guide-section-core", model: options?.model });
+
+      const core: CoreSectionResult = {
+        id: (candidate.id || sectionPlan.id || "").trim(),
+        title: (candidate.title || sectionPlan.title || "").trim(),
+        explanation: typeof candidate.explanation === "string" ? candidate.explanation.trim() : "",
+        codeExamples: Array.isArray(candidate.codeExamples) ? candidate.codeExamples : [],
+      };
+
+      const issues = validateSectionCore(core);
+      if (issues.length === 0) {
+        return { core, attempts: attempt };
+      }
+
+      lastIssues = issues;
+      log.warn("invalid_section_core", { sectionTitle: sectionPlan.title, attempt, issues: issues.join("; ") });
+    } catch (error) {
+      lastError = error;
+      log.warn("section_core_attempt_failed", { sectionTitle: sectionPlan.title, attempt, error: error instanceof Error ? error : new Error(String(error)) });
+    }
+  }
+
+  throw new GuideSectionValidationError(
+    `Could not generate core content for "${sectionPlan.title}".`,
+    lastIssues.length > 0 ? lastIssues : ["core content generation failed"],
+    maxAttempts,
+    lastError
+  );
+}
+
+/**
+ * Phase 2: Generate interactive content (quizzes, scenarios, takeaways) for a section.
+ * Uses the section's explanation as context to create relevant quizzes.
+ */
+export async function generateSectionInteractive(
+  topic: string,
+  sectionPlan: { id: string; title: string; scope: string },
+  coreContent: { explanation: string; codeExamples: CodeExample[] },
+  context: { difficulty: string },
+  options?: { model?: string; maxAttempts?: number }
+): Promise<GeneratedInteractiveSectionResult> {
+  const maxAttempts = Math.max(
+    1,
+    Math.min(options?.maxAttempts ?? DEFAULT_SECTION_ATTEMPTS, MAX_SECTION_ATTEMPTS)
+  );
+
+  const codeBlock = coreContent.codeExamples.length > 0
+    ? `\n\nCODE EXAMPLES IN THIS SECTION:\n${coreContent.codeExamples.map((e) => `[${e.language}] ${e.caption}`).join("\n")}`
+    : "";
+
+  const prompt = `${INTERACTIVE_SECTION_INSTRUCTIONS}
+
+GUIDE TOPIC: ${topic}
+DIFFICULTY: ${context.difficulty}
+SECTION: ${sectionPlan.title}
+
+SECTION EXPLANATION (create quizzes and scenarios based on this):
+${truncateSource(coreContent.explanation, 4000)}${codeBlock}
+
+Return ONLY valid JSON:
+${INTERACTIVE_SECTION_SCHEMA}`;
+
+  let lastIssues: string[] = [];
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const candidate = await askJson<InteractiveSectionResult>(prompt, {
+        timeoutMs: PHASE_TIMEOUT_MS,
+        skill: "guide-section-interactive",
+        model: options?.model,
+      });
+
+      const interactive: InteractiveSectionResult = {
+        knowledgeChecks: Array.isArray(candidate.knowledgeChecks) ? candidate.knowledgeChecks : [],
+        interviewScenarios: Array.isArray(candidate.interviewScenarios) ? candidate.interviewScenarios : [],
+        keyTakeaways: Array.isArray(candidate.keyTakeaways) ? candidate.keyTakeaways : [],
+      };
+
+      const issues = validateSectionInteractive(interactive);
+      if (issues.length === 0) {
+        return { interactive, attempts: attempt };
+      }
+
+      lastIssues = issues;
+      log.warn("invalid_section_interactive", { sectionTitle: sectionPlan.title, attempt, issues: issues.join("; ") });
+    } catch (error) {
+      lastError = error;
+      log.warn("section_interactive_attempt_failed", { sectionTitle: sectionPlan.title, attempt, error: error instanceof Error ? error : new Error(String(error)) });
+    }
+  }
+
+  throw new GuideSectionValidationError(
+    `Could not generate interactive content for "${sectionPlan.title}".`,
+    lastIssues.length > 0 ? lastIssues : ["interactive content generation failed"],
     maxAttempts,
     lastError
   );

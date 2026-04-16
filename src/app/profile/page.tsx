@@ -143,6 +143,7 @@ interface ApplicationProfile {
   id: string;
   firstName?: string | null;
   lastName?: string | null;
+  preferredFirstName?: string | null;
   workAuthorized?: boolean | null;
   sponsorshipNeeded?: boolean | null;
   salaryMin?: number | null;
@@ -151,6 +152,7 @@ interface ApplicationProfile {
   noticePeriod?: string | null;
   preferredWorkMode?: string | null;
   earliestStartDate?: string | null;
+  country?: string | null;
   gender?: string | null;
   race?: string | null;
   veteranStatus?: string | null;
@@ -1503,6 +1505,15 @@ export default function ProfilePage() {
                         />
                       </div>
                     </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Preferred First Name</Label>
+                      <Input
+                        value={appForm.preferredFirstName || ""}
+                        onChange={(e) => setAppForm({ ...appForm, preferredFirstName: e.target.value || null })}
+                        placeholder={appForm.firstName || "Optional"}
+                        className="h-8 text-xs"
+                      />
+                    </div>
 
                     {/* Work Authorization */}
                     <div>
@@ -1563,6 +1574,15 @@ export default function ProfilePage() {
                         <span className="text-xs font-medium">Preferences</span>
                       </div>
                       <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Country</Label>
+                          <Input
+                            value={appForm.country || ""}
+                            onChange={(e) => setAppForm({ ...appForm, country: e.target.value || null })}
+                            placeholder="e.g., United States"
+                            className="h-8 text-xs"
+                          />
+                        </div>
                         <div>
                           <Label className="text-xs text-muted-foreground mb-1 block">Work Mode</Label>
                           <select

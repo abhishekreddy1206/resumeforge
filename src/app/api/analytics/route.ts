@@ -36,7 +36,7 @@ export async function GET() {
     staleGuideSources,
     manualEdits,
   ] = await Promise.all([
-    getInsightsData(),
+    getInsightsData({ cacheOnly: true }),
     db.$queryRaw<Array<{ day: string; totalCost: number; totalInput: number; totalOutput: number; calls: number }>>`
       SELECT
         date(createdAt) as day,

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import {
   generateGuideSection,
+  generateSectionCore,
+  generateSectionInteractive,
   refineGuide,
   refineGuideSection,
   matchGuideToPath,
@@ -14,8 +16,13 @@ import {
 import {
   deriveGuideGenerationSnapshot,
   ensureGuideContentTracking,
+  mergeTrackingStatus,
+  mergeTrackingError,
+  mergeTrackingAttempts,
+  parseTrackingColumn,
 } from "@/lib/learn-guides";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
+import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 import { createTaskLogger } from "@/lib/logger";
 import type { JobRecord } from "@/lib/job-queue";
 
@@ -53,14 +60,12 @@ export async function handleGuideSection(job: JobRecord): Promise<void> {
   const guide = await prisma.guide.findUnique({ where: { id: guideId } });
   if (!guide) throw new Error(`Guide ${guideId} not found`);
 
-  // 2. Mark section as "generating"
-  const preContent = readGuideContent(guide);
-  if (preContent._sectionStatuses) {
-    preContent._sectionStatuses[sectionPlan.id] = "generating";
-  }
+  // 2. Mark section as "generating" via column (no content blob r/w)
   await prisma.guide.update({
     where: { id: guideId },
-    data: { content: JSON.stringify(preContent) },
+    data: {
+      sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionPlan.id, "generating"),
+    },
   });
   task.step("marked_generating", { sectionId: sectionPlan.id });
 
@@ -89,21 +94,172 @@ export async function handleGuideSection(job: JobRecord): Promise<void> {
   if (idx !== -1) {
     currentContent.sections[idx] = result.section;
   }
-  if (currentContent._sectionStatuses) {
-    currentContent._sectionStatuses[sectionPlan.id] = "completed";
-  }
-  if (currentContent._sectionErrors) {
-    delete currentContent._sectionErrors[sectionPlan.id];
-  }
-  if (currentContent._sectionAttempts) {
-    currentContent._sectionAttempts[sectionPlan.id] =
-      (currentContent._sectionAttempts[sectionPlan.id] || 0) + result.attempts;
-  }
 
-  // 6. Save updated content
+  // 6. Save updated content + tracking columns
   await prisma.guide.update({
     where: { id: guideId },
-    data: { content: JSON.stringify(currentContent) },
+    data: {
+      content: JSON.stringify(currentContent),
+      sectionStatuses: mergeTrackingStatus(current.sectionStatuses, sectionPlan.id, "completed"),
+      sectionErrors: mergeTrackingError(current.sectionErrors, sectionPlan.id, null),
+      sectionAttempts: mergeTrackingAttempts(current.sectionAttempts, sectionPlan.id, result.attempts),
+    },
+  });
+
+  task.complete({ sectionId: sectionPlan.id, attempts: result.attempts });
+}
+
+// ---------------------------------------------------------------------------
+// 1b. handleGuideSectionCore — "guide-section-core" / "guide-recovery-section-core"
+// ---------------------------------------------------------------------------
+
+export async function handleGuideSectionCore(job: JobRecord): Promise<void> {
+  const payload = JSON.parse(job.payload) as {
+    guideId: string;
+    topic: string;
+    sectionPlan: { id: string; title: string; scope: string };
+    difficulty: string;
+    siblingTitles: string[];
+    model?: string;
+    maxAttempts?: number;
+  };
+
+  const { guideId, topic, sectionPlan, difficulty, siblingTitles, model } = payload;
+  const maxAttempts = payload.maxAttempts ?? 2;
+  const task = createTaskLogger("worker-section-core", guideId);
+
+  // 1. Mark section as "generating" via column (no content blob r/w)
+  const guide = await prisma.guide.findUnique({
+    where: { id: guideId },
+    select: { id: true, sectionStatuses: true },
+  });
+  if (!guide) throw new Error(`Guide ${guideId} not found`);
+
+  await prisma.guide.update({
+    where: { id: guideId },
+    data: {
+      sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionPlan.id, "generating"),
+    },
+  });
+  task.step("marked_generating", { sectionId: sectionPlan.id });
+
+  // 2. Load source texts
+  const sources = await getActiveGuideSourceTexts(guideId);
+
+  // 3. Generate core content (explanation + code examples)
+  task.step("generating_core", { sectionTitle: sectionPlan.title });
+  const result = await generateSectionCore(topic, sectionPlan, {
+    difficulty,
+    siblingTitles,
+  }, {
+    sources: sources.length > 0 ? sources : undefined,
+    model,
+    maxAttempts,
+  });
+
+  // 4. Re-read guide from DB to insert section data
+  const current = await prisma.guide.findUnique({ where: { id: guideId } });
+  if (!current) throw new Error(`Guide ${guideId} disappeared during generation`);
+
+  const currentContent = readGuideContent(current);
+  const idx = currentContent.sections.findIndex((s) => s.id === sectionPlan.id);
+  if (idx !== -1) {
+    currentContent.sections[idx] = {
+      ...currentContent.sections[idx],
+      id: result.core.id,
+      title: result.core.title,
+      explanation: result.core.explanation,
+      codeExamples: result.core.codeExamples,
+      knowledgeChecks: [],
+      interviewScenarios: [],
+      keyTakeaways: [],
+    };
+  }
+
+  // 5. Save content + mark "core_complete"
+  await prisma.guide.update({
+    where: { id: guideId },
+    data: {
+      content: JSON.stringify(currentContent),
+      sectionStatuses: mergeTrackingStatus(current.sectionStatuses, sectionPlan.id, "core_complete"),
+      sectionErrors: mergeTrackingError(current.sectionErrors, sectionPlan.id, null),
+      sectionAttempts: mergeTrackingAttempts(current.sectionAttempts, sectionPlan.id, result.attempts),
+    },
+  });
+
+  task.complete({ sectionId: sectionPlan.id, attempts: result.attempts });
+}
+
+// ---------------------------------------------------------------------------
+// 1c. handleGuideSectionInteractive — "guide-section-interactive" / "guide-recovery-section-interactive"
+// ---------------------------------------------------------------------------
+
+export async function handleGuideSectionInteractive(job: JobRecord): Promise<void> {
+  const payload = JSON.parse(job.payload) as {
+    guideId: string;
+    topic: string;
+    sectionPlan: { id: string; title: string; scope: string };
+    difficulty: string;
+    model?: string;
+    maxAttempts?: number;
+  };
+
+  const { guideId, topic, sectionPlan, difficulty, model } = payload;
+  const maxAttempts = payload.maxAttempts ?? 2;
+  const task = createTaskLogger("worker-section-interactive", guideId);
+
+  // 1. Read guide to get section's core content
+  const guide = await prisma.guide.findUnique({ where: { id: guideId } });
+  if (!guide) throw new Error(`Guide ${guideId} not found`);
+
+  const content = readGuideContent(guide);
+  const section = content.sections.find((s) => s.id === sectionPlan.id);
+
+  // Guard: core content must exist before generating interactive
+  if (!section || !section.explanation?.trim()) {
+    throw new Error(`Section "${sectionPlan.id}" has no core content yet — cannot generate interactive`);
+  }
+
+  // 2. Mark as "generating_interactive"
+  await prisma.guide.update({
+    where: { id: guideId },
+    data: {
+      sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionPlan.id, "generating_interactive"),
+    },
+  });
+  task.step("marked_generating_interactive", { sectionId: sectionPlan.id });
+
+  // 3. Generate interactive content
+  task.step("generating_interactive", { sectionTitle: sectionPlan.title });
+  const result = await generateSectionInteractive(topic, sectionPlan, {
+    explanation: section.explanation,
+    codeExamples: section.codeExamples,
+  }, { difficulty }, { model, maxAttempts });
+
+  // 4. Re-read guide and merge
+  const current = await prisma.guide.findUnique({ where: { id: guideId } });
+  if (!current) throw new Error(`Guide ${guideId} disappeared during generation`);
+
+  const currentContent = readGuideContent(current);
+  const idx = currentContent.sections.findIndex((s) => s.id === sectionPlan.id);
+  if (idx !== -1) {
+    currentContent.sections[idx] = {
+      ...currentContent.sections[idx],
+      knowledgeChecks: result.interactive.knowledgeChecks,
+      interviewScenarios: result.interactive.interviewScenarios,
+      keyTakeaways: result.interactive.keyTakeaways,
+    };
+  }
+
+  // 5. Save content + mark "completed"
+  await prisma.guide.update({
+    where: { id: guideId },
+    data: {
+      content: JSON.stringify(currentContent),
+      sectionStatuses: mergeTrackingStatus(current.sectionStatuses, sectionPlan.id, "completed"),
+      sectionErrors: mergeTrackingError(current.sectionErrors, sectionPlan.id, null),
+      sectionAttempts: mergeTrackingAttempts(current.sectionAttempts, sectionPlan.id, result.attempts),
+    },
   });
 
   task.complete({ sectionId: sectionPlan.id, attempts: result.attempts });
@@ -289,13 +445,12 @@ export async function handleGuideRefineSection(job: JobRecord): Promise<void> {
   const section = content.sections.find((s) => s.id === sectionId);
   if (!section) throw new Error(`Section ${sectionId} not found in guide ${guideId}`);
 
-  // 2. Mark section as "refining"
-  if (content._sectionStatuses) {
-    content._sectionStatuses[sectionId] = "refining";
-  }
+  // 2. Mark section as "refining" via column
   await prisma.guide.update({
     where: { id: guideId },
-    data: { content: JSON.stringify(content) },
+    data: {
+      sectionStatuses: mergeTrackingStatus(guide.sectionStatuses, sectionId, "refining"),
+    },
   });
   task.step("marked_refining", { sectionId });
 
@@ -321,17 +476,15 @@ export async function handleGuideRefineSection(job: JobRecord): Promise<void> {
   if (idx !== -1) {
     currentContent.sections[idx] = refined;
   }
-  if (currentContent._sectionStatuses) {
-    currentContent._sectionStatuses[sectionId] = "completed";
-  }
-  if (currentContent._sectionErrors) {
-    delete currentContent._sectionErrors[sectionId];
-  }
 
-  // 6. Save
+  // 6. Save content + tracking columns
   await prisma.guide.update({
     where: { id: guideId },
-    data: { content: JSON.stringify(currentContent) },
+    data: {
+      content: JSON.stringify(currentContent),
+      sectionStatuses: mergeTrackingStatus(current.sectionStatuses, sectionId, "completed"),
+      sectionErrors: mergeTrackingError(current.sectionErrors, sectionId, null),
+    },
   });
 
   task.complete({ sectionId });
@@ -377,20 +530,21 @@ export async function handleGuideRefineFull(job: JobRecord): Promise<void> {
     _sectionAttempts: content._sectionAttempts,
   });
 
-  // 5. Mark all sections as "completed", clear all errors
-  if (resultContent._sectionStatuses) {
-    for (const s of resultContent.sections) {
-      resultContent._sectionStatuses[s.id] = "completed";
-    }
-  }
-  if (resultContent._sectionErrors) {
-    resultContent._sectionErrors = {};
+  // 5. Build tracking columns: mark all sections completed, clear errors
+  const allStatuses: Record<string, string> = {};
+  for (const s of resultContent.sections) {
+    allStatuses[s.id] = "completed";
   }
 
-  // 6. Save to DB
+  // 6. Save content + tracking columns
   await prisma.guide.update({
     where: { id: guideId },
-    data: { content: JSON.stringify(resultContent) },
+    data: {
+      content: JSON.stringify(resultContent),
+      sectionStatuses: JSON.stringify(allStatuses),
+      sectionErrors: JSON.stringify({}),
+      sectionAttempts: guide.sectionAttempts, // preserve attempt counts
+    },
   });
 
   task.complete({
@@ -418,13 +572,15 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
 
   const content = readGuideContent(guide);
 
-  // 2. Count failed/completed sections
-  const statuses = content._sectionStatuses || {};
+  // 2. Count failed/completed sections (prefer column, fallback to content)
+  const statuses = parseTrackingColumn<Record<string, string>>(
+    guide.sectionStatuses, content._sectionStatuses || {}
+  );
   let completedCount = 0;
   let failedCount = 0;
   for (const section of content.sections) {
     const status = statuses[section.id] || "pending";
-    if (status === "completed") completedCount++;
+    if (status === "completed" || status === "core_complete") completedCount++;
     if (status === "failed") failedCount++;
   }
 
@@ -487,4 +643,19 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
     completedCount,
     failedCount,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 8. handleAutoPipeline — "auto-pipeline"
+// ---------------------------------------------------------------------------
+//
+// Runs the v2 resume quality pipeline (match → build → save → pdf) for a Job.
+// Job.pipelineStatus columns track progress independently of BackgroundJob
+// state, so the UI can poll Job directly.
+
+export async function handleAutoPipeline(job: JobRecord): Promise<void> {
+  const payload = JSON.parse(job.payload) as { jobId: string };
+  const { jobId } = payload;
+  if (!jobId) throw new Error("auto-pipeline payload missing jobId");
+  await runAutoPipeline(jobId);
 }

@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     const nameParts = profile.name.trim().split(/\s+/);
     const firstName = appProfile?.firstName || nameParts[0] || "";
     const lastName = appProfile?.lastName || (nameParts.length > 1 ? nameParts.slice(1).join(" ") : "");
+    const preferredFirstName = appProfile?.preferredFirstName || firstName;
 
     // Find current experience
     const currentExp = profile.experiences.find((e) => e.current) || profile.experiences[0];
@@ -101,9 +102,11 @@ export async function POST(request: NextRequest) {
       personal: {
         firstName,
         lastName,
+        preferredFirstName,
         email: profile.email || "",
         phone: profile.phone || "",
         location: profile.location || "",
+        country: appProfile?.country || "",
         linkedin: profile.linkedin || "",
         github: profile.github || "",
         website: profile.website || "",

@@ -330,8 +330,26 @@ function renderDuplicateCapture(details) {
   });
 
   reviewBtn?.addEventListener("click", async () => {
-    const reviewPath = details.reviewUrl || `/learn/sources/${details.existingSourceId}`;
-    await chrome.tabs.create({ url: `${apiBase()}${reviewPath}` });
+    await chrome.tabs.create({
+      url: popupHelpers.buildDuplicateReviewUrl(apiBase(), details, "article"),
+    });
+  });
+}
+
+function renderDuplicateJob(details) {
+  captureResult.className = "capture-result duplicate";
+  captureResult.innerHTML = `
+    <div>This job is already in ResumeForge as "${escapeHtml(details.title || "Untitled Position")}" at "${escapeHtml(details.company || "Unknown Company")}".</div>
+    <div class="capture-actions">
+      <button type="button" class="capture-action-btn capture-action-primary" id="capture-review-job-btn">Open existing job</button>
+    </div>
+  `;
+
+  const reviewBtn = document.getElementById("capture-review-job-btn");
+  reviewBtn?.addEventListener("click", async () => {
+    await chrome.tabs.create({
+      url: popupHelpers.buildDuplicateReviewUrl(apiBase(), details, "job"),
+    });
   });
 }
 
@@ -355,7 +373,12 @@ async function captureCurrentPage(captureType) {
 
     if (result.error) {
       if (result.status === 409 && result.details?.duplicate) {
-        renderDuplicateCapture(result.details);
+        const duplicateKind = popupHelpers.classifyCaptureDuplicate(result.details, captureType);
+        if (duplicateKind === "saved-source") {
+          renderDuplicateCapture(result.details);
+        } else {
+          renderDuplicateJob(result.details);
+        }
       } else {
         throw new Error(result.error);
       }

@@ -10,7 +10,8 @@ interface LearnTopic {
   difficulty: "beginner" | "intermediate" | "advanced";
   gapSkills: Array<{ skill: string; frequency: number }>;
   clusters: string[];
-  existingGuide: boolean;
+  matchedGuide: { id: string; slug: string; topic: string } | null;
+  coveredByGuide: boolean;
 }
 
 const DIFFICULTY_COLORS: Record<string, string> = {
@@ -48,7 +49,7 @@ export function StudyTab({
       });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.slug) {
-        window.location.href = `/learn/${data.slug}`;
+        window.location.assign(`/learn/${data.slug}`);
       } else {
         setGenError(data?.error || "Failed to generate guide.");
         setGenerating(null);
@@ -139,12 +140,12 @@ export function StudyTab({
                     );
                   })}
                 </div>
-                {topic.existingGuide ? (
+                {topic.coveredByGuide && topic.matchedGuide ? (
                   <a
-                    href={`/learn/${encodeURIComponent(topic.topic.toLowerCase().replace(/\s+/g, "-"))}`}
+                    href={`/learn/${topic.matchedGuide.slug}`}
                     className="text-xs bg-primary/20 border border-primary/30 text-primary px-3 py-1 rounded-md hover:bg-primary/30 transition-colors"
                   >
-                    View Guide →
+                    Open Guide →
                   </a>
                 ) : (
                   <button

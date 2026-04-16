@@ -95,6 +95,9 @@ interface Job {
   terminologyMap?: string;
   matchResult?: string;
   aiModel?: string;
+  pipelineStatus?: string | null;
+  pipelineStage?: string | null;
+  pipelineError?: string | null;
   applied: boolean;
   appliedAt?: string;
   coverLetter?: string;
@@ -1636,6 +1639,7 @@ function JobsPageInner() {
   const [scanningEmails, setScanningEmails] = useState(false);
   const [hideApplied, setHideApplied] = useState(true);
   const [hideNoSponsorship, setHideNoSponsorship] = useState(true);
+  const [matchScoreFloor, setMatchScoreFloor] = useState(60);
   const [gapAggregation, setGapAggregation] = useState<{
     aggregatedGaps: Array<{ gap: string; frequency: number; severity: "critical" | "important" | "specific"; jobs: string[]; relatedTerms: string[] }>;
     leverageScores: Array<{ skill: string; jobsUnlocked: number; jobs: string[]; estimatedImpact: "high" | "medium" | "low" }>;
@@ -1780,6 +1784,15 @@ function JobsPageInner() {
         }
       })
       .finally(() => setLoading(false));
+
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (s && typeof s.matchScoreFloor === "number") {
+          setMatchScoreFloor(s.matchScoreFloor);
+        }
+      })
+      .catch(() => { /* ignore — fallback to default 60 */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hideApplied, hideNoSponsorship]);
 
@@ -1819,14 +1832,20 @@ function JobsPageInner() {
           // Still analyzing — keep polling
           if (job.title === "Analyzing...") continue;
 
-          // Has match result — check if pipeline is done
-          if (job.matchResult) {
+          // Pipeline status is authoritative when set.
+          // Terminal states: completed | failed | blocked | skipped → stop polling.
+          if (job.pipelineStatus && job.pipelineStatus !== "running") {
+            pendingIdsRef.current.delete(job.id);
+            continue;
+          }
+
+          // Fallback for jobs predating pipelineStatus columns:
+          // match score below threshold → pipeline stops at match; otherwise wait for
+          // profileVersions (build+save stages produced a v2 version).
+          if (job.matchResult && !job.pipelineStatus) {
             try {
               const score = JSON.parse(job.matchResult)?.overallScore ?? 0;
-              // Score < 65: pipeline stops after match, we're done
-              // Score >= 65: pipeline continues (tips + rescore + maybe PDF)
-              //   → wait until profileVersions appear (tips applied & version saved)
-              if (score < 65 || (job.profileVersions && job.profileVersions.length > 0)) {
+              if (score < matchScoreFloor || (job.profileVersions && job.profileVersions.length > 0)) {
                 pendingIdsRef.current.delete(job.id);
               }
             } catch {
@@ -1842,7 +1861,7 @@ function JobsPageInner() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [jobs, page]);
+  }, [jobs, page, matchScoreFloor, hideApplied, hideNoSponsorship]);
 
   useEffect(() => {
     if (!reviewJobId || loading) return;
@@ -2195,12 +2214,10 @@ function JobsPageInner() {
   }
 
   function getBestScore(job: Job): number | null {
-    // Check v2 quality scores first (reflects actual resume output)
-    const v2Versions = job.profileVersions?.filter(
-      (v) => v.scoreVersion === 2 && v.score > 0
-    );
-    if (v2Versions?.length) {
-      return Math.max(...v2Versions.map((v) => v.score));
+    // Use the most recent version's score (ordered createdAt desc, so [0] is latest)
+    if (job.profileVersions?.length) {
+      const latest = job.profileVersions[0];
+      if (latest.score > 0) return latest.score;
     }
     // Fall back to match analysis score
     const match = matchResults[job.id];

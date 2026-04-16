@@ -65,6 +65,10 @@ export async function evaluateResumeArtifact(
   const evaluation = await askJson<ArtifactEvaluationResponse>(
     `${RESUME_ARTIFACT_EVALUATOR_INSTRUCTIONS}
 
+Return ONLY valid JSON matching this schema:
+
+${RESUME_ARTIFACT_EVALUATOR_SCHEMA}
+
 ---
 
 Source Snapshot:
@@ -80,13 +84,7 @@ Target Job:
 ${JSON.stringify(jobAnalysis)}
 
 Match Analysis:
-${JSON.stringify(matchResult)}
-
----
-
-Return ONLY valid JSON matching this schema:
-
-${RESUME_ARTIFACT_EVALUATOR_SCHEMA}`,
+${JSON.stringify(matchResult)}`,
     { timeoutMs: 600_000, skill: "resume-artifact-evaluator", model: options?.model }
   );
 

@@ -45,6 +45,9 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 | AI | Claude Code CLI subprocess (`claude -p`) |
 | Database | SQLite via Prisma |
 | UI | Tailwind CSS + shadcn/ui |
+| Charts | Recharts |
+| Syntax Highlighting | Prism.js |
+| Flow Diagrams | @xyflow/react + @dagrejs/dagre |
 | PDF Parsing | pdf-parse |
 | DOCX Parsing | mammoth |
 | PDF Generation | @react-pdf/renderer |
@@ -67,6 +70,12 @@ npx prisma migrate dev
 
 # Start the dev server
 npm run dev
+
+# (Optional) Start the background worker for async guide generation
+npm run worker
+
+# (Optional) Start both dev server and worker together
+npm run dev:all
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
@@ -140,7 +149,10 @@ resumeforge/
 │   ├── manifest.json              # Extension manifest (permissions, content script targets)
 │   ├── background.js              # Service worker
 │   ├── content.js                 # Content script — detects and fills ATS form fields
+│   ├── capture.js                 # DOM capture for article/page content
 │   ├── field-map.js               # ATS-specific field mapping definitions
+│   ├── form-fill-utils.js         # Shared form-fill utilities (question classification, pattern matching)
+│   ├── popup-helpers.js           # Popup UI helper functions (duplicate handling, review URLs)
 │   ├── popup.html / popup.js / popup.css  # Extension popup UI
 │   └── icons/                     # Extension icons
 └── src/
@@ -164,7 +176,7 @@ resumeforge/
     │       │   ├── enrich/             # Enrich from GitHub/StackOverflow/LinkedIn
     │       │   ├── enhance/            # AI enhancement suggestions from version history
     │       │   ├── refresh/            # Re-parse profile from stored resume
-    │       │   ├── chat/               # Conversational profile editor (POST + apply)
+    │       │   ├── chat/               # Conversational profile editor (chat + apply)
     │       │   │   └── discover/       # AI experience discovery questions from job gaps
     │       │   ├── publications/       # Publications CRUD
     │       │   │   └── fetch/          # Scrape + AI-summarize a publication from URL
@@ -182,13 +194,15 @@ resumeforge/
     │       │   ├── migrate-pins/       # One-time migration: customDefaults → LearnedAnswer
     │       │   └── pin/                # Pin/unpin/edit reusable screening question answers
     │       ├── jobs/
-    │       │   ├── route.ts            # Job CRUD + analysis
+    │       │   ├── route.ts            # Job list + create
+    │       │   ├── [id]/route.ts       # Single job detail (GET)
     │       │   ├── match/              # Profile-to-job compatibility scoring
     │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
     │       │   ├── applied/            # Toggle job application status (applied/not applied)
     │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
     │       │   ├── chat/               # Per-job resume advisory chat
     │       │   │   ├── apply-tips/     # Apply AI-suggested tips to profile
+    │       │   │   ├── optimize/       # Score profile quality against a job (live preview)
     │       │   │   └── rescore/        # Rescore profile-job compatibility after applying tips
     │       │   └── scan-emails/        # Scan Gmail job alerts and import qualifying jobs
     │       ├── resume/                 # Resume generation + download + critique
@@ -198,7 +212,7 @@ resumeforge/
     │       │   └── generate/           # Generate STAR+R interview stories for a job
     │       ├── skills/
     │       │   ├── route.ts            # Skills listing
-    │       │   └── chat/               # Conversational skills editor (POST + apply)
+    │       │   └── chat/               # Conversational skills editor (chat + apply)
     │       ├── analytics/              # Token usage and cost analytics
     │       ├── insights/               # Market insights: job clustering, demand patterns, gap analysis
     │       ├── learn/
@@ -207,6 +221,8 @@ resumeforge/
     │       │   │       ├── route.ts                  # Single guide CRUD
     │       │   │       ├── refine/                   # Add sources and AI-refine guide
     │       │   │       ├── evaluate/                 # AI-evaluate open-ended answers
+    │       │   │       ├── progress/                 # SSE stream of async guide generation progress
+    │       │   │       ├── resume/                   # Resume (restart) a stalled async guide generation
     │       │   │       └── sections/[sectionId]/refine/ # Refine individual guide section
     │       │   ├── paths/              # Learning path CRUD
     │       │   │   └── [id]/
@@ -225,14 +241,28 @@ resumeforge/
     │   ├── capture-constants.ts        # Shared constants for article capture (max chars, etc.)
     │   ├── saved-sources.ts            # Saved source capture, review, versioning logic
     │   ├── learn-sources.ts            # Guide source ingestion and suggestion helpers
+    │   ├── learn-guides.ts             # Guide generation tracking helpers (section statuses, snapshots)
     │   ├── learn-cache.ts              # Caching helpers for gaps and recommendations
+    │   ├── resume-quality.ts           # Resume quality scoring pipeline (plan → generate → evaluate)
+    │   ├── job-queue.ts                # Background job queue: enqueue, dequeue, complete, fail
+    │   ├── dashboard-analytics.ts      # Dashboard metric helpers (job source summaries, study topic coverage)
+    │   ├── insights.ts                 # Insights computation helpers
+    │   ├── applications/
+    │   │   └── form-answering.ts       # Form field classification types and answer resolution logic
+    │   ├── logger.ts                   # Structured logger with AsyncLocalStorage request context
+    │   ├── api-handler.ts              # withLogging wrapper for Next.js API routes
+    │   ├── errors.ts                   # Typed AppError class and error categories
+    │   ├── types.ts                    # Shared TypeScript types used across the codebase
     │   ├── claude/                     # AI modules
     │   │   ├── client.ts              # Claude Code CLI subprocess wrapper (ask / askJson / compactProfile helpers)
     │   │   ├── index.ts               # Re-exports all AI modules
     │   │   └── skills/
     │   │       ├── skill-prompts.ts        # Shared AI prompt constants (re-used across skills)
+    │   │       ├── guide-prompts.ts        # Shared prompt constants for guide generation
+    │   │       ├── form-answerer-utils.ts  # Question classification and profile projection utilities
     │   │       ├── resume-parser.ts        # Parse resume text → structured data
     │   │       ├── job-analyzer.ts         # Analyze job description → requirements
+    │   │       ├── resume-planner.ts       # Plan resume optimization (v2 pipeline)
     │   │       ├── resume-writer.ts        # Generate ATS-optimized tailored resume
     │   │       ├── resume-critic.ts        # Critique resume against job description
     │   │       ├── profile-enricher.ts     # Merge external source data into profile
@@ -272,6 +302,7 @@ resumeforge/
     │   ├── theme-provider.tsx         # Dark/light theme context
     │   ├── theme-toggle.tsx           # Theme switcher button
     │   └── ui/                        # shadcn/ui components
+    ├── worker.ts                      # Background job worker process (guide section generation)
     └── generated/prisma/               # Prisma generated client
 ```
 
@@ -335,12 +366,17 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
 | `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, AI model selection |
 | `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
-| `ProfileVersion` | Optimized profile snapshot tied to a job, with ATS score and score delta |
+| `ProfileVersion` | Optimized profile snapshot tied to a job, with quality score, score delta, optional label, and optional v2 optimization plan and resume artifact |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
-| `Resume` | Generated resume record with file path, format, and optional profile version link |
+| `Resume` | Generated resume record with file path, format, optional profile version link, and optional persisted quality evaluation |
 | `ApplicationProfile` | 1:1 with Profile; stores work authorization, salary range, relocation preference, notice period, preferred work mode, earliest start date, EEO fields (voluntary), and other auto-fill defaults |
 | `ApplicationAnswer` | Per-job cached screening question answer with source tracking (`auto`, `ai`, `manual`, `pinned`, `reused`, `profile`); unique on job + question |
 | `LearnedAnswer` | Cross-site form field answer library built from Chrome extension observations; stores normalized question, answer, field type, confidence score, and use count |
+| `BackgroundJob` | Durable background job record for async guide generation; tracks status, attempts, worker lock, parent/child relationships, and group keys |
+| `LearningPath` | Ordered sequence of guides for a learning topic, linked to Profile |
+| `Guide` | Structured interactive study guide with sections, quizzes, code examples, and interview scenarios; tracks completion and async generation state |
+| `GuideVersion` | Version history snapshot for a guide; records snapshot semantics and source versions active at time of snapshot |
+| `GuideSource` | Source attachment for a guide (URL, PDF, text, Medium, Substack); links to `SavedSource`/`SavedSourceVersion` and tracks active/superseded state |
 | `SavedSource` | Versioned article/post saved for guide refinement; stores content hash, word count, capture method, review flags, and capture diagnostics; unique per profile + URL |
 | `SavedSourceVersion` | Content snapshot of a `SavedSource` created on each replace or refresh; records change type (`initial`, `replace`, `refresh`, `migrated`) and full capture metadata |
 
@@ -355,6 +391,7 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
 8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
 9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
-10. **Versions** — Browse saved profile versions, compare ATS scores, and generate resumes from any version
-11. **Insights** (optional) — Visit `/insights` to see AI-clustered job role profiles, skill demand patterns, gap analysis, and prioritized study topic recommendations across all matched jobs
-12. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI
+10. **Versions** — Browse saved profile versions, compare quality scores, and generate resumes from any version
+11. **Learn** (optional) — Generate AI study guides on technical topics using the background worker (`npm run worker`); guides are built section-by-section asynchronously and can be refined with saved sources; follow learning paths and practice with interactive quizzes and scenarios
+12. **Insights** (optional) — Visit `/insights` to see AI-clustered job role profiles, skill demand patterns, gap analysis, and prioritized study topic recommendations across all matched jobs
+13. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI

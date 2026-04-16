@@ -4,7 +4,7 @@ import {
   GuideOutlineValidationError,
   generateGuideOutline,
 } from "@/lib/claude";
-import type { GuideContentStorage, GuideOutline } from "@/lib/claude";
+import type { GuideContentStorage, GuideOutline, SectionGenStatus } from "@/lib/claude";
 import { GuideSourceResolutionError, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
@@ -105,7 +105,7 @@ export const POST = withLogging(async (request: NextRequest) => {
   // _sectionPlan preserves original scopes so the resume endpoint can pass
   // them to generateGuideSection (without it, scope is lost after creation).
   // _sectionStatuses tracks per-section generation progress.
-  const sectionStatuses: Record<string, "pending" | "generating" | "completed" | "failed" | "refining"> = {};
+  const sectionStatuses: Record<string, SectionGenStatus> = {};
   for (const sp of outline.sectionPlan) {
     sectionStatuses[sp.id] = "pending";
   }
@@ -149,6 +149,9 @@ export const POST = withLogging(async (request: NextRequest) => {
         category: outline.difficulty,
         tags: JSON.stringify([]),
         profileId: profile.id,
+        sectionStatuses: JSON.stringify(sectionStatuses),
+        sectionErrors: JSON.stringify({}),
+        sectionAttempts: JSON.stringify({}),
         lastAsyncError: null,
         lastAsyncStage: null,
       },
@@ -161,20 +164,22 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   log.info("guide_created", { guideId: guide.id, sectionCount: outline.sectionPlan.length, sourceCount: sourcesToSave.length });
 
-  // Enqueue one job per section + a finalize job
+  // Enqueue two-phase jobs per section: core (explanation+code) then interactive (quizzes+scenarios)
   const groupKey = `create-${guide.id}`;
-  const sectionJobs = outline.sectionPlan.map((sp) => ({
-    type: "guide-section",
+  const siblingTitles = outline.sectionPlan.map((s) => s.title);
+
+  const coreJobs = outline.sectionPlan.map((sp) => ({
+    type: "guide-section-core",
     payload: {
       guideId: guide.id,
       topic: topic.trim(),
       sectionPlan: sp,
       difficulty: outline.difficulty,
-      siblingTitles: outline.sectionPlan.map((s) => s.title),
+      siblingTitles,
       model,
     },
     opts: {
-      priority: 10,
+      priority: 20, // core jobs run first
       maxAttempts: 3,
       groupKey,
       entityId: guide.id,
@@ -182,9 +187,27 @@ export const POST = withLogging(async (request: NextRequest) => {
     },
   }));
 
-  await enqueueJobs(sectionJobs);
+  const interactiveJobs = outline.sectionPlan.map((sp) => ({
+    type: "guide-section-interactive",
+    payload: {
+      guideId: guide.id,
+      topic: topic.trim(),
+      sectionPlan: sp,
+      difficulty: outline.difficulty,
+      model,
+    },
+    opts: {
+      priority: 10, // interactive jobs run after all core jobs
+      maxAttempts: 3,
+      groupKey,
+      entityId: guide.id,
+      entityType: "guide",
+    },
+  }));
 
-  log.info("guide_jobs_enqueued", { guideId: guide.id, jobCount: sectionJobs.length, groupKey });
+  await enqueueJobs([...coreJobs, ...interactiveJobs]);
+
+  log.info("guide_jobs_enqueued", { guideId: guide.id, jobCount: coreJobs.length + interactiveJobs.length, groupKey });
 
   return NextResponse.json({
     id: guide.id,

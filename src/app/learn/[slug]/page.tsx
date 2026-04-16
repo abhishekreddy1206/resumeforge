@@ -276,6 +276,8 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
                 <a
                   key={source.guideSourceId}
                   href={source.reviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="label-mono px-2 py-1 rounded bg-blue-500/10 text-blue-700 hover:bg-blue-500/15 transition-colors"
                 >
                   {label}
@@ -291,14 +293,17 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sectionStatuses: Record<string, SectionGenStatus> = (guide.content as any)._sectionStatuses || {};
         const completedCount = Object.values(sectionStatuses).filter((s) => s === "completed").length;
+        const coreCompleteCount = Object.values(sectionStatuses).filter((s) => s === "core_complete" || s === "generating_interactive").length;
         const totalSections = guide.content.sections.length;
-        const pct = totalSections > 0 ? Math.round((completedCount / totalSections) * 100) : 0;
+        const pct = totalSections > 0 ? Math.round(((completedCount + coreCompleteCount * 0.6) / totalSections) * 100) : 0;
         const isBlocked = guide.generationState === "blocked";
 
         const statusIcon = (status: SectionGenStatus | undefined) => {
           switch (status) {
             case "completed": return <span className="text-chart-3">{"\u2713"}</span>;
+            case "core_complete": return <span className="text-chart-3/60">{"\u2713"}</span>;
             case "generating": return <span className="text-primary animate-pulse">{"\u25CF"}</span>;
+            case "generating_interactive": return <span className="text-blue-400 animate-pulse">{"\u25CF"}</span>;
             case "failed": return <span className="text-destructive">{"\u2717"}</span>;
             case "refining": return <span className="text-blue-400 animate-pulse">{"\u21BB"}</span>;
             default: return <span className="text-muted-foreground">{"\u25CB"}</span>;
@@ -328,7 +333,9 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
                     key={s.id}
                     className={`label-mono px-2 py-0.5 rounded flex items-center gap-1 ${
                       status === "completed" ? "bg-chart-3/20 text-chart-3" :
+                      status === "core_complete" ? "bg-chart-3/10 text-chart-3/70" :
                       status === "generating" ? "bg-primary/20 text-primary" :
+                      status === "generating_interactive" ? "bg-blue-500/20 text-blue-500" :
                       status === "failed" ? "bg-destructive/20 text-destructive" :
                       "bg-muted text-muted-foreground"
                     }`}
@@ -339,7 +346,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
               })}
             </div>
             <p className="label-mono text-muted-foreground/60 mt-2">
-              {completedCount} of {totalSections} sections ready
+              {completedCount + coreCompleteCount} of {totalSections} sections ready{coreCompleteCount > 0 ? ` (${coreCompleteCount} loading quizzes)` : ""}
             </p>
             {isBlocked && guide.failedSectionIds.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-amber-500/15 pt-3">

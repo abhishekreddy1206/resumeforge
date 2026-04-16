@@ -1,6 +1,6 @@
 "use client";
 
-import type { GuideSection } from "@/lib/claude/skills/guide-generator";
+import type { GuideSection, SectionGenStatus } from "@/lib/claude/skills/guide-generator";
 
 interface SectionProgress {
   quizzesCompleted: number[];
@@ -12,10 +12,16 @@ interface ProgressTrackerProps {
   progress: Record<string, SectionProgress>;
   activeSection?: string;
   onSectionClick: (id: string) => void;
+  generationStatuses?: Record<string, SectionGenStatus>;
 }
 
-export function ProgressTracker({ sections, progress, activeSection, onSectionClick }: ProgressTrackerProps) {
+export function ProgressTracker({ sections, progress, activeSection, onSectionClick, generationStatuses }: ProgressTrackerProps) {
   const getSectionStatus = (section: GuideSection): "completed" | "in_progress" | "not_started" => {
+    // If section is still generating interactive content, show as in_progress
+    const genStatus = generationStatuses?.[section.id];
+    if (genStatus === "core_complete" || genStatus === "generating_interactive") return "in_progress";
+    if (genStatus === "generating" || genStatus === "pending") return "not_started";
+
     const p = progress[section.id];
     if (!p) return "not_started";
 
