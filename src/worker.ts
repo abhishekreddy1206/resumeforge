@@ -11,6 +11,7 @@ import {
   handleGuideRefineFinalize,
   handleAutoPipeline,
 } from "@/lib/worker/handlers";
+import { recoverOrphanedPipelines } from "@/lib/pipeline-recovery";
 import { createLogger } from "@/lib/logger";
 import { hostname } from "os";
 
@@ -116,6 +117,17 @@ async function processJob(job: JobRecord): Promise<void> {
 
 async function mainLoop(): Promise<void> {
   log.info("worker_started", { workerId });
+
+  // Auto-pipeline runs on this worker; if the worker crashed mid-run, the Job
+  // row is left with pipelineStatus='running'. Recover on startup so the UI
+  // stops polling and a manual retry is allowed.
+  try {
+    await recoverOrphanedPipelines();
+  } catch (err) {
+    log.error("pipeline_recovery_failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  }
 
   while (running) {
     iteration++;

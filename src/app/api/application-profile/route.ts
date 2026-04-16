@@ -39,6 +39,10 @@ export async function GET() {
   }
 }
 
+// Note: `customDefaults` is intentionally NOT updated here. It is a deprecated
+// column migrated once via POST /api/applications/migrate-pins into the
+// LearnedAnswer table. New pins are written through the extension's
+// /api/applications/learn observation flow, not through this route.
 export async function PUT(request: NextRequest) {
   try {
     const data = await request.json();

@@ -8,13 +8,13 @@ const DEFAULT_STALE_THRESHOLD_MS = 30 * 60 * 1000;
 /**
  * Mark stale in-flight auto-pipelines as failed.
  *
- * The auto-pipeline runs in-process in the Next server (fire-and-forget). When
- * the server restarts or crashes mid-run, the Job row is left with
+ * The auto-pipeline runs on the background worker (see src/worker.ts). When
+ * the worker crashes or is killed mid-run, the Job row is left with
  * pipelineStatus='running' forever, which causes the UI to poll indefinitely.
  *
- * On boot, reset any 'running' row whose pipelineStartedAt is older than the
- * threshold (default: 30 min). This matches the manual-retry guard in
- * /api/jobs/[id]/pipeline.
+ * Called on worker startup to reset any 'running' row whose pipelineStartedAt
+ * is older than the threshold (default: 30 min). This matches the manual-retry
+ * guard in /api/jobs/[id]/pipeline.
  */
 export async function recoverOrphanedPipelines(
   thresholdMs: number = DEFAULT_STALE_THRESHOLD_MS

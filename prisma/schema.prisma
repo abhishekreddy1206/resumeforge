@@ -277,7 +277,7 @@ model ApplicationProfile {
   // Defaults
   heardAboutDefault String?
   over18            Boolean  @default(true)
-  customDefaults    String?  // JSON array of {question, answer} — pinned reusable answers
+  customDefaults    String?  // DEPRECATED — migrated to LearnedAnswer via POST /api/applications/migrate-pins; cleared after migration
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -288,7 +288,7 @@ model ApplicationAnswer {
   jobId     String
   question  String
   answer    String
-  source    String   @default("auto") // "auto" | "ai" | "manual"
+  source    String   @default("auto") // "auto" | "ai" | "learned" | "reused"  (factual answers return source:"profile" but are not persisted)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
