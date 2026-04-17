@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Layers, TrendingUp, BookOpen, AlertCircle } from "lucide-react";
+import { BarChart3, Layers, TrendingUp, BookOpen, AlertCircle, RefreshCw } from "lucide-react";
 import { ClustersTab } from "./clusters-tab";
 import { DemandTab } from "./demand-tab";
 import { GapsTab } from "./gaps-tab";
@@ -68,6 +68,7 @@ interface InsightsData {
     matchedGuide: { id: string; slug: string; topic: string } | null;
     coveredByGuide: boolean;
   }>;
+  revalidating?: boolean;
 }
 
 export { type InsightsData };
@@ -93,13 +94,32 @@ const monoStyle: React.CSSProperties = {
 export default function InsightsPage() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/insights");
+      if (res.status === 404) {
+        setData(null);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(`Insights request failed (${res.status})`);
+      }
+      setData((await res.json()) as InsightsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load insights");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/insights")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setData)
-      .finally(() => setLoading(false));
-  }, []);
+    load();
+  }, [load]);
 
   if (loading) {
     return (
@@ -112,6 +132,41 @@ export default function InsightsPage() {
         </div>
         <Skeleton className="h-10 w-full skeleton-shimmer" />
         <Skeleton className="h-64 w-full skeleton-shimmer" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-5xl mx-auto py-8 px-4">
+        <section className="border-b border-border pb-10 pt-2 anim-fade-up">
+          <p className="text-muted-foreground mb-6" style={monoStyle}>
+            Insights
+          </p>
+          <h1
+            className="text-foreground leading-none"
+            style={{
+              fontFamily: "var(--font-cormorant)",
+              fontStyle: "italic",
+              fontSize: "clamp(2.5rem, 6vw, 4rem)",
+              fontWeight: 400,
+            }}
+          >
+            Market <span className="text-primary">Insights</span>
+          </h1>
+          <div className="section-divider mt-5" />
+        </section>
+        <div className="bg-card border rounded-lg p-8 text-center space-y-3 mt-8 anim-fade-up-1">
+          <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+          <p className="text-muted-foreground">Couldn&apos;t load insights.</p>
+          <p className="text-xs text-muted-foreground/70">{error}</p>
+          <button
+            onClick={load}
+            className="text-primary text-sm hover:underline"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -155,9 +210,20 @@ export default function InsightsPage() {
     <div className="max-w-5xl mx-auto py-8 px-4 space-y-8">
       {/* Header — editorial masthead */}
       <section className="border-b border-border pb-10 pt-2 anim-fade-up">
-        <p className="text-muted-foreground mb-6" style={monoStyle}>
-          Insights · {meta.realisticJobs} of {meta.totalJobs} jobs scoring 60+
-        </p>
+        <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+          <p className="text-muted-foreground" style={monoStyle}>
+            Insights · {meta.realisticJobs} of {meta.totalJobs} jobs scoring 60+
+          </p>
+          {data.revalidating && (
+            <span
+              className="inline-flex items-center gap-1.5 text-muted-foreground/70"
+              style={monoStyle}
+              title="Refreshing in the background"
+            >
+              <RefreshCw className="w-3 h-3 animate-spin" /> refreshing
+            </span>
+          )}
+        </div>
         <h1
           className="text-foreground leading-none"
           style={{

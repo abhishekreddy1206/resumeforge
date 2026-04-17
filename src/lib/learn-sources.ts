@@ -44,6 +44,13 @@ export interface GuideSourcePayload {
 export interface ResolvedGuideSources {
   sourceTexts: string[];
   sourcesToSave: GuideSourcePayload[];
+  failures: GuideSourceFailure[];
+}
+
+export interface GuideSourceFailure {
+  input: GuideInputSource;
+  error: string;
+  status: number;
 }
 
 export interface SourceSuggestion {
@@ -408,93 +415,108 @@ async function resolveUrlBackedSourceInput(
   return restoreOrCreateSavedSourceFromPrepared(profileId, src.type, prepared);
 }
 
+async function resolveSingleGuideSource(
+  profileId: string,
+  src: GuideInputSource
+): Promise<{ text?: string; payload?: GuideSourcePayload }> {
+  if (src.type === "saved" && src.savedSourceId) {
+    // If caller specified an explicit version, trust it
+    if (src.savedSourceVersionId) {
+      const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId, src.savedSourceVersionId);
+      return { text: buildGuideModelText(resolved.title, resolved.content), payload: resolved };
+    }
+
+    // Check if HEAD is blocked before resolving
+    const headSource = await prisma.savedSource.findFirst({
+      where: { id: src.savedSourceId, profileId },
+      select: { reviewFlags: true, content: true },
+    });
+
+    if (headSource && isSavedSourceHeadBlockedForGuide(headSource)) {
+      const bestVersionId = await findBestSavedSourceVersion(src.savedSourceId);
+      if (bestVersionId) {
+        const fallback = await resolveSavedSourceInput(profileId, src.savedSourceId, bestVersionId);
+        return { text: buildGuideModelText(fallback.title, fallback.content), payload: fallback };
+      }
+      throw new GuideSourceResolutionError(
+        "This saved article extract looks incomplete for guide generation. Replace it from the Chrome extension or refresh it after improving the capture.",
+        422
+      );
+    }
+
+    const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId);
+    return { text: buildGuideModelText(resolved.title, resolved.content), payload: resolved };
+  }
+
+  if (src.type === "text" && src.content) {
+    const content = src.content.trim();
+    if (!content) return {};
+    return { text: content, payload: { type: "text", content, title: "Pasted text" } };
+  }
+
+  if ((src.type === "url" || ARTICLE_SOURCE_TYPES.has(src.type)) && src.url) {
+    const resolved = await resolveUrlBackedSourceInput(profileId, src);
+    return { text: buildGuideModelText(resolved.title, resolved.content), payload: resolved };
+  }
+
+  if (src.type === "pdf" && src.content) {
+    const buffer = Buffer.from(src.content, "base64");
+    const text = (await parsePdf(buffer)).trim();
+    if (!text) return {};
+    return { text, payload: { type: "pdf", content: text, title: "Uploaded PDF" } };
+  }
+
+  if (src.type === "docx" && src.content) {
+    const buffer = Buffer.from(src.content, "base64");
+    const text = (await parseDocx(buffer)).trim();
+    if (!text) return {};
+    return {
+      text,
+      payload: { type: "docx", content: text, title: src.filename || "Uploaded DOCX" },
+    };
+  }
+
+  return {};
+}
+
 export async function resolveGuideSources(
   profileId: string,
   sources: GuideInputSource[] | undefined
 ): Promise<ResolvedGuideSources> {
   const sourceTexts: string[] = [];
   const sourcesToSave: GuideSourcePayload[] = [];
+  const failures: GuideSourceFailure[] = [];
 
-  if (!sources) {
-    return { sourceTexts, sourcesToSave };
+  if (!sources || sources.length === 0) {
+    return { sourceTexts, sourcesToSave, failures };
   }
 
   for (const src of sources) {
-    if (src.type === "saved" && src.savedSourceId) {
-      // If caller specified an explicit version, trust it
-      if (src.savedSourceVersionId) {
-        const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId, src.savedSourceVersionId);
-        sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
-        sourcesToSave.push(resolved);
-        continue;
-      }
-
-      // Check if HEAD is blocked before resolving
-      const headSource = await prisma.savedSource.findFirst({
-        where: { id: src.savedSourceId, profileId },
-        select: { reviewFlags: true, content: true },
-      });
-
-      if (headSource && isSavedSourceHeadBlockedForGuide(headSource)) {
-        const bestVersionId = await findBestSavedSourceVersion(src.savedSourceId);
-        if (bestVersionId) {
-          const fallback = await resolveSavedSourceInput(profileId, src.savedSourceId, bestVersionId);
-          sourceTexts.push(buildGuideModelText(fallback.title, fallback.content));
-          sourcesToSave.push(fallback);
-          continue;
-        }
-        throw new GuideSourceResolutionError(
-          "This saved article extract looks incomplete for guide generation. Replace it from the Chrome extension or refresh it after improving the capture.",
-          422
-        );
-      }
-
-      const resolved = await resolveSavedSourceInput(profileId, src.savedSourceId);
-      sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
-      sourcesToSave.push(resolved);
-      continue;
+    try {
+      const { text, payload } = await resolveSingleGuideSource(profileId, src);
+      if (text) sourceTexts.push(text);
+      if (payload) sourcesToSave.push(payload);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const status =
+        error instanceof GuideSourceResolutionError ? error.status : 500;
+      failures.push({ input: src, error: errorMessage, status });
     }
+  }
 
-    if (src.type === "text" && src.content) {
-      const content = src.content.trim();
-      if (!content) continue;
-      sourceTexts.push(content);
-      sourcesToSave.push({ type: "text", content, title: "Pasted text" });
-      continue;
-    }
-
-    if ((src.type === "url" || ARTICLE_SOURCE_TYPES.has(src.type)) && src.url) {
-      const resolved = await resolveUrlBackedSourceInput(profileId, src);
-      sourceTexts.push(buildGuideModelText(resolved.title, resolved.content));
-      sourcesToSave.push(resolved);
-      continue;
-    }
-
-    if (src.type === "pdf" && src.content) {
-      const buffer = Buffer.from(src.content, "base64");
-      const text = (await parsePdf(buffer)).trim();
-      if (!text) continue;
-      sourceTexts.push(text);
-      sourcesToSave.push({ type: "pdf", content: text, title: "Uploaded PDF" });
-      continue;
-    }
-
-    if (src.type === "docx" && src.content) {
-      const buffer = Buffer.from(src.content, "base64");
-      const text = (await parseDocx(buffer)).trim();
-      if (!text) continue;
-      sourceTexts.push(text);
-      sourcesToSave.push({
-        type: "docx",
-        content: text,
-        title: src.filename || "Uploaded DOCX",
-      });
-    }
+  // If every requested source failed, surface the first error up-front so the
+  // caller can return a meaningful 4xx/5xx instead of silently creating a
+  // guide with zero sources.
+  if (failures.length === sources.length && sourceTexts.length === 0) {
+    const first = failures[0];
+    throw new GuideSourceResolutionError(first.error, first.status);
   }
 
   return {
     sourceTexts: dedupeGuideModelTexts(sourceTexts),
     sourcesToSave,
+    failures,
   };
 }
 

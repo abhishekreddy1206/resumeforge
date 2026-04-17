@@ -5,7 +5,7 @@ import {
   generateGuideOutline,
 } from "@/lib/claude";
 import type { GuideContentStorage, GuideOutline, SectionGenStatus } from "@/lib/claude";
-import { GuideSourceResolutionError, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
+import { GuideSourceResolutionError, type GuideSourceFailure, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
@@ -69,10 +69,12 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   let sourceTexts: string[];
   let sourcesToSave: GuideSourcePayload[];
+  let sourceFailures: GuideSourceFailure[] = [];
   try {
     const resolved = await resolveGuideSources(profile.id, sources);
     sourceTexts = resolved.sourceTexts;
     sourcesToSave = resolved.sourcesToSave;
+    sourceFailures = resolved.failures;
   } catch (error) {
     if (error instanceof GuideSourceResolutionError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -81,6 +83,14 @@ export const POST = withLogging(async (request: NextRequest) => {
   }
   if (sources && sources.length > 0 && sourceTexts.length === 0) {
     return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
+  }
+
+  if (sourceFailures.length > 0) {
+    log.warn("guide_source_failures", {
+      failureCount: sourceFailures.length,
+      totalCount: sources?.length ?? 0,
+      failures: sourceFailures.map((f) => ({ error: f.error, type: f.input.type })),
+    });
   }
 
   // Generate outline (~15s) instead of full guide (~8 min)
@@ -215,5 +225,11 @@ export const POST = withLogging(async (request: NextRequest) => {
     topic: guide.topic,
     status: "generating",
     content: skeletonContent,
+    sourceWarnings: sourceFailures.map((f) => ({
+      type: f.input.type,
+      url: f.input.url ?? null,
+      filename: f.input.filename ?? null,
+      error: f.error,
+    })),
   });
 });

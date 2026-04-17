@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { classifySectionRelevance, generateGuideOutline, GuideOutlineValidationError } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
-import { GuideSourceResolutionError, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
+import { GuideSourceResolutionError, type GuideSourceFailure, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
 import { ensureGuideContentTracking, isSectionCurrentlyInteractive } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
@@ -37,10 +37,12 @@ export const POST = withLogging(async (
 
   let newSourceTexts: string[];
   let sourcesToSave: GuideSourcePayload[];
+  let sourceFailures: GuideSourceFailure[] = [];
   try {
     const resolved = await resolveGuideSources(guide.profileId, sources);
     newSourceTexts = resolved.sourceTexts;
     sourcesToSave = resolved.sourcesToSave;
+    sourceFailures = resolved.failures;
   } catch (error) {
     if (error instanceof GuideSourceResolutionError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -49,6 +51,22 @@ export const POST = withLogging(async (
   }
   if (newSourceTexts.length === 0) {
     return NextResponse.json({ error: "No usable source content was provided" }, { status: 400 });
+  }
+
+  const sourceWarnings = sourceFailures.map((f) => ({
+    type: f.input.type,
+    url: f.input.url ?? null,
+    filename: f.input.filename ?? null,
+    error: f.error,
+  }));
+
+  if (sourceFailures.length > 0) {
+    log.warn("guide_refine_source_failures", {
+      guideId: id,
+      failureCount: sourceFailures.length,
+      totalCount: sources.length,
+      failures: sourceFailures.map((f) => ({ error: f.error, type: f.input.type })),
+    });
   }
 
   const existingContent = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
@@ -83,6 +101,7 @@ export const POST = withLogging(async (
       totalSections: sectionPlan.length,
       mode: "none",
       message: "No guide sections matched the new source closely enough to refine.",
+      sourceWarnings,
     });
   }
 
@@ -317,5 +336,6 @@ export const POST = withLogging(async (
     relevantSections: relevantSectionIds,
     totalSections: sectionPlan.length,
     mode: isGuideIncomplete ? "recovery" : shouldFullRefine ? "full" : "per-section",
+    sourceWarnings,
   });
 });

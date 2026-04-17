@@ -3,8 +3,37 @@ import { clusterJobs, type GuideRecommendation } from "@/lib/claude";
 import type { ClusterResult } from "@/lib/claude/skills/job-clusterer";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { safeJsonParse } from "@/lib/utils/json";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("insights");
 
 export const INSIGHTS_SCORE_THRESHOLD = 60;
+
+const CLUSTER_TIMEOUT_MS = 20_000;
+const RECOMMENDATIONS_TIMEOUT_MS = 30_000;
+
+class InsightsTimeoutError extends Error {
+  constructor(label: string, ms: number) {
+    super(`${label} timed out after ${ms}ms`);
+    this.name = "InsightsTimeoutError";
+  }
+}
+
+function withTimeout<T>(label: string, ms: number, work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new InsightsTimeoutError(label, ms)), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 function hashString(s: string): string {
   let hash = 0;
@@ -134,14 +163,11 @@ interface RealisticJob {
 
 export function computeInsightsFingerprint(
   jobs: Array<{ id: string; matchedAt: Date | null }>,
-  profileSkillNames: string[],
   guides: Array<{ id: string; slug: string; topic: string }>
 ): string {
   const sortedJobs = [...jobs]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((job) => [job.id, job.matchedAt?.toISOString() ?? null]);
-  const sortedSkills = [...new Set(profileSkillNames.map((skill) => normalizeTopic(skill)))]
-    .sort();
   const sortedGuides = [...guides]
     .map((guide) => ({
       id: guide.id,
@@ -150,7 +176,7 @@ export function computeInsightsFingerprint(
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
-  return hashString(JSON.stringify({ sortedJobs, sortedSkills, sortedGuides }));
+  return hashString(JSON.stringify({ sortedJobs, sortedGuides }));
 }
 
 export function matchGuideToTopic(
@@ -267,9 +293,9 @@ export function summarizeInsightsForAnalytics(data: InsightsResponse | null) {
 }
 
 export async function getInsightsData(
-  options: { cacheOnly?: boolean } = {}
+  options: { cacheOnly?: boolean; force?: boolean } = {}
 ): Promise<InsightsResponse | null> {
-  const { cacheOnly = false } = options;
+  const { cacheOnly = false, force = false } = options;
 
   if (cacheOnly) {
     const profile = await prisma.profile.findFirst({
@@ -361,11 +387,10 @@ export async function getInsightsData(
 
   const fingerprint = computeInsightsFingerprint(
     realisticJobs.map((job) => ({ id: job.id, matchedAt: job.matchedAt })),
-    profileSkills.map((skill) => skill.name),
     guides
   );
 
-  if (profile.insightsCacheFingerprint === fingerprint && profile.cachedInsights) {
+  if (!force && profile.insightsCacheFingerprint === fingerprint && profile.cachedInsights) {
     return JSON.parse(profile.cachedInsights) as InsightsResponse;
   }
 
@@ -478,28 +503,45 @@ export async function getInsightsData(
     }
   }
 
+  const fallbackClusterResult: ClusterResult = {
+    clusters: [
+      {
+        name: "All Targets",
+        description: "All your realistic job targets.",
+        jobIds: realisticJobs.map((job) => job.id),
+      },
+    ],
+    summary: `You have ${realisticJobs.length} realistic targets. Add more scored jobs to enable AI clustering.`,
+  };
+
   let clusterResult: ClusterResult;
   if (realisticJobs.length < 3) {
-    clusterResult = {
-      clusters: [
-        {
-          name: "All Targets",
-          description: "All your realistic job targets.",
-          jobIds: realisticJobs.map((job) => job.id),
-        },
-      ],
-      summary: `You have ${realisticJobs.length} realistic targets. Add more scored jobs to enable AI clustering.`,
-    };
+    clusterResult = fallbackClusterResult;
   } else {
-    clusterResult = await clusterJobs(
-      realisticJobs.map((job) => ({
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        skills: job.skills,
-        seniority: job.seniority || undefined,
-      }))
-    );
+    try {
+      clusterResult = await withTimeout(
+        "clusterJobs",
+        CLUSTER_TIMEOUT_MS,
+        clusterJobs(
+          realisticJobs.map((job) => ({
+            id: job.id,
+            title: job.title,
+            company: job.company,
+            skills: job.skills,
+            seniority: job.seniority || undefined,
+          }))
+        )
+      );
+    } catch (error) {
+      log.warn("cluster_jobs_failed", {
+        error: error instanceof Error ? error.message : String(error),
+        jobCount: realisticJobs.length,
+      });
+      clusterResult = {
+        ...fallbackClusterResult,
+        summary: `Clustering is temporarily unavailable — showing all ${realisticJobs.length} targets in a single group. Refresh to try again.`,
+      };
+    }
   }
 
   const jobToCluster = new Map<string, string>();
@@ -606,7 +648,18 @@ export async function getInsightsData(
     gaps.map((gap) => [gap.skill.toLowerCase(), gap.frequency])
   );
 
-  const recommendations = await refreshRecommendationsCache();
+  let recommendations: GuideRecommendation[] = [];
+  try {
+    recommendations = await withTimeout(
+      "refreshRecommendationsCache",
+      RECOMMENDATIONS_TIMEOUT_MS,
+      refreshRecommendationsCache()
+    );
+  } catch (error) {
+    log.warn("recommendations_refresh_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const learnTopics =
     recommendations.length > 0
       ? mapRecommendationsToLearnTopics(recommendations, gapClusterMap, gapFrequencyMap, guides)

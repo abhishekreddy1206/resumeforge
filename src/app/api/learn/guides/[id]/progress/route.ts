@@ -5,6 +5,7 @@ import { parseTrackingColumn } from "@/lib/learn-guides";
 import type { SectionGenStatus } from "@/lib/claude";
 
 const POLL_INTERVAL_MS = 2000;
+const STALL_THRESHOLD_MS = 5 * 60 * 1000;
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +35,13 @@ export async function GET(
           // Select only tracking columns — no content blob
           const guide = await prisma.guide.findFirst({
             where: { OR: [{ id }, { slug: id }] },
-            select: { id: true, status: true, sectionStatuses: true, sectionErrors: true },
+            select: {
+              id: true,
+              status: true,
+              sectionStatuses: true,
+              sectionErrors: true,
+              updatedAt: true,
+            },
           });
 
           if (!guide) {
@@ -52,11 +59,23 @@ export async function GET(
           );
           const jobs = await getJobStats(guide.id, "guide");
 
+          // Stall: no tracking-column change for >STALL_THRESHOLD_MS while
+          // there are still jobs pending/running. Usually means the worker
+          // crashed or got stuck — user should be offered a resume.
+          const staleForMs = Date.now() - guide.updatedAt.getTime();
+          const hasInflight = jobs.pending > 0 || jobs.running > 0;
+          const stallDetected =
+            guide.status === "generating" &&
+            hasInflight &&
+            staleForMs >= STALL_THRESHOLD_MS;
+
           const state = {
             status: guide.status,
             sectionStatuses,
             sectionErrors,
             jobs,
+            stallDetected,
+            lastProgressAt: guide.updatedAt.toISOString(),
             done: guide.status === "published" || guide.status === "failed",
           };
 

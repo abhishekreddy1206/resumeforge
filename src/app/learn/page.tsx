@@ -93,6 +93,10 @@ function LearnPageContent() {
   const [sourceText, setSourceText] = useState("");
   const [savedSources, setSavedSources] = useState<SavedSourceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [createWarnings, setCreateWarnings] = useState<{
+    slug: string;
+    warnings: Array<{ type: string; url: string | null; filename: string | null; error: string }>;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
 
@@ -166,7 +170,12 @@ function LearnPageContent() {
       });
       if (res.ok) {
         const data = await res.json();
-        window.location.href = `/learn/${data.slug}`;
+        const warnings = Array.isArray(data.sourceWarnings) ? data.sourceWarnings : [];
+        if (warnings.length > 0) {
+          setCreateWarnings({ slug: data.slug, warnings });
+        } else {
+          window.location.href = `/learn/${data.slug}`;
+        }
       } else {
         const errData = await res.json().catch(() => null);
         setError(errData?.error || "Failed to create guide. Please try again.");
@@ -537,6 +546,38 @@ function LearnPageContent() {
               <p className="text-sm text-destructive mt-3 text-center" style={{ fontFamily: "var(--font-geist-sans)" }}>
                 {error}
               </p>
+            )}
+
+            {createWarnings && (
+              <div className="mt-4 border border-amber-500/30 bg-amber-500/10 rounded px-4 py-3 text-left">
+                <p className="text-sm font-medium text-foreground mb-2">
+                  Guide created, but {createWarnings.warnings.length === 1 ? "one source was" : `${createWarnings.warnings.length} sources were`} skipped:
+                </p>
+                <ul className="text-xs text-muted-foreground space-y-1 mb-3 list-disc list-inside">
+                  {createWarnings.warnings.map((w, i) => (
+                    <li key={i}>
+                      <span className="text-foreground/80">{w.url || w.filename || w.type}</span>
+                      {" — "}
+                      {w.error}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-3">
+                  <a
+                    href={`/learn/${createWarnings.slug}`}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    Open guide →
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setCreateWarnings(null)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

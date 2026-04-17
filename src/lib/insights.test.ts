@@ -37,17 +37,26 @@ test("does not match ambiguous fuzzy topics", () => {
   assert.equal(match, null);
 });
 
-test("insights fingerprint changes when profile skills or guides change", () => {
+test("insights fingerprint is stable across profile skill changes but changes when jobs or guides change", () => {
   const jobs = [{ id: "job-1", matchedAt: new Date("2026-04-13T00:00:00.000Z") }];
   const guides = [{ id: "guide-1", slug: "raft-consensus", topic: "Raft Consensus" }];
 
-  const base = computeInsightsFingerprint(jobs, ["Go"], guides);
-  const changedSkills = computeInsightsFingerprint(jobs, ["Go", "Kubernetes"], guides);
-  const changedGuides = computeInsightsFingerprint(jobs, ["Go"], [
+  const base = computeInsightsFingerprint(jobs, guides);
+  const changedGuides = computeInsightsFingerprint(jobs, [
     ...guides,
     { id: "guide-2", slug: "kubernetes", topic: "Kubernetes" },
   ]);
+  const changedJobs = computeInsightsFingerprint(
+    [
+      ...jobs,
+      { id: "job-2", matchedAt: new Date("2026-04-14T00:00:00.000Z") },
+    ],
+    guides
+  );
 
-  assert.notEqual(base, changedSkills);
   assert.notEqual(base, changedGuides);
+  assert.notEqual(base, changedJobs);
+  // Skills no longer participate in the fingerprint — recomputing with the
+  // same jobs + guides must yield the same hash regardless of profile state.
+  assert.equal(base, computeInsightsFingerprint(jobs, guides));
 });

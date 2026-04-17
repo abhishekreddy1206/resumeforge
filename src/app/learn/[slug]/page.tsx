@@ -74,10 +74,13 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
   useEffect(() => { fetchGuide(); }, [fetchGuide]);
 
   // SSE for real-time progress while guide is generating
-  useEffect(() => {
-    if (!guide || guide.status !== "generating") return;
+  const guideId = guide?.id;
+  const guideStatus = guide?.status;
 
-    const es = new EventSource(`/api/learn/guides/${guide.id}/progress`);
+  useEffect(() => {
+    if (!guideId || guideStatus !== "generating") return;
+
+    const es = new EventSource(`/api/learn/guides/${guideId}/progress`);
 
     es.onmessage = (event) => {
       try {
@@ -88,12 +91,17 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
           return;
         }
 
-        // Update guide state with SSE data
+        // Update guide state with SSE data. If the server flags a stall
+        // (no DB progress for >5min while jobs are still inflight), flip
+        // generationState to "blocked" so the existing blocked-state UI
+        // surfaces the Resume button.
         setGuide((prev) => {
           if (!prev) return null;
+          const nextGenerationState = data.stallDetected ? "blocked" : prev.generationState;
           return {
             ...prev,
             status: data.status,
+            generationState: nextGenerationState,
             content: {
               ...prev.content,
               _sectionStatuses: data.sectionStatuses,
@@ -119,7 +127,7 @@ export default function GuideViewerPage({ params }: { params: Promise<{ slug: st
     };
 
     return () => es.close();
-  }, [guide?.status, guide?.id, fetchGuide]);
+  }, [guideId, guideStatus, fetchGuide]);
 
   const handleResumeGeneration = useCallback(async () => {
     if (!guide || resumingRef.current) return;
