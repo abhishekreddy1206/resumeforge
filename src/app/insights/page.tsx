@@ -81,7 +81,14 @@ const CLUSTER_COLORS = [
   { bg: "bg-rose-500/10", border: "border-rose-500/30", text: "text-rose-400", badge: "bg-rose-500/20" },
 ];
 
-export { CLUSTER_COLORS };
+const OTHER_CLUSTER_COLOR = {
+  bg: "bg-muted/30",
+  border: "border-dashed border-foreground/20",
+  text: "text-muted-foreground",
+  badge: "bg-foreground/10",
+};
+
+export { CLUSTER_COLORS, OTHER_CLUSTER_COLOR };
 
 const monoStyle: React.CSSProperties = {
   fontFamily: "var(--font-dm-mono)",

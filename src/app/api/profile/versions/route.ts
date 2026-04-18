@@ -6,16 +6,70 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const [versions, unlinkedResumes, jobs] = await Promise.all([
-      prisma.profileVersion.findMany({
-        orderBy: { createdAt: "desc" },
-        include: {
-          job: { select: { id: true, title: true, company: true } },
-          resumes: { select: { id: true, format: true, createdAt: true } },
+    const url = new URL(request.url);
+    const pageRaw = Number(url.searchParams.get("page") ?? "1");
+    const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? "10");
+    const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? Math.floor(pageRaw) : 1;
+    const pageSize =
+      Number.isFinite(pageSizeRaw) && pageSizeRaw >= 1
+        ? Math.min(50, Math.floor(pageSizeRaw))
+        : 10;
+
+    // Step 1: find all jobs that have at least one ProfileVersion and order
+    // them by most-recent version activity. We do this as a small query
+    // (id + createdAt of newest version) then slice for pagination.
+    const jobsWithVersions = await prisma.job.findMany({
+      where: { profileVersions: { some: {} } },
+      select: {
+        id: true,
+        profileVersions: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true },
         },
-      }),
+      },
+    });
+
+    const ordered = jobsWithVersions
+      .map((j) => ({
+        id: j.id,
+        lastActivityAt: j.profileVersions[0]?.createdAt ?? new Date(0),
+      }))
+      .sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime());
+
+    const total = ordered.length;
+    const start = (page - 1) * pageSize;
+    const pageIds = ordered.slice(start, start + pageSize).map((j) => j.id);
+
+    // Step 2: fetch details only for the page slice.
+    const [pageJobs, unlinkedResumes] = await Promise.all([
+      pageIds.length === 0
+        ? Promise.resolve([])
+        : prisma.job.findMany({
+            where: { id: { in: pageIds } },
+            select: {
+              id: true,
+              title: true,
+              company: true,
+              applied: true,
+              appliedAt: true,
+              profileVersions: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                  id: true,
+                  score: true,
+                  scoreVersion: true,
+                  delta: true,
+                  createdAt: true,
+                },
+              },
+              resumes: {
+                select: { id: true, format: true, profileVersionId: true },
+              },
+            },
+          }),
       prisma.resume.findMany({
         where: { profileVersionId: null },
         orderBy: { createdAt: "desc" },
@@ -28,41 +82,44 @@ export async function GET() {
           job: { select: { id: true, title: true, company: true } },
         },
       }),
-      prisma.job.findMany({
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          title: true,
-          company: true,
-          matchResult: true,
-          matchedAt: true,
-          createdAt: true,
-          profileVersions: {
-            orderBy: { createdAt: "desc" },
-            select: {
-              id: true,
-              score: true,
-              scoreVersion: true,
-              delta: true,
-              createdAt: true,
-            },
-          },
-          resumes: {
-            orderBy: { createdAt: "desc" },
-            select: {
-              id: true,
-              format: true,
-              profileVersionId: true,
-              evaluationStatus: true,
-              evaluationVersion: true,
-              createdAt: true,
-            },
-          },
-        },
-      }),
     ]);
 
-    return NextResponse.json({ versions, unlinkedResumes, jobs });
+    const pageById = new Map(pageJobs.map((j) => [j.id, j]));
+    const items = pageIds
+      .map((id) => pageById.get(id))
+      .filter((j): j is NonNullable<typeof j> => Boolean(j))
+      .map((job) => {
+        const versions = job.profileVersions;
+        const latest = versions[0];
+        const scoreTrend = versions
+          .slice(0, 5)
+          .map((v) => v.score)
+          .reverse(); // oldest → newest for trend rendering
+        return {
+          id: job.id,
+          title: job.title,
+          company: job.company,
+          applied: job.applied,
+          appliedAt: job.appliedAt,
+          latestScore: latest?.score ?? null,
+          latestDelta: latest?.delta ?? null,
+          latestScoreVersion: latest?.scoreVersion ?? null,
+          latestVersionId: latest?.id ?? null,
+          scoreTrend,
+          versionCount: versions.length,
+          pdfCount: job.resumes.filter((r) => r.format === "pdf").length,
+          docxCount: job.resumes.filter((r) => r.format === "docx").length,
+          lastActivityAt: latest?.createdAt ?? null,
+        };
+      });
+
+    return NextResponse.json({
+      items,
+      total,
+      page,
+      pageSize,
+      unlinkedResumes,
+    });
   } catch (error) {
     console.error("List versions error:", error);
     return NextResponse.json(

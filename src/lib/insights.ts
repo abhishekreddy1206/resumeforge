@@ -43,6 +43,18 @@ function hashString(s: string): string {
   return hash.toString(36);
 }
 
+function buildDescriptionExcerpt(description: string): string {
+  if (!description) return "";
+  // Strip markdown/HTML-ish noise so the excerpt reads cleanly in the prompt.
+  const plain = description
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[#*_`>~]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= 280) return plain;
+  return plain.slice(0, 280).replace(/\s+\S*$/, "").trimEnd() + "…";
+}
+
 function normalizeTopic(value: string): string {
   return value
     .toLowerCase()
@@ -151,7 +163,9 @@ interface RealisticJob {
   id: string;
   title: string;
   company: string;
+  description: string;
   score: number;
+  applied: boolean;
   matchedAt: Date | null;
   skills: string[];
   seniority: string | null;
@@ -162,12 +176,23 @@ interface RealisticJob {
 }
 
 export function computeInsightsFingerprint(
-  jobs: Array<{ id: string; matchedAt: Date | null }>,
-  guides: Array<{ id: string; slug: string; topic: string }>
+  jobs: Array<{
+    id: string;
+    matchedAt: Date | null;
+    applied?: boolean;
+    score?: number;
+  }>,
+  guides: Array<{ id: string; slug: string; topic: string }>,
+  extra?: { profileSkillsHash?: string; jobCount?: number }
 ): string {
   const sortedJobs = [...jobs]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((job) => [job.id, job.matchedAt?.toISOString() ?? null]);
+    .map((job) => [
+      job.id,
+      job.matchedAt?.toISOString() ?? null,
+      job.applied ?? false,
+      typeof job.score === "number" ? Math.round(job.score) : null,
+    ]);
   const sortedGuides = [...guides]
     .map((guide) => ({
       id: guide.id,
@@ -176,7 +201,24 @@ export function computeInsightsFingerprint(
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
-  return hashString(JSON.stringify({ sortedJobs, sortedGuides }));
+  return hashString(
+    JSON.stringify({
+      sortedJobs,
+      sortedGuides,
+      profileSkillsHash: extra?.profileSkillsHash ?? null,
+      jobCount: extra?.jobCount ?? null,
+    })
+  );
+}
+
+export function hashProfileSkills(
+  skills: Array<{ name: string }>
+): string {
+  const normalized = [...skills]
+    .map((s) => s.name.toLowerCase().trim())
+    .filter((name) => name.length > 0)
+    .sort();
+  return hashString(JSON.stringify(normalized));
 }
 
 export function matchGuideToTopic(
@@ -323,8 +365,10 @@ export async function getInsightsData(
         id: true,
         title: true,
         company: true,
+        description: true,
         skills: true,
         seniority: true,
+        applied: true,
         matchResult: true,
         matchedAt: true,
         terminologyMap: true,
@@ -346,7 +390,9 @@ export async function getInsightsData(
       id: job.id,
       title: job.title,
       company: job.company,
+      description: job.description,
       score,
+      applied: job.applied,
       matchedAt: job.matchedAt,
       skills: safeJsonParse<string[]>(job.skills, []),
       seniority: job.seniority,
@@ -385,9 +431,17 @@ export async function getInsightsData(
     };
   }
 
+  const profileSkillsHash = hashProfileSkills(profileSkills);
+
   const fingerprint = computeInsightsFingerprint(
-    realisticJobs.map((job) => ({ id: job.id, matchedAt: job.matchedAt })),
-    guides
+    realisticJobs.map((job) => ({
+      id: job.id,
+      matchedAt: job.matchedAt,
+      applied: job.applied,
+      score: job.score,
+    })),
+    guides,
+    { profileSkillsHash, jobCount: allJobs.length }
   );
 
   if (!force && profile.insightsCacheFingerprint === fingerprint && profile.cachedInsights) {
@@ -529,6 +583,7 @@ export async function getInsightsData(
             company: job.company,
             skills: job.skills,
             seniority: job.seniority || undefined,
+            descriptionExcerpt: buildDescriptionExcerpt(job.description),
           }))
         )
       );
@@ -544,13 +599,51 @@ export async function getInsightsData(
     }
   }
 
+  // Reconcile AI output with the authoritative realisticJobs set:
+  //  - filter jobIds to ones that actually exist in this set
+  //  - prevent any job from being claimed twice
+  //  - drop clusters that end up empty after filtering
+  //  - capture any unclaimed realistic jobs in an "Other Targets" cluster
+  const realisticJobById = new Map(realisticJobs.map((j) => [j.id, j]));
+  const claimedJobIds = new Set<string>();
+  const reconciledClusters: Array<{
+    name: string;
+    description: string;
+    jobs: typeof realisticJobs;
+  }> = [];
+
+  for (const cluster of clusterResult.clusters) {
+    const clusterJobsData: typeof realisticJobs = [];
+    for (const id of cluster.jobIds) {
+      if (claimedJobIds.has(id)) continue;
+      const job = realisticJobById.get(id);
+      if (!job) continue;
+      claimedJobIds.add(id);
+      clusterJobsData.push(job);
+    }
+    if (clusterJobsData.length === 0) continue;
+    reconciledClusters.push({
+      name: cluster.name,
+      description: cluster.description,
+      jobs: clusterJobsData,
+    });
+  }
+
+  const unclaimed = realisticJobs.filter((j) => !claimedJobIds.has(j.id));
+  if (unclaimed.length > 0) {
+    reconciledClusters.push({
+      name: "Other Targets",
+      description: "Jobs the clusterer didn't group — review manually.",
+      jobs: unclaimed,
+    });
+  }
+
   const jobToCluster = new Map<string, string>();
-  const clusters: InsightsCluster[] = clusterResult.clusters.map((cluster) => {
-    const clusterJobsData = realisticJobs.filter((job) => cluster.jobIds.includes(job.id));
-    for (const job of clusterJobsData) jobToCluster.set(job.id, cluster.name);
+  const clusters: InsightsCluster[] = reconciledClusters.map((cluster) => {
+    for (const job of cluster.jobs) jobToCluster.set(job.id, cluster.name);
 
     const clusterSkillFreq = new Map<string, number>();
-    for (const job of clusterJobsData) {
+    for (const job of cluster.jobs) {
       for (const skill of job.skills) {
         const key = skill.toLowerCase();
         clusterSkillFreq.set(key, (clusterSkillFreq.get(key) || 0) + 1);
@@ -560,8 +653,8 @@ export async function getInsightsData(
     return {
       name: cluster.name,
       description: cluster.description,
-      jobIds: cluster.jobIds,
-      jobs: clusterJobsData.map((job) => ({
+      jobIds: cluster.jobs.map((j) => j.id),
+      jobs: cluster.jobs.map((job) => ({
         id: job.id,
         title: job.title,
         company: job.company,
@@ -571,12 +664,9 @@ export async function getInsightsData(
         .sort((a, b) => b[1] - a[1])
         .slice(0, 6)
         .map(([skill]) => skill),
-      avgScore:
-        clusterJobsData.length > 0
-          ? Math.round(
-              clusterJobsData.reduce((sum, job) => sum + job.score, 0) / clusterJobsData.length
-            )
-          : 0,
+      avgScore: Math.round(
+        cluster.jobs.reduce((sum, job) => sum + job.score, 0) / cluster.jobs.length
+      ),
     };
   });
 

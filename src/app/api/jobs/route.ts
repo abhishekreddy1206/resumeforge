@@ -194,16 +194,19 @@ export const POST = withLogging(async (request: NextRequest) => {
     );
   }
 
-  // Duplicate check by URL
-  if (url) {
-    const normalized = normalizeJobUrl(url);
-    const allUrlJobs = await prisma.job.findMany({
-      where: { url: { not: null } },
-      select: { id: true, url: true, title: true, company: true },
+  // Duplicate check by URL — match against both url and canonicalUrl on existing jobs
+  // so the extension path catches jobs previously imported via the batch route
+  // (which resolves aggregator → employer ATS into canonicalUrl).
+  const normalizedIncoming = url ? normalizeJobUrl(url) : "";
+  if (normalizedIncoming) {
+    const existing = await prisma.job.findMany({
+      where: { OR: [{ url: { not: null } }, { canonicalUrl: { not: null } }] },
+      select: { id: true, url: true, canonicalUrl: true, title: true, company: true },
     });
-    const dup = allUrlJobs.find((j) => {
-      const jNorm = normalizeJobUrl(j.url || "");
-      return jNorm === normalized;
+    const dup = existing.find((j) => {
+      if (j.url && normalizeJobUrl(j.url) === normalizedIncoming) return true;
+      if (j.canonicalUrl && normalizeJobUrl(j.canonicalUrl) === normalizedIncoming) return true;
+      return false;
     });
     if (dup) {
       return NextResponse.json(
@@ -262,30 +265,65 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   const settings = await getAppSettings();
 
-  // Save the job immediately with the raw text — user sees it appear right away
-  const job = await prisma.job.create({
-    data: {
-      title: "Analyzing...",
-      company:
-        (typeof companyHint === "string" && companyHint.trim()) ||
-        (url
-          ? new URL(url).hostname.replace("www.", "").split(".")[0]
-          : "Analyzing..."),
-      url: url || null,
-      description:
-        typeof locationHint === "string" && locationHint.trim() && !jobText.includes(locationHint)
-          ? `Location: ${locationHint.trim()}\n\n${jobText}`
-          : jobText,
-      skills: null,
-      requirements: null,
-      atsKeywords: null,
-      seniority: null,
-      roleArchetype: null,
-      sponsorship: "unspecified",
-      aiModel: aiModel || settings.defaultAiModel,
-      source: source || null,
-    },
+  // Save the job immediately with the raw text — user sees it appear right away.
+  // Re-check URL dedupe inside a transaction to close the race between the initial
+  // check above and the create (the scrape call is a slow async I/O in between).
+  const createResult = await prisma.$transaction(async (tx) => {
+    if (normalizedIncoming) {
+      const existing = await tx.job.findMany({
+        where: { OR: [{ url: { not: null } }, { canonicalUrl: { not: null } }] },
+        select: { id: true, url: true, canonicalUrl: true, title: true, company: true },
+      });
+      const dup = existing.find((j) => {
+        if (j.url && normalizeJobUrl(j.url) === normalizedIncoming) return true;
+        if (j.canonicalUrl && normalizeJobUrl(j.canonicalUrl) === normalizedIncoming) return true;
+        return false;
+      });
+      if (dup) return { duplicate: dup };
+    }
+    const created = await tx.job.create({
+      data: {
+        title: "Analyzing...",
+        company:
+          (typeof companyHint === "string" && companyHint.trim()) ||
+          (url
+            ? new URL(url).hostname.replace("www.", "").split(".")[0]
+            : "Analyzing..."),
+        url: url || null,
+        description:
+          typeof locationHint === "string" && locationHint.trim() && !jobText.includes(locationHint)
+            ? `Location: ${locationHint.trim()}\n\n${jobText}`
+            : jobText,
+        skills: null,
+        requirements: null,
+        atsKeywords: null,
+        seniority: null,
+        roleArchetype: null,
+        sponsorship: "unspecified",
+        aiModel: aiModel || settings.defaultAiModel,
+        source: source || null,
+      },
+    });
+    return { created };
   });
+
+  if (createResult.duplicate) {
+    const dup = createResult.duplicate;
+    return NextResponse.json(
+      {
+        error: `This job has already been added (${dup.title} at ${dup.company})`,
+        duplicate: true,
+        duplicateKind: "job",
+        existingJobId: dup.id,
+        title: dup.title,
+        company: dup.company,
+        reviewUrl: buildJobReviewUrl(dup.id),
+      },
+      { status: 409 }
+    );
+  }
+
+  const job = createResult.created!;
 
   log.info("job_created", { jobId: job.id, hasUrl: !!url, descriptionLength: jobText.length });
 

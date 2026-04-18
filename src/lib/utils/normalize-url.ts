@@ -1,34 +1,58 @@
 /**
  * Normalize a job posting URL for duplicate detection.
  *
- * Strips fragments, trailing slashes, and known tracking parameters
+ * Strips fragments, trailing slashes, and known tracking/filter parameters
  * while preserving query parameters that are part of the job identity
- * (e.g. Workday job IDs, Lever/Greenhouse tokens in query strings).
+ * (e.g. Workday job IDs, Lever/Greenhouse tokens in query strings,
+ * Eightfold `pid`).
  */
 
 const TRACKING_PARAMS = new Set([
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_term",
-  "utm_content",
   "ref",
   "source",
   "referer",
   "fbclid",
   "gclid",
-  "mc_cid",
-  "mc_eid",
-  "ss_source",
-  "ss_campaign",
-  "gh_src",
-  "gh_jid",
+  "cid",
+  "cmpid",
+  "ss",
+  "board_id",
+  "shared_id",
+  "lever-source",
+  "jl",
+  "target_level",
+  "employment_type",
+  "skills",
+  "sort_by",
+  "degree",
+  "page",
+  "start",
+  "location",
+  "domain",
+  "codes",
+  "query",
 ]);
+
+// Parameters starting with any of these prefixes are stripped.
+// `p_` catches Indeed click-tracking (`p_uid`, `p_sid`) — it does NOT match
+// Eightfold's `pid` (no underscore), which is a real job identity.
+const TRACKING_PREFIXES = ["utm_", "rx_", "mc_", "ss_", "gh_", "p_", "filter_"];
+
+// Identity params that must never be stripped, even if they would otherwise
+// match a rule above. Belt-and-suspenders guard.
+const IDENTITY_PARAMS = new Set(["pid"]);
+
+function isTrackingParam(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (IDENTITY_PARAMS.has(lower)) return false;
+  if (TRACKING_PARAMS.has(lower)) return true;
+  return TRACKING_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
 
 function stripTrackingParams(parsed: URL): void {
   const keysToDelete: string[] = [];
   parsed.searchParams.forEach((_value, key) => {
-    if (TRACKING_PARAMS.has(key.toLowerCase())) {
+    if (isTrackingParam(key)) {
       keysToDelete.push(key);
     }
   });

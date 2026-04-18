@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
-import { CLUSTER_COLORS } from "./page";
+import { CLUSTER_COLORS, OTHER_CLUSTER_COLOR } from "./page";
 
 interface Cluster {
   name: string;
@@ -13,6 +13,8 @@ interface Cluster {
   avgScore: number;
 }
 
+const OTHER_CLUSTER_NAME = "Other Targets";
+
 export function ClustersTab({
   clusters,
   summary,
@@ -21,12 +23,16 @@ export function ClustersTab({
   summary: string;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const renderable = clusters.filter((c) => c.jobs.length > 0);
 
   return (
     <div className="space-y-4 pt-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {clusters.map((cluster, i) => {
-          const colors = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
+        {renderable.map((cluster, i) => {
+          const isOther = cluster.name === OTHER_CLUSTER_NAME;
+          const colors = isOther
+            ? OTHER_CLUSTER_COLOR
+            : CLUSTER_COLORS[i % CLUSTER_COLORS.length];
           const isOpen = expanded === cluster.name;
 
           return (
@@ -42,6 +48,12 @@ export function ClustersTab({
                   {cluster.jobs.length} jobs
                 </span>
               </div>
+
+              {isOther ? (
+                <div className="text-[10px] text-muted-foreground/80 italic mb-2">
+                  Not grouped by AI — review manually.
+                </div>
+              ) : null}
 
               <div className="text-xs text-muted-foreground mb-3">
                 Avg score: {cluster.avgScore}%

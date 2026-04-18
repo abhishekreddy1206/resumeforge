@@ -11,6 +11,55 @@ export interface DiffEntry {
 }
 
 /**
+ * Coerce a profile snapshot (possibly in a legacy shape) into the shape
+ * `computeDetailedDiff` expects. Historical snapshots have appeared with:
+ *  - `skills` as a category-keyed map (`{ "Languages": ["TypeScript"] }`)
+ *    instead of an array of `{ name, category }`
+ *  - missing array fields (experiences, projects, educations)
+ *
+ * Pass this output to `computeDetailedDiff`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeSnapshotForDiff(snapshot: any): any {
+  if (!snapshot || typeof snapshot !== "object") return {};
+
+  const normalized: Record<string, unknown> = { ...snapshot };
+
+  // Skills: coerce category-map → flat array of {name, category}
+  if (Array.isArray(snapshot.skills)) {
+    normalized.skills = snapshot.skills
+      .map((s: unknown) => {
+        if (typeof s === "string") return { name: s, category: "Other" };
+        if (s && typeof s === "object" && "name" in s) {
+          const obj = s as { name: string; category?: string };
+          return { name: obj.name, category: obj.category || "Other" };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  } else if (snapshot.skills && typeof snapshot.skills === "object") {
+    const flat: Array<{ name: string; category: string }> = [];
+    for (const [category, names] of Object.entries(
+      snapshot.skills as Record<string, unknown>
+    )) {
+      if (!Array.isArray(names)) continue;
+      for (const name of names) {
+        if (typeof name === "string") flat.push({ name, category });
+      }
+    }
+    normalized.skills = flat;
+  } else {
+    normalized.skills = [];
+  }
+
+  for (const key of ["experiences", "projects", "educations", "publications", "certifications"]) {
+    if (!Array.isArray(normalized[key])) normalized[key] = [];
+  }
+
+  return normalized;
+}
+
+/**
  * Compute a structured diff between two profiles for rendering rich inline diffs.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

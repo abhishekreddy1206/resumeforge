@@ -25,6 +25,7 @@ export async function clusterJobs(
     company: string;
     skills: string[];
     seniority?: string;
+    descriptionExcerpt?: string;
   }>,
   options?: { model?: string }
 ): Promise<ClusterResult> {
@@ -34,6 +35,7 @@ export async function clusterJobs(
     company: j.company,
     skills: j.skills.slice(0, 12),
     seniority: j.seniority,
+    descriptionExcerpt: j.descriptionExcerpt || undefined,
   }));
 
   return askJson(
@@ -43,11 +45,13 @@ JOBS (${trimmed.length}):
 ${JSON.stringify(trimmed)}
 
 RULES:
-- Each job must belong to exactly one cluster
-- Cluster names should be short, descriptive role-type labels (e.g., "Backend Infrastructure", "Platform Engineering", "Full-Stack Product")
-- Each cluster gets a one-sentence description of what unifies the jobs in it
-- If all jobs are very similar, 2 clusters is fine. Only use more if there are genuinely distinct role types.
-- Return every job ID in exactly one cluster
+- Use ONLY the job IDs provided above — never invent IDs.
+- Each job must belong to exactly one cluster. Every ID must appear exactly once across all clusters.
+- Prefer 3-5 clusters when jobs show distinct role families. Use 2 only if the jobs are genuinely homogeneous.
+- Two jobs that share >60% of their listed skills should almost always cluster together.
+- Cluster names should be short, descriptive role-type labels (e.g., "Backend Infrastructure", "Platform Engineering", "Full-Stack Product").
+- Each cluster gets a one-sentence description of what unifies the jobs in it.
+- Use the descriptionExcerpt (when present) to disambiguate title collisions — "Software Engineer" at an infra company is different from "Software Engineer" at a product-ML shop.
 
 Return ONLY valid JSON:
 {
@@ -56,6 +60,6 @@ Return ONLY valid JSON:
   ],
   "summary": "Your targets split into 2 profiles. Backend Infrastructure dominates (60%) with K8s/AWS as the common thread. Platform Engineering has fewer roles but higher average fit."
 }`,
-    { skill: "job-clusterer", model: options?.model || "haiku" }
+    { skill: "job-clusterer", model: options?.model || "sonnet" }
   );
 }
