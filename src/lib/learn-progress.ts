@@ -34,8 +34,11 @@ export function getSectionStatus(
 export function getGuideProgressPercent(
   sections: GuideSection[],
   progress: Record<string, SectionProgress>,
+  generationStatuses?: Record<string, SectionGenStatus>,
 ): number {
   if (sections.length === 0) return 0;
-  const completed = sections.filter((s) => getSectionStatus(s, progress) === "completed").length;
+  const completed = sections.filter(
+    (s) => getSectionStatus(s, progress, generationStatuses) === "completed",
+  ).length;
   return Math.round((completed / sections.length) * 100);
 }

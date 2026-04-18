@@ -90,3 +90,26 @@ test("getSectionStatus: generation status overrides user progress", () => {
   assert.equal(getSectionStatus(s, progress, { a: "generating" }), "not_started");
   assert.equal(getSectionStatus(s, progress, { a: "generating_interactive" }), "in_progress");
 });
+
+test("getGuideProgressPercent: skeleton sections (pending generation) are not counted as completed", () => {
+  const sections = [section("a"), section("b"), section("c")];
+  const statuses = { a: "pending" as const, b: "pending" as const, c: "pending" as const };
+  assert.equal(getGuideProgressPercent(sections, {}, statuses), 0);
+});
+
+test("getGuideProgressPercent: mixed generation — only completed sections count", () => {
+  const sections = [
+    section("a", { quizzes: 1 }),
+    section("b", { quizzes: 1 }),
+    section("c"),
+  ];
+  const progress = { a: { quizzesCompleted: [0], scenariosRevealed: [] } };
+  const statuses = {
+    a: "completed" as const,
+    b: "pending" as const,
+    c: "completed" as const,
+  };
+  // a: done by user, b: pending (skeleton), c: completed gen + no interactive (auto-pass)
+  // 2 of 3 completed → 67
+  assert.equal(getGuideProgressPercent(sections, progress, statuses), 67);
+});

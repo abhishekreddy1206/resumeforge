@@ -43,17 +43,19 @@ export const GET = withLogging(async (request: NextRequest) => {
   const result = guides.map((g) => {
     let progressPercent = 0;
     try {
-      const content = JSON.parse(g.content) as { sections?: GuideSection[] };
+      const content = JSON.parse(g.content) as {
+        sections?: GuideSection[];
+        _sectionStatuses?: Record<string, SectionGenStatus>;
+      };
       const progress = JSON.parse(g.sectionProgress) as Record<string, SectionProgress>;
-      progressPercent = getGuideProgressPercent(content.sections ?? [], progress);
+      progressPercent = getGuideProgressPercent(
+        content.sections ?? [],
+        progress,
+        content._sectionStatuses,
+      );
     } catch {
       progressPercent = 0;
     }
-    // Reconcile with the stored completionStatus so we never show contradictions
-    // like "Not Started · 100%" — which can happen for skeleton/in-flight guides
-    // where every section is empty and auto-classifies as completed.
-    if (g.completionStatus === "not_started") progressPercent = 0;
-    else if (g.completionStatus === "completed") progressPercent = 100;
     return {
       id: g.id,
       topic: g.topic,
