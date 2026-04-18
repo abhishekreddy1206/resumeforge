@@ -1,11 +1,7 @@
 "use client";
 
 import type { GuideSection, SectionGenStatus } from "@/lib/claude/skills/guide-generator";
-
-interface SectionProgress {
-  quizzesCompleted: number[];
-  scenariosRevealed: number[];
-}
+import { getSectionStatus, type SectionProgress } from "@/lib/learn-progress";
 
 interface ProgressTrackerProps {
   sections: GuideSection[];
@@ -16,27 +12,8 @@ interface ProgressTrackerProps {
 }
 
 export function ProgressTracker({ sections, progress, activeSection, onSectionClick, generationStatuses }: ProgressTrackerProps) {
-  const getSectionStatus = (section: GuideSection): "completed" | "in_progress" | "not_started" => {
-    // If section is still generating interactive content, show as in_progress
-    const genStatus = generationStatuses?.[section.id];
-    if (genStatus === "core_complete" || genStatus === "generating_interactive") return "in_progress";
-    if (genStatus === "generating" || genStatus === "pending") return "not_started";
-
-    const p = progress[section.id];
-    if (!p) return "not_started";
-
-    const totalQuizzes = (section.knowledgeChecks ?? []).filter((k) => k.type === "quiz").length;
-    const totalScenarios = (section.interviewScenarios ?? []).length;
-    const completedQuizzes = p.quizzesCompleted.length;
-    const completedScenarios = p.scenariosRevealed.length;
-
-    if (totalQuizzes + totalScenarios === 0) return "completed";
-    if (completedQuizzes >= totalQuizzes && completedScenarios >= totalScenarios) return "completed";
-    if (completedQuizzes > 0 || completedScenarios > 0) return "in_progress";
-    return "not_started";
-  };
-
-  const completedCount = sections.filter((s) => getSectionStatus(s) === "completed").length;
+  const statusOf = (section: GuideSection) => getSectionStatus(section, progress, generationStatuses);
+  const completedCount = sections.filter((s) => statusOf(s) === "completed").length;
 
   return (
     <div>
@@ -65,7 +42,7 @@ export function ProgressTracker({ sections, progress, activeSection, onSectionCl
 
         <div className="space-y-0.5">
           {sections.map((section) => {
-            const status = getSectionStatus(section);
+            const status = statusOf(section);
             const isActive = section.id === activeSection;
 
             return (

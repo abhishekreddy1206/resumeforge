@@ -4,11 +4,12 @@ import {
   GuideOutlineValidationError,
   generateGuideOutline,
 } from "@/lib/claude";
-import type { GuideContentStorage, GuideOutline, SectionGenStatus } from "@/lib/claude";
+import type { GuideContentStorage, GuideOutline, GuideSection, SectionGenStatus } from "@/lib/claude";
 import { GuideSourceResolutionError, type GuideSourceFailure, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
+import { getGuideProgressPercent, type SectionProgress } from "@/lib/learn-progress";
 
 const log = createLogger("guides");
 
@@ -33,18 +34,38 @@ export const GET = withLogging(async (request: NextRequest) => {
       id: true, topic: true, slug: true, version: true, status: true,
       category: true, tags: true, completionStatus: true,
       learningPathId: true, createdAt: true, updatedAt: true,
+      content: true, sectionProgress: true,
       _count: { select: { sources: true, versions: true } },
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  const result = guides.map((g) => ({
-    ...g,
-    tags: JSON.parse(g.tags),
-    sourceCount: g._count.sources,
-    versionCount: g._count.versions,
-    _count: undefined,
-  }));
+  const result = guides.map((g) => {
+    let progressPercent = 0;
+    try {
+      const content = JSON.parse(g.content) as { sections?: GuideSection[] };
+      const progress = JSON.parse(g.sectionProgress) as Record<string, SectionProgress>;
+      progressPercent = getGuideProgressPercent(content.sections ?? [], progress);
+    } catch {
+      progressPercent = 0;
+    }
+    return {
+      id: g.id,
+      topic: g.topic,
+      slug: g.slug,
+      version: g.version,
+      status: g.status,
+      category: g.category,
+      tags: JSON.parse(g.tags),
+      completionStatus: g.completionStatus,
+      learningPathId: g.learningPathId,
+      createdAt: g.createdAt,
+      updatedAt: g.updatedAt,
+      sourceCount: g._count.sources,
+      versionCount: g._count.versions,
+      progressPercent,
+    };
+  });
 
   return NextResponse.json(result);
 });

@@ -69,5 +69,7 @@ export { planCurriculum } from "./skills/curriculum-planner";
 export type { CurriculumPlan, CurriculumTopic } from "./skills/curriculum-planner";
 export { matchGuideToPath } from "./skills/path-matcher";
 export type { PathMatchResult } from "./skills/path-matcher";
+export { organizeOrphanGuides } from "./skills/orphan-organizer";
+export type { OrphanOrganizationPlan } from "./skills/orphan-organizer";
 export { clusterJobs } from "./skills/job-clusterer";
 export type { JobCluster, ClusterResult } from "./skills/job-clusterer";

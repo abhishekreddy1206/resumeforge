@@ -3,9 +3,11 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw, Wand2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
+import { OrganizeOrphansModal, type OrganizeProposal } from "./_components/organize-orphans-modal";
 
 interface GuideListItem {
   id: string;
@@ -19,6 +21,8 @@ interface GuideListItem {
   sourceCount: number;
   versionCount: number;
   updatedAt: string;
+  progressPercent: number;
+  learningPathId: string | null;
 }
 
 interface LearningPathItem {
@@ -99,6 +103,41 @@ function LearnPageContent() {
   } | null>(null);
   const [search, setSearch] = useState("");
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
+  const [organizing, setOrganizing] = useState(false);
+  const [organizeProposal, setOrganizeProposal] = useState<OrganizeProposal | null>(null);
+
+  const orphanGuides = guides.filter((g) => g.learningPathId === null && g.status !== "generating");
+
+  const handleOrganizeOrphans = async () => {
+    if (organizing) return;
+    setOrganizing(true);
+    try {
+      const res = await fetch("/api/learn/orphans/organize", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to analyze orphan guides");
+        return;
+      }
+      if (!data.plan || data.orphans === 0) {
+        toast.info("No unassigned guides to organize.");
+        return;
+      }
+      setOrganizeProposal(data as OrganizeProposal);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to analyze orphan guides");
+    } finally {
+      setOrganizing(false);
+    }
+  };
+
+  const refreshGuidesAndPaths = useCallback(async () => {
+    const [g, p] = await Promise.all([
+      fetch("/api/learn/guides").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/learn/paths").then((r) => (r.ok ? r.json() : [])),
+    ]);
+    setGuides(g);
+    setPaths(p);
+  }, []);
 
   const searchLower = search.toLowerCase().trim();
   const filteredGuides = searchLower
@@ -684,6 +723,31 @@ function LearnPageContent() {
         </div>
       </section>
 
+      {/* Unassigned Guides — only render when there are orphans */}
+      {orphanGuides.length > 0 && (
+        <section className="anim-fade-up-3">
+          <div className="flex items-center justify-between bg-card border border-border rounded p-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <span className="label-mono text-primary">Unassigned guides</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {orphanGuides.length} guide{orphanGuides.length !== 1 ? "s aren't" : " isn't"} part of a learning path yet.
+              </div>
+            </div>
+            <button
+              onClick={handleOrganizeOrphans}
+              disabled={organizing}
+              className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 ml-4"
+            >
+              {organizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              {organizing ? "Analyzing..." : "Organize with AI"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* All Guides */}
       <section className="anim-fade-up-3">
         <div className="flex items-center justify-between mb-4">
@@ -731,7 +795,7 @@ function LearnPageContent() {
                     guide.completionStatus === "in_progress" ? "text-primary" : "text-muted-foreground/40"
                   }`}>
                     {guide.completionStatus === "completed" ? "Done" :
-                     guide.completionStatus === "in_progress" ? "In Progress" : "Not Started"}
+                     guide.completionStatus === "in_progress" ? `In Progress · ${guide.progressPercent}%` : "Not Started"}
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
@@ -784,6 +848,13 @@ function LearnPageContent() {
           </div>
         </section>
       ) : null}
+
+      <OrganizeOrphansModal
+        proposal={organizeProposal}
+        open={!!organizeProposal}
+        onClose={() => setOrganizeProposal(null)}
+        onApplied={refreshGuidesAndPaths}
+      />
 
     </div>
   );
