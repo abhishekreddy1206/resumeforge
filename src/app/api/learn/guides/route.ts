@@ -49,6 +49,11 @@ export const GET = withLogging(async (request: NextRequest) => {
     } catch {
       progressPercent = 0;
     }
+    // Reconcile with the stored completionStatus so we never show contradictions
+    // like "Not Started · 100%" — which can happen for skeleton/in-flight guides
+    // where every section is empty and auto-classifies as completed.
+    if (g.completionStatus === "not_started") progressPercent = 0;
+    else if (g.completionStatus === "completed") progressPercent = 100;
     return {
       id: g.id,
       topic: g.topic,
