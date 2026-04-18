@@ -794,8 +794,8 @@ function LearnPageContent() {
                     guide.completionStatus === "completed" ? "text-chart-3" :
                     guide.completionStatus === "in_progress" ? "text-primary" : "text-muted-foreground/40"
                   }`}>
-                    {guide.completionStatus === "completed" ? "Done" :
-                     guide.completionStatus === "in_progress" ? `In Progress · ${guide.progressPercent}%` : "Not Started"}
+                    {guide.completionStatus === "completed" ? `Done · ${guide.progressPercent}%` :
+                     guide.completionStatus === "in_progress" ? `In Progress · ${guide.progressPercent}%` : `Not Started · ${guide.progressPercent}%`}
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
