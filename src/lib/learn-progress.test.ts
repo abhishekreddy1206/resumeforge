@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { GuideSection } from "@/lib/claude/skills/guide-generator";
-import { getGuideProgressPercent, getSectionStatus } from "@/lib/learn-progress";
+import { getGuideGenerationPercent, getGuideProgressPercent, getSectionStatus } from "@/lib/learn-progress";
 
 function section(id: string, opts: { quizzes?: number; scenarios?: number } = {}): GuideSection {
   const quizzes = opts.quizzes ?? 0;
@@ -112,4 +112,47 @@ test("getGuideProgressPercent: mixed generation — only completed sections coun
   // a: done by user, b: pending (skeleton), c: completed gen + no interactive (auto-pass)
   // 2 of 3 completed → 67
   assert.equal(getGuideProgressPercent(sections, progress, statuses), 67);
+});
+
+test("getGuideGenerationPercent: empty section list → 0", () => {
+  assert.equal(getGuideGenerationPercent([], {}), 0);
+});
+
+test("getGuideGenerationPercent: all sections completed → 100", () => {
+  const ids = ["a", "b", "c"];
+  const statuses = { a: "completed" as const, b: "completed" as const, c: "completed" as const };
+  assert.equal(getGuideGenerationPercent(ids, statuses), 100);
+});
+
+test("getGuideGenerationPercent: all skeleton (pending) → 0", () => {
+  const ids = ["a", "b", "c"];
+  const statuses = { a: "pending" as const, b: "pending" as const, c: "pending" as const };
+  assert.equal(getGuideGenerationPercent(ids, statuses), 0);
+});
+
+test("getGuideGenerationPercent: in-flight (mix of pending/generating/completed) reflects only completed", () => {
+  const ids = ["a", "b", "c", "d"];
+  const statuses = {
+    a: "completed" as const,
+    b: "completed" as const,
+    c: "generating" as const,
+    d: "pending" as const,
+  };
+  assert.equal(getGuideGenerationPercent(ids, statuses), 50);
+});
+
+test("getGuideGenerationPercent: core_complete is NOT yet ready (interactive still pending)", () => {
+  // Section is usable but quizzes/scenarios aren't generated yet — reserve
+  // 100% for fully-ready sections to avoid claiming a guide is done before
+  // its interactive elements exist.
+  const ids = ["a", "b"];
+  const statuses = { a: "core_complete" as const, b: "completed" as const };
+  assert.equal(getGuideGenerationPercent(ids, statuses), 50);
+});
+
+test("getGuideGenerationPercent: missing status entry treated as not ready", () => {
+  // Legacy guides may have section ids without entries in the column.
+  const ids = ["a", "b"];
+  const statuses = { a: "completed" as const };
+  assert.equal(getGuideGenerationPercent(ids, statuses), 50);
 });

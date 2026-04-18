@@ -791,11 +791,14 @@ function LearnPageContent() {
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-4">
                   <span className={`label-mono ${
-                    guide.completionStatus === "completed" ? "text-chart-3" :
-                    guide.completionStatus === "in_progress" ? "text-primary" : "text-muted-foreground/40"
+                    guide.status === "failed" ? "text-destructive" :
+                    guide.progressPercent === 100 ? "text-chart-3" :
+                    guide.progressPercent > 0 ? "text-primary" : "text-muted-foreground/40"
                   }`}>
-                    {guide.completionStatus === "completed" ? `Done · ${guide.progressPercent}%` :
-                     guide.completionStatus === "in_progress" ? `In Progress · ${guide.progressPercent}%` : `Not Started · ${guide.progressPercent}%`}
+                    {guide.status === "failed" ? "Failed" :
+                     guide.progressPercent === 100 ? "Ready" :
+                     guide.progressPercent === 0 ? "Not Started" :
+                     `Generating · ${guide.progressPercent}%`}
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>

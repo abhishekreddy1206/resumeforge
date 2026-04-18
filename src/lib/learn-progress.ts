@@ -42,3 +42,15 @@ export function getGuideProgressPercent(
   ).length;
   return Math.round((completed / sections.length) * 100);
 }
+
+// Generation completeness: percent of sections whose AI build has finished.
+// Independent of user quiz/scenario engagement — this is "is the guide
+// ready to study" not "have I worked through it".
+export function getGuideGenerationPercent(
+  sectionIds: string[],
+  generationStatuses: Record<string, SectionGenStatus>,
+): number {
+  if (sectionIds.length === 0) return 0;
+  const ready = sectionIds.filter((id) => generationStatuses[id] === "completed").length;
+  return Math.round((ready / sectionIds.length) * 100);
+}

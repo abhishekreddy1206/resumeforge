@@ -4,12 +4,12 @@ import {
   GuideOutlineValidationError,
   generateGuideOutline,
 } from "@/lib/claude";
-import type { GuideContentStorage, GuideOutline, GuideSection, SectionGenStatus } from "@/lib/claude";
+import type { GuideContentStorage, GuideOutline, SectionGenStatus } from "@/lib/claude";
 import { GuideSourceResolutionError, type GuideSourceFailure, type GuideSourcePayload, persistGuideSources, resolveGuideSources } from "@/lib/learn-sources";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
-import { getGuideProgressPercent, type SectionProgress } from "@/lib/learn-progress";
+import { getGuideGenerationPercent } from "@/lib/learn-progress";
 import { parseTrackingColumn } from "@/lib/learn-guides";
 
 const log = createLogger("guides");
@@ -35,7 +35,7 @@ export const GET = withLogging(async (request: NextRequest) => {
       id: true, topic: true, slug: true, version: true, status: true,
       category: true, tags: true, completionStatus: true,
       learningPathId: true, createdAt: true, updatedAt: true,
-      content: true, sectionProgress: true, sectionStatuses: true,
+      content: true, sectionStatuses: true,
       _count: { select: { sources: true, versions: true } },
     },
     orderBy: { updatedAt: "desc" },
@@ -45,11 +45,10 @@ export const GET = withLogging(async (request: NextRequest) => {
     let progressPercent = 0;
     try {
       const content = JSON.parse(g.content) as {
-        sections?: GuideSection[];
+        sections?: Array<{ id: string }>;
         _sectionStatuses?: Record<string, SectionGenStatus>;
       };
-      const progress = JSON.parse(g.sectionProgress) as Record<string, SectionProgress>;
-      // The Guide.sectionStatuses column is the canonical per-section
+      // Guide.sectionStatuses (column) is the canonical per-section
       // generation state — the worker updates it on every transition.
       // content._sectionStatuses is only refreshed on full refine, so it
       // stays "pending" for guides built section-by-section. Fall back to
@@ -58,11 +57,8 @@ export const GET = withLogging(async (request: NextRequest) => {
         g.sectionStatuses,
         content._sectionStatuses ?? {},
       );
-      progressPercent = getGuideProgressPercent(
-        content.sections ?? [],
-        progress,
-        statuses,
-      );
+      const sectionIds = (content.sections ?? []).map((s) => s.id);
+      progressPercent = getGuideGenerationPercent(sectionIds, statuses);
     } catch {
       progressPercent = 0;
     }
