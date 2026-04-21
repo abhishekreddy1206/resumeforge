@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BarChart3, Layers, TrendingUp, BookOpen, AlertCircle, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { ClustersTab } from "./clusters-tab";
 import { DemandTab } from "./demand-tab";
 import { GapsTab } from "./gaps-tab";
@@ -19,14 +20,19 @@ interface InsightsData {
     gapCount: number;
     topFinding: string | null;
     cachedAt: string | null;
+    pendingClassificationCount: number;
+    taxonomyVersion: string;
   };
   clusters: Array<{
+    id: string;
     name: string;
     description: string;
     jobIds: string[];
     jobs: Array<{ id: string; title: string; company: string; score: number }>;
     topSkills: string[];
+    topGaps: string[];
     avgScore: number;
+    subClusters?: Array<{ name: string; jobIds: string[] }>;
   }>;
   clusterSummary: string;
   demandPatterns: Array<{
@@ -253,6 +259,33 @@ export default function InsightsPage() {
         )}
         <div className="section-divider mt-5" />
       </section>
+
+      {meta.pendingClassificationCount > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm flex items-center justify-between anim-fade-up-1">
+          <span className="text-amber-900">
+            {meta.pendingClassificationCount} job{meta.pendingClassificationCount === 1 ? "" : "s"} awaiting classification.
+          </span>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/insights/retry-classifications", { method: "POST" });
+                if (res.ok) {
+                  const d = await res.json();
+                  toast.success(`Retry enqueued (${d.enqueued ?? 0} jobs)`);
+                } else {
+                  toast.error("Retry failed");
+                }
+              } catch (err) {
+                toast.error(`Retry failed: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            className="underline text-amber-900 hover:text-amber-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Summary Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 anim-fade-up-1">

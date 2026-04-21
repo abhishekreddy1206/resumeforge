@@ -5,15 +5,16 @@ import { ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
 import { CLUSTER_COLORS, OTHER_CLUSTER_COLOR } from "./page";
 
 interface Cluster {
+  id: string;
   name: string;
   description: string;
   jobIds: string[];
   jobs: Array<{ id: string; title: string; company: string; score: number }>;
   topSkills: string[];
+  topGaps: string[];
   avgScore: number;
+  subClusters?: Array<{ name: string; jobIds: string[] }>;
 }
-
-const OTHER_CLUSTER_NAME = "Other Targets";
 
 export function ClustersTab({
   clusters,
@@ -29,7 +30,7 @@ export function ClustersTab({
     <div className="space-y-4 pt-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {renderable.map((cluster, i) => {
-          const isOther = cluster.name === OTHER_CLUSTER_NAME;
+          const isOther = cluster.id === "other";
           const colors = isOther
             ? OTHER_CLUSTER_COLOR
             : CLUSTER_COLORS[i % CLUSTER_COLORS.length];
@@ -69,6 +70,34 @@ export function ClustersTab({
                   </span>
                 ))}
               </div>
+
+              {cluster.topGaps && cluster.topGaps.length > 0 && (
+                <div className="mb-3 text-xs text-muted-foreground">
+                  <span className="font-medium">Top gaps:</span>{" "}
+                  {cluster.topGaps.slice(0, 5).map((g, i) => (
+                    <span key={g}>
+                      {i > 0 && " · "}
+                      <span className="text-amber-700">{g}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {isOther && cluster.subClusters && cluster.subClusters.length > 0 && (
+                <div className="mb-3 text-xs">
+                  <div className="text-muted-foreground mb-1.5">Sub-themes:</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {cluster.subClusters.map((sc) => (
+                      <span
+                        key={sc.name}
+                        className="inline-block rounded bg-foreground/5 px-2 py-0.5"
+                      >
+                        {sc.name} ({sc.jobIds.length})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <button
                 onClick={() => setExpanded(isOpen ? null : cluster.name)}
