@@ -7,6 +7,7 @@ import { enqueueJob } from "@/lib/job-queue";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { getAppSettings } from "@/lib/app-settings";
+import { enqueueJobClassifications } from "@/lib/insights/enqueue-classification";
 
 const log = createLogger("jobs-batch");
 
@@ -159,6 +160,12 @@ export const POST = withLogging(async (request: NextRequest) => {
             { entityId: job.id, entityType: "job", maxAttempts: 2 }
           ).catch((enqueueErr) => {
             log.error("auto_pipeline_enqueue_failed", {
+              jobId: job.id,
+              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+            });
+          });
+          enqueueJobClassifications([job.id]).catch((enqueueErr) => {
+            log.error("classify_enqueue_failed", {
               jobId: job.id,
               error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
             });

@@ -9,6 +9,7 @@ import { enqueueJob } from "@/lib/job-queue";
 import { createLogger, createTaskLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { getAppSettings } from "@/lib/app-settings";
+import { enqueueJobClassifications } from "@/lib/insights/enqueue-classification";
 import fs from "fs/promises";
 import path from "path";
 
@@ -270,6 +271,12 @@ Rules for locationMatch:
             { entityId: created.id, entityType: "job", maxAttempts: 2 }
           ).catch((enqueueErr) => {
             log.error("auto_pipeline_enqueue_failed", {
+              jobId: created.id,
+              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+            });
+          });
+          enqueueJobClassifications([created.id]).catch((enqueueErr) => {
+            log.error("classify_enqueue_failed", {
               jobId: created.id,
               error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
             });
