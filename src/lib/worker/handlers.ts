@@ -23,7 +23,6 @@ import {
   mergeTrackingAttempts,
   parseTrackingColumn,
 } from "@/lib/learn-guides";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 import { createTaskLogger } from "@/lib/logger";
 import type { JobRecord } from "@/lib/job-queue";
@@ -414,9 +413,6 @@ export async function handleGuideFinalize(job: JobRecord): Promise<void> {
       });
     }
   }
-
-  // 6. Refresh recommendations cache fire-and-forget
-  refreshRecommendationsCache().catch(() => {});
 
   task.complete({ finalStatus });
 }

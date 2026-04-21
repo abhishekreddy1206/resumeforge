@@ -61,8 +61,6 @@ export type {
   CoreSectionResult,
   InteractiveSectionResult,
 } from "./skills/guide-generator";
-export { recommendGuides } from "./skills/guide-recommender";
-export type { GuideRecommendation } from "./skills/guide-recommender";
 export { checkSourceCrossLinks } from "./skills/source-cross-linker";
 export type { CrossLinkSuggestion } from "./skills/source-cross-linker";
 export { planCurriculum } from "./skills/curriculum-planner";
@@ -71,8 +69,6 @@ export { matchGuideToPath } from "./skills/path-matcher";
 export type { PathMatchResult } from "./skills/path-matcher";
 export { organizeOrphanGuides } from "./skills/orphan-organizer";
 export type { OrphanOrganizationPlan } from "./skills/orphan-organizer";
-export { clusterJobs } from "./skills/job-clusterer";
-export type { JobCluster, ClusterResult } from "./skills/job-clusterer";
 export { classifyJobs } from "./skills/job-classifier";
 export type {
   JobToClassify,

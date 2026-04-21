@@ -5,7 +5,14 @@ import { rankTopicsForClusters } from "@/lib/insights/topic-ranker";
 import { getCategoryById } from "@/lib/insights/role-taxonomy";
 import { loadInsightsSettingsFromProfile } from "@/lib/insights/settings";
 import { safeJsonParse } from "@/lib/utils/json";
-import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
+
+interface GuideRecommendation {
+  topic: string;
+  description: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  gapSkills: string[];
+  frequency: number;
+}
 
 export const GET = withLogging(async () => {
   const profile = await prisma.profile.findFirst({

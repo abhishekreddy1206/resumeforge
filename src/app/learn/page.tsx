@@ -6,8 +6,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw, Wand2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
-import type { GuideRecommendation } from "@/lib/claude/skills/guide-recommender";
 import { OrganizeOrphansModal, type OrganizeProposal } from "./_components/organize-orphans-modal";
+
+interface GuideRecommendation {
+  topic: string;
+  description: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  gapSkills: string[];
+  frequency: number;
+}
 
 interface GuideListItem {
   id: string;

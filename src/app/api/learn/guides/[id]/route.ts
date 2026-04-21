@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { buildSavedSourceReviewUrl } from "@/lib/saved-sources";
 import type { GuideContentStorage } from "@/lib/claude";
 import { deriveGuideGenerationSnapshot, ensureGuideContentTracking, parseTrackingColumn } from "@/lib/learn-guides";
@@ -148,11 +147,6 @@ export async function DELETE(
     // Cancel any pending background jobs for this guide
     await cancelJobsByEntity(id, "guide");
     await prisma.guide.delete({ where: { id } });
-
-    // Eagerly refresh recommendations cache (guide topics changed)
-    refreshRecommendationsCache().catch((err) =>
-      log.error("recommendation_refresh_failed", { error: err })
-    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

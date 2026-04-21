@@ -45,9 +45,3 @@ export async function setCachedGaps(
   });
 }
 
-// Transitional stub: recommendations cache was dropped in the insights-taxonomy-redesign
-// schema change. Task 11 replaces this entirely with curated per-category topic ranking.
-// Returning [] here keeps consumers compiling until the rewrite lands.
-export async function refreshRecommendationsCache(): Promise<never[]> {
-  return [];
-}

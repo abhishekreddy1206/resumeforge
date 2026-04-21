@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { planCurriculum, generateGuideOutline } from "@/lib/claude";
 import type { GuideContentStorage } from "@/lib/claude";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
@@ -175,11 +174,6 @@ export const POST = withLogging(async (
 
       log.info("path_guide_jobs_enqueued", { guideId: guide.id, jobCount: coreJobs.length + interactiveJobs.length, groupKey });
     }
-
-    refreshRecommendationsCache().catch((err) => {
-      const bgLog = createLogger("path-gen");
-      bgLog.error("recommendation_refresh_failed", { error: err instanceof Error ? err : new Error(String(err)) });
-    });
 
     return NextResponse.json({
       planned: plan.topics.length,
