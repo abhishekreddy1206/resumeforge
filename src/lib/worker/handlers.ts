@@ -6,7 +6,9 @@ import {
   refineGuide,
   refineGuideSection,
   matchGuideToPath,
+  classifyJobs,
 } from "@/lib/claude";
+import { loadInsightsSettingsFromProfile } from "@/lib/insights/settings";
 import type { GuideContentStorage } from "@/lib/claude";
 import {
   getActiveGuideSourceTexts,
@@ -658,4 +660,102 @@ export async function handleAutoPipeline(job: JobRecord): Promise<void> {
   const { jobId } = payload;
   if (!jobId) throw new Error("auto-pipeline payload missing jobId");
   await runAutoPipeline(jobId);
+}
+
+// ---------------------------------------------------------------------------
+// handleClassifyJobsBatch — "classify-jobs-batch"
+// ---------------------------------------------------------------------------
+
+export async function handleClassifyJobsBatch(job: JobRecord): Promise<void> {
+  const payload = JSON.parse(job.payload) as {
+    jobIds: string[];
+    profileId?: string;
+  };
+  const task = createTaskLogger("worker-classify-jobs-batch", job.id);
+
+  const jobRows = await prisma.job.findMany({
+    where: { id: { in: payload.jobIds } },
+    select: {
+      id: true,
+      title: true,
+      skills: true,
+      seniority: true,
+      description: true,
+    },
+  });
+  task.step("loaded_jobs", { count: jobRows.length });
+
+  if (jobRows.length === 0) return;
+
+  // All jobs in a batch should share a profile (enqueuer groups by profile).
+  // Fall back to the first job's profile for settings.
+  const profile = payload.profileId
+    ? await prisma.profile.findUnique({
+        where: { id: payload.profileId },
+        select: { insightsSettings: true },
+      })
+    : null;
+  const settings = loadInsightsSettingsFromProfile({
+    insightsSettings: profile?.insightsSettings ?? null,
+  });
+
+  const input = jobRows.map((j) => ({
+    id: j.id,
+    title: j.title,
+    skills: safeParseSkills(j.skills),
+    seniority: j.seniority ?? undefined,
+    excerpt: buildExcerpt(j.description),
+  }));
+
+  task.step("calling_classifier", { batchSize: input.length });
+  const { taxonomyVersion, results } = await classifyJobs(input, {
+    model: settings.classificationModel,
+  });
+
+  const threshold = settings.classificationConfidenceThreshold;
+  for (const r of results) {
+    const effectiveCategoryId =
+      r.confidence >= threshold ? r.categoryId : "other";
+    const candidateToStore =
+      r.confidence >= threshold
+        ? null
+        : r.candidateName ??
+          (r.categoryId !== "other" ? r.categoryId : null);
+    await prisma.job.update({
+      where: { id: r.jobId },
+      data: {
+        roleCategory: effectiveCategoryId,
+        roleCategoryConf: r.confidence,
+        roleCategoryCandidate: candidateToStore,
+        roleCategoryVersion: taxonomyVersion,
+        roleClassifiedAt: new Date(),
+      },
+    });
+  }
+  task.complete({ classified: results.length });
+}
+
+function safeParseSkills(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x) => typeof x === "string").slice(0, 20);
+    }
+  } catch {
+    // fall through
+  }
+  return [];
+}
+
+function buildExcerpt(description: string | null): string | undefined {
+  if (!description) return undefined;
+  const plain = description
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[#*_`>~]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain) return undefined;
+  if (plain.length <= 280) return plain;
+  return plain.slice(0, 280).replace(/\s+\S*$/, "").trimEnd() + "…";
 }

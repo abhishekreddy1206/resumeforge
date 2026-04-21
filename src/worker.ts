@@ -10,6 +10,7 @@ import {
   handleGuideRefineFull,
   handleGuideRefineFinalize,
   handleAutoPipeline,
+  handleClassifyJobsBatch,
 } from "@/lib/worker/handlers";
 import { recoverOrphanedPipelines } from "@/lib/pipeline-recovery";
 import { createLogger } from "@/lib/logger";
@@ -49,6 +50,7 @@ const handlers: Record<string, JobHandler> = {
   "guide-refine-full": handleGuideRefineFull,
   "guide-refine-finalize": handleGuideRefineFinalize,
   "auto-pipeline": handleAutoPipeline,
+  "classify-jobs-batch": handleClassifyJobsBatch,
 };
 
 // Finalize job types that should be auto-enqueued when a group completes
