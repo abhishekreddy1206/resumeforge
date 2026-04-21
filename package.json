@@ -9,7 +9,7 @@
     "start": "next start",
     "start:tailscale": "next start -H 127.0.0.1 -p 3000",
     "lint": "eslint",
-    "test:unit": "node --import tsx --test src/lib/*.test.ts src/lib/applications/*.test.ts src/lib/utils/*.test.ts src/lib/insights/*.test.ts extension/*.test.js",
+    "test:unit": "node --import tsx --test src/lib/*.test.ts src/lib/applications/*.test.ts src/lib/utils/*.test.ts src/lib/insights/*.test.ts src/lib/claude/skills/*.test.ts extension/*.test.js",
     "benchmark:resumes": "node --import tsx scripts/run-resume-benchmarks.ts",
     "worker": "npx tsx src/worker.ts",
     "dev:all": "npx concurrently --kill-others-on-fail --names next,worker --prefix-colors blue,green \"npm run dev\" \"npm run worker\""

@@ -73,3 +73,8 @@ export { organizeOrphanGuides } from "./skills/orphan-organizer";
 export type { OrphanOrganizationPlan } from "./skills/orphan-organizer";
 export { clusterJobs } from "./skills/job-clusterer";
 export type { JobCluster, ClusterResult } from "./skills/job-clusterer";
+export { classifyJobs } from "./skills/job-classifier";
+export type {
+  JobToClassify,
+  JobClassification,
+} from "./skills/job-classifier";
