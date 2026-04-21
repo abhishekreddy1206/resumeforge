@@ -19,8 +19,9 @@ interface EnqueueDeps {
 }
 
 /**
- * Enqueue classification for the given job IDs, batched per the user's
- * configured batch size. Single-user app — all jobs belong to the one profile.
+ * Enqueue classification for the given job IDs. When more IDs are provided than
+ * the user's configured `classificationBatchSize`, splits into multiple
+ * `classify-jobs-batch` BackgroundJob rows. Single-user app: uses the first Profile.
  *
  * The optional `deps` parameter enables dependency injection for unit tests;
  * callers in production always use the one-argument form.
@@ -60,16 +61,4 @@ export async function enqueueJobClassifications(
       }
     );
   }
-}
-
-/**
- * Pure helper — split an array into chunks of at most `batchSize`.
- * Exported for unit-testing the chunking logic in isolation.
- */
-export function chunkJobIds(jobIds: string[], batchSize: number): string[][] {
-  const chunks: string[][] = [];
-  for (let i = 0; i < jobIds.length; i += batchSize) {
-    chunks.push(jobIds.slice(i, i + batchSize));
-  }
-  return chunks;
 }

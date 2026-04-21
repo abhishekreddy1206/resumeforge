@@ -82,6 +82,9 @@ export const POST = withLogging(async (request: NextRequest) => {
     })
   );
 
+  // Collect per-job analysis promises so we can batch-enqueue classification once.
+  const analysisPromises: Promise<string | null>[] = [];
+
   // Create jobs for successful scrapes
   for (const result of scrapeResults) {
     if (result.status === "rejected") {
@@ -136,9 +139,10 @@ export const POST = withLogging(async (request: NextRequest) => {
 
       results.push({ url, jobId: job.id, status: "created" });
 
-      // Fire analysis asynchronously — each job gets its own call
+      // Fire analysis asynchronously — each job gets its own call.
+      // Returns the job ID on success, null on failure.
       const taskLog = createTaskLogger("batch-job-analysis", job.id);
-      analyzeJobDescription(text, { model: job.aiModel })
+      const analysisPromise = analyzeJobDescription(text, { model: job.aiModel })
         .then(async (analysis) => {
           await prisma.job.update({
             where: { id: job.id },
@@ -164,12 +168,7 @@ export const POST = withLogging(async (request: NextRequest) => {
               error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
             });
           });
-          enqueueJobClassifications([job.id]).catch((enqueueErr) => {
-            log.error("classify_enqueue_failed", {
-              jobId: job.id,
-              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
-            });
-          });
+          return job.id;
         })
         .catch((err) => {
           taskLog.fail(err);
@@ -179,7 +178,9 @@ export const POST = withLogging(async (request: NextRequest) => {
               data: { title: "Analysis Failed — Click to Retry" },
             })
             .catch((dbErr) => log.error("analysis_fallback_update_failed", { jobId: job.id, error: dbErr instanceof Error ? dbErr : new Error(String(dbErr)) }));
+          return null;
         });
+      analysisPromises.push(analysisPromise);
     } catch (err) {
       results.push({
         url,
@@ -188,6 +189,20 @@ export const POST = withLogging(async (request: NextRequest) => {
       });
     }
   }
+
+  // Fire a single batched classification enqueue once all analyses settle.
+  Promise.allSettled(analysisPromises).then((results) => {
+    const successIds = results
+      .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled" && r.value !== null)
+      .map((r) => r.value as string);
+    if (successIds.length === 0) return;
+    enqueueJobClassifications(successIds).catch((enqueueErr) => {
+      log.error("classify_enqueue_failed", {
+        count: successIds.length,
+        error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+      });
+    });
+  });
 
   const created = results.filter((r) => r.status === "created").length;
   const failed = results.filter((r) => r.status === "failed").length;

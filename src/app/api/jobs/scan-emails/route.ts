@@ -198,6 +198,9 @@ Rules for locationMatch:
   let duplicates = 0;
   let failed = 0;
 
+  // Collect per-job analysis promises so we can batch-enqueue classification once.
+  const analysisPromises: Promise<string | null>[] = [];
+
   // Deduplicate URLs within the batch
   const seenUrls = new Set<string>();
 
@@ -247,9 +250,10 @@ Rules for locationMatch:
 
       imported++;
 
-      // Fire async analysis + auto-pipeline (same pattern as batch route)
+      // Fire async analysis + auto-pipeline (same pattern as batch route).
+      // Returns the job ID on success, null on failure.
       const taskLog = createTaskLogger("scan-emails-analysis", created.id);
-      analyzeJobDescription(text, { model: created.aiModel })
+      const analysisPromise = analyzeJobDescription(text, { model: created.aiModel })
         .then(async (analysis) => {
           await prisma.job.update({
             where: { id: created.id },
@@ -275,12 +279,7 @@ Rules for locationMatch:
               error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
             });
           });
-          enqueueJobClassifications([created.id]).catch((enqueueErr) => {
-            log.error("classify_enqueue_failed", {
-              jobId: created.id,
-              error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
-            });
-          });
+          return created.id;
         })
         .catch((err) => {
           taskLog.fail(err);
@@ -290,10 +289,12 @@ Rules for locationMatch:
               data: { title: "Analysis Failed — Click to Retry" },
             })
             .catch((dbErr) => log.error("analysis_fallback_update_failed", { jobId: created.id, error: dbErr instanceof Error ? dbErr : new Error(String(dbErr)) }));
+          return null;
         });
+      analysisPromises.push(analysisPromise);
     } catch (err) {
       log.warn("scrape_failed_fallback", { url: job.url, error: err instanceof Error ? err : new Error(String(err)) });
-      // Fallback: create job with email-extracted metadata so it's not lost
+      // Fallback: create stub job with email-extracted metadata (no analysis — don't add to classification batch).
       try {
         const created = await prisma.job.create({
           data: {
@@ -318,6 +319,20 @@ Rules for locationMatch:
       }
     }
   }
+
+  // Fire a single batched classification enqueue once all analyses settle.
+  Promise.allSettled(analysisPromises).then((settled) => {
+    const successIds = settled
+      .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled" && r.value !== null)
+      .map((r) => r.value as string);
+    if (successIds.length === 0) return;
+    enqueueJobClassifications(successIds).catch((enqueueErr) => {
+      log.error("classify_enqueue_failed", {
+        count: successIds.length,
+        error: enqueueErr instanceof Error ? enqueueErr : new Error(String(enqueueErr)),
+      });
+    });
+  });
 
   // Step 7: Update state — only mark successfully-read messages as processed
   state.processedMessageIds.push(...successfullyReadIds);
