@@ -83,6 +83,7 @@ export function InsightsSettingsSection() {
         toast.success("Insights settings saved");
       }
       setLoaded(data);
+      setDrafts({});
     } catch (err) {
       toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
