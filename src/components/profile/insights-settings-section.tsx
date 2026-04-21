@@ -24,12 +24,25 @@ export function InsightsSettingsSection() {
   const [loaded, setLoaded] = useState<Loaded>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/insights-settings")
-      .then((r) => r.json())
-      .then((d) => setLoaded(d))
-      .catch((err) => toast.error(`Failed to load settings: ${err.message}`));
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        if (!d || !d.settings || !d.defaults) {
+          throw new Error("Malformed settings response");
+        }
+        setLoaded(d);
+      })
+      .catch((err) => {
+        toast.error(
+          `Failed to load settings: ${err instanceof Error ? err.message : String(err)}`
+        );
+      });
   }, []);
 
   if (!loaded) return <div className="text-sm text-muted-foreground">Loading…</div>;
@@ -38,6 +51,20 @@ export function InsightsSettingsSection() {
 
   function update<K extends keyof InsightsSettings>(key: K, value: InsightsSettings[K]) {
     setLoaded((prev) => (prev ? { ...prev, settings: { ...prev.settings, [key]: value } } : prev));
+  }
+
+  function updateNumber<K extends keyof InsightsSettings>(key: K, rawValue: string) {
+    setDrafts((prev) => ({ ...prev, [key as string]: rawValue }));
+    if (rawValue === "") return;
+    const n = Number(rawValue);
+    if (Number.isFinite(n)) {
+      update(key, n as InsightsSettings[K]);
+    }
+  }
+
+  function draftOr<K extends keyof InsightsSettings>(key: K, committed: number): string {
+    const d = drafts[key as string];
+    return d !== undefined ? d : String(committed);
   }
 
   async function save() {
@@ -75,8 +102,8 @@ export function InsightsSettingsSection() {
             type="number"
             min={0}
             max={100}
-            value={settings.realisticScoreThreshold}
-            onChange={(e) => update("realisticScoreThreshold", Number(e.target.value))}
+            value={draftOr("realisticScoreThreshold", settings.realisticScoreThreshold)}
+            onChange={(e) => updateNumber("realisticScoreThreshold", e.target.value)}
           />
           <p className="text-xs text-muted-foreground mt-1">
             Jobs scoring at or above this show in Insights. Default: {defaults.realisticScoreThreshold}
@@ -118,8 +145,8 @@ export function InsightsSettingsSection() {
               type="number"
               min={1}
               max={50}
-              value={settings.classificationBatchSize}
-              onChange={(e) => update("classificationBatchSize", Number(e.target.value))}
+              value={draftOr("classificationBatchSize", settings.classificationBatchSize)}
+              onChange={(e) => updateNumber("classificationBatchSize", e.target.value)}
             />
             <p className="text-xs text-muted-foreground mt-1">Default: {defaults.classificationBatchSize}</p>
           </div>
@@ -131,8 +158,8 @@ export function InsightsSettingsSection() {
               type="number"
               min={0}
               max={100}
-              value={settings.classificationConfidenceThreshold}
-              onChange={(e) => update("classificationConfidenceThreshold", Number(e.target.value))}
+              value={draftOr("classificationConfidenceThreshold", settings.classificationConfidenceThreshold)}
+              onChange={(e) => updateNumber("classificationConfidenceThreshold", e.target.value)}
             />
             <p className="text-xs text-muted-foreground mt-1">
               Below this → Other. Default: {defaults.classificationConfidenceThreshold}
@@ -162,8 +189,8 @@ export function InsightsSettingsSection() {
               type="number"
               min={3}
               max={20}
-              value={settings.otherSubClusterMinJobs}
-              onChange={(e) => update("otherSubClusterMinJobs", Number(e.target.value))}
+              value={draftOr("otherSubClusterMinJobs", settings.otherSubClusterMinJobs)}
+              onChange={(e) => updateNumber("otherSubClusterMinJobs", e.target.value)}
             />
             <p className="text-xs text-muted-foreground mt-1">Default: {defaults.otherSubClusterMinJobs}</p>
           </div>
