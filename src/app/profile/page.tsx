@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ProfileChatPanel } from "@/components/profile-chat-panel";
+import { InsightsSettingsSection } from "@/components/profile/insights-settings-section";
 import {
   MessageSquare,
   Github,
@@ -1785,6 +1786,13 @@ export default function ProfilePage() {
                     })()}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* ── Insights Settings ── */}
+            <Card className="shadow-sm">
+              <CardContent className="pt-5">
+                <InsightsSettingsSection />
               </CardContent>
             </Card>
 
