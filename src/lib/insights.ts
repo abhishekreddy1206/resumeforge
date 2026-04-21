@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
-import { subclusterOtherJobs, type GuideRecommendation } from "@/lib/claude";
-import { refreshRecommendationsCache } from "@/lib/learn-cache";
+import { subclusterOtherJobs } from "@/lib/claude";
 import { safeJsonParse } from "@/lib/utils/json";
+import { rankTopicsForClusters, toInsightsLearnTopic } from "@/lib/insights/topic-ranker";
 import { createLogger } from "@/lib/logger";
 import {
   ROLE_CATEGORIES,
@@ -15,23 +15,6 @@ const log = createLogger("insights");
 
 export const INSIGHTS_SCORE_THRESHOLD = 60;
 
-const RECOMMENDATIONS_TIMEOUT_MS = 30_000;
-
-function withTimeout<T>(label: string, ms: number, work: Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
 
 function hashString(s: string): string {
   let hash = 0;
@@ -280,61 +263,6 @@ export function matchGuideToTopic(
   return { id: guide.id, slug: guide.slug, topic: guide.topic };
 }
 
-function buildFallbackLearnTopics(
-  gaps: Array<{ skill: string; frequency: number; clusters: string[] }>,
-  realisticJobCount: number,
-  guides: Array<{ id: string; slug: string; topic: string }>
-): InsightsLearnTopic[] {
-  return gaps.slice(0, 8).map((gap, index) => {
-    const matchedGuide = matchGuideToTopic(gap.skill, guides);
-    return {
-      rank: index + 1,
-      topic: gap.skill.charAt(0).toUpperCase() + gap.skill.slice(1),
-      description: `Addresses a gap found in ${gap.frequency} of your ${realisticJobCount} realistic targets${gap.clusters.length > 0 ? ` across ${gap.clusters.join(", ")}` : ""}.`,
-      difficulty: (gap.frequency >= 3 ? "intermediate" : "beginner") as
-        | "beginner"
-        | "intermediate"
-        | "advanced",
-      gapSkills: [{ skill: gap.skill, frequency: gap.frequency }],
-      clusters: gap.clusters,
-      matchedGuide,
-      coveredByGuide: Boolean(matchedGuide),
-    };
-  });
-}
-
-function mapRecommendationsToLearnTopics(
-  recommendations: GuideRecommendation[],
-  gapClusterMap: Map<string, string[]>,
-  gapFrequencyMap: Map<string, number>,
-  guides: Array<{ id: string; slug: string; topic: string }>
-): InsightsLearnTopic[] {
-  return recommendations.map((recommendation, index) => {
-    const clusters = Array.from(
-      new Set(
-        recommendation.gapSkills.flatMap((skill) => gapClusterMap.get(skill.toLowerCase()) || [])
-      )
-    );
-
-    const gapSkills = recommendation.gapSkills.map((skill) => ({
-      skill,
-      frequency: gapFrequencyMap.get(skill.toLowerCase()) || recommendation.frequency,
-    }));
-
-    const matchedGuide = matchGuideToTopic(recommendation.topic, guides);
-
-    return {
-      rank: index + 1,
-      topic: recommendation.topic,
-      description: recommendation.description,
-      difficulty: recommendation.difficulty,
-      gapSkills,
-      clusters,
-      matchedGuide,
-      coveredByGuide: Boolean(matchedGuide),
-    };
-  });
-}
 
 export function summarizeInsightsForAnalytics(data: InsightsResponse | null) {
   if (!data) {
@@ -784,29 +712,26 @@ export async function getInsightsData(
       };
     });
 
-  const gapClusterMap = new Map<string, string[]>(
-    gaps.map((gap) => [gap.skill.toLowerCase(), gap.clusters])
-  );
   const gapFrequencyMap = new Map<string, number>(
     gaps.map((gap) => [gap.skill.toLowerCase(), gap.frequency])
   );
 
-  let recommendations: GuideRecommendation[] = [];
-  try {
-    recommendations = await withTimeout(
-      "refreshRecommendationsCache",
-      RECOMMENDATIONS_TIMEOUT_MS,
-      refreshRecommendationsCache()
-    );
-  } catch (error) {
-    log.warn("recommendations_refresh_failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-  const learnTopics =
-    recommendations.length > 0
-      ? mapRecommendationsToLearnTopics(recommendations, gapClusterMap, gapFrequencyMap, guides)
-      : buildFallbackLearnTopics(gaps, realisticJobs.length, guides);
+  const userGapSet = new Set<string>(gaps.map((g) => g.skill.toLowerCase()));
+
+  const ranked = rankTopicsForClusters(
+    reconciledClusters.map((c) => ({ id: c.id, jobs: c.jobs })),
+    userGapSet,
+    { topicsPerCluster: 3, totalLimit: 12 }
+  );
+
+  const learnTopics = ranked.map((r, i) =>
+    toInsightsLearnTopic(
+      r,
+      matchGuideToTopic(r.topic.title, guides),
+      i + 1,
+      gapFrequencyMap
+    )
+  );
 
   const avgScore = Math.round(
     realisticJobs.reduce((sum, job) => sum + job.score, 0) / realisticJobs.length
