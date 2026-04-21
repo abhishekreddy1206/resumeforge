@@ -601,7 +601,6 @@ export async function getInsightsData(
     }
   }
 
-  // Group realistic jobs by canonical role category.
   const byCategory = new Map<string, typeof realisticJobs>();
   for (const job of realisticJobs) {
     const catId = job.roleCategory && getCategoryById(job.roleCategory)
@@ -634,15 +633,15 @@ export async function getInsightsData(
   reconciledClusters.sort((a, b) => {
     switch (settings.clusterSortOrder) {
       case "alphabetical":
-        return a.name.localeCompare(b.name);
+        return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
       case "avgScore": {
         const avgA = a.jobs.reduce((s, j) => s + (j.score || 0), 0) / a.jobs.length;
         const avgB = b.jobs.reduce((s, j) => s + (j.score || 0), 0) / b.jobs.length;
-        return avgB - avgA;
+        return (avgB - avgA) || a.id.localeCompare(b.id);
       }
       case "jobCount":
       default:
-        return b.jobs.length - a.jobs.length;
+        return (b.jobs.length - a.jobs.length) || a.id.localeCompare(b.id);
     }
   });
 
@@ -719,7 +718,6 @@ export async function getInsightsData(
       };
     });
 
-  // Populate topGaps per cluster.
   for (const cluster of clusters) {
     const clusterJobIdSet = new Set(cluster.jobIds);
     const perClusterGapFreq = new Map<string, number>();
