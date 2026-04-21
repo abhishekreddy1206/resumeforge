@@ -108,6 +108,7 @@ export default function InsightsPage() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -267,22 +268,27 @@ export default function InsightsPage() {
           </span>
           <button
             type="button"
+            disabled={retrying}
             onClick={async () => {
+              setRetrying(true);
               try {
                 const res = await fetch("/api/insights/retry-classifications", { method: "POST" });
                 if (res.ok) {
                   const d = await res.json();
                   toast.success(`Retry enqueued (${d.enqueued ?? 0} jobs)`);
+                  await load();
                 } else {
                   toast.error("Retry failed");
                 }
               } catch (err) {
                 toast.error(`Retry failed: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setRetrying(false);
               }
             }}
-            className="underline text-amber-900 hover:text-amber-700"
+            className="underline text-amber-900 hover:text-amber-700 disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
-            Retry
+            {retrying ? "Retrying…" : "Retry"}
           </button>
         </div>
       )}
