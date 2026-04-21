@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { type GuideRecommendation } from "@/lib/claude";
+import { subclusterOtherJobs, type GuideRecommendation } from "@/lib/claude";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { safeJsonParse } from "@/lib/utils/json";
 import { createLogger } from "@/lib/logger";
@@ -107,6 +107,7 @@ export interface InsightsCluster {
   topSkills: string[];
   topGaps: string[];
   avgScore: number;
+  subClusters?: Array<{ name: string; jobIds: string[] }>;
 }
 
 export interface InsightsDemandPattern {
@@ -648,6 +649,27 @@ export async function getInsightsData(
   const pendingClassificationCount = realisticJobs.filter((j) => !j.roleCategory).length;
   const clusterSummary = buildDeterministicClusterSummary(reconciledClusters, realisticJobs.length);
 
+  const otherCluster = reconciledClusters.find((c) => c.id === "other");
+  let otherSubClusters: Array<{ name: string; jobIds: string[] }> = [];
+  if (otherCluster && otherCluster.jobs.length >= settings.otherSubClusterMinJobs) {
+    try {
+      otherSubClusters = await subclusterOtherJobs(
+        otherCluster.jobs.map((j) => ({
+          id: j.id,
+          title: j.title,
+          skills: j.skills,
+          excerpt: buildDescriptionExcerpt(j.description || ""),
+        }))
+      );
+    } catch (err) {
+      log.warn("other_subcluster_failed", {
+        error: err instanceof Error ? err.message : String(err),
+        count: otherCluster.jobs.length,
+      });
+      otherSubClusters = [];
+    }
+  }
+
   const jobToCluster = new Map<string, string>();
   const clusters: InsightsCluster[] = reconciledClusters.map((cluster) => {
     for (const job of cluster.jobs) jobToCluster.set(job.id, cluster.name);
@@ -679,6 +701,9 @@ export async function getInsightsData(
       avgScore: Math.round(
         cluster.jobs.reduce((sum, job) => sum + job.score, 0) / cluster.jobs.length
       ),
+      ...(cluster.id === "other" && otherSubClusters.length > 0
+        ? { subClusters: otherSubClusters }
+        : {}),
     };
   });
 

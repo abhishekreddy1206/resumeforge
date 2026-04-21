@@ -78,3 +78,5 @@ export type {
   JobToClassify,
   JobClassification,
 } from "./skills/job-classifier";
+export { subclusterOtherJobs } from "./skills/other-subclusterer";
+export type { OtherJobInput, OtherSubCluster } from "./skills/other-subclusterer";
