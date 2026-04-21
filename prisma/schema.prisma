@@ -65,14 +65,12 @@ model Profile {
   cachedGaps              String?
   cachedGapsAt            DateTime?
   gapsCacheFingerprint    String?
-  cachedRecommendations   String?
-  cachedRecommendationsAt DateTime?
-  recsCacheFingerprint    String?
 
   // Insights cache
   cachedInsights           String?
   cachedInsightsAt         DateTime?
   insightsCacheFingerprint String?
+  insightsSettings String?
 }
 
 model Experience {
@@ -165,6 +163,11 @@ model Job {
   terminologyMap  String?  // JSON array of {jdTerm, resumeSynonyms[]}
   matchResult     String?  // JSON — cached profile match analysis
   matchedAt    DateTime? // when match was last computed (stale if profile.updatedAt > this)
+  roleCategory          String?
+  roleCategoryConf      Int?
+  roleCategoryCandidate String?
+  roleCategoryVersion   String?
+  roleClassifiedAt      DateTime?
   aiModel      String   @default("sonnet") // AI model for this job's pipeline (sonnet|haiku|opus)
   source       String?   // e.g., "email-glassdoor", "email-linkedin", "email-indeed", "manual"
   canonicalUrl String?   // resolved employer ATS URL (from two-hop scraping)
@@ -183,6 +186,8 @@ model Job {
   profileVersions      ProfileVersion[]
   chatSessions         ChatSession[]
   applicationAnswers   ApplicationAnswer[]
+
+  @@index([roleCategory])
 }
 
 model ProfileVersion {
@@ -476,4 +481,18 @@ model AppSettings {
   claudeCliConcurrency Int      @default(2)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+model TaxonomyRecommendation {
+  id                 String   @id @default(cuid())
+  suggestedName      String
+  supportingJobCount Int
+  exampleJobIds      String
+  signalKeywords     String
+  status             String   @default("pending")
+  createdAt          DateTime @default(now())
+  reviewedAt         DateTime?
+  reviewNotes        String?
+
+  @@index([status, createdAt])
 }
