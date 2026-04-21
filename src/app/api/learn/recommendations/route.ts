@@ -18,7 +18,7 @@ export const GET = withLogging(async () => {
   const settings = loadInsightsSettingsFromProfile(profile);
 
   const jobs = await prisma.job.findMany({
-    where: { roleCategory: { not: null } },
+    where: { matchResult: { not: null } },
     select: { id: true, roleCategory: true, matchResult: true, skills: true },
   });
 
