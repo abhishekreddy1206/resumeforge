@@ -517,7 +517,7 @@ export const ROLE_CATEGORIES: readonly RoleCategory[] = [
     displayName: "Security Engineering",
     description: "AppSec, cloud security, DevSecOps, detection engineering.",
     signalKeywords: [
-      "security", "appsec", "cloud security", "devsecoops", "detection",
+      "security", "appsec", "cloud security", "devsecops", "detection",
       "siem", "sast", "dast", "threat model", "zero trust", "iam",
     ],
     hotTopics: [
