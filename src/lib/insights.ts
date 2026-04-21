@@ -1,27 +1,25 @@
 import { prisma } from "@/lib/db";
-import { clusterJobs, type GuideRecommendation } from "@/lib/claude";
-import type { ClusterResult } from "@/lib/claude/skills/job-clusterer";
+import { type GuideRecommendation } from "@/lib/claude";
 import { refreshRecommendationsCache } from "@/lib/learn-cache";
 import { safeJsonParse } from "@/lib/utils/json";
 import { createLogger } from "@/lib/logger";
+import {
+  ROLE_CATEGORIES,
+  getCategoryById,
+  TAXONOMY_VERSION,
+} from "@/lib/insights/role-taxonomy";
+import { loadInsightsSettingsFromProfile } from "@/lib/insights/settings";
+import type { InsightsSettings } from "@/lib/insights/settings";
 
 const log = createLogger("insights");
 
 export const INSIGHTS_SCORE_THRESHOLD = 60;
 
-const CLUSTER_TIMEOUT_MS = 20_000;
 const RECOMMENDATIONS_TIMEOUT_MS = 30_000;
-
-class InsightsTimeoutError extends Error {
-  constructor(label: string, ms: number) {
-    super(`${label} timed out after ${ms}ms`);
-    this.name = "InsightsTimeoutError";
-  }
-}
 
 function withTimeout<T>(label: string, ms: number, work: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new InsightsTimeoutError(label, ms)), ms);
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
     work.then(
       (value) => {
         clearTimeout(timer);
@@ -68,6 +66,19 @@ function tokenizeTopic(value: string): string[] {
     .filter((token) => token.length >= 3);
 }
 
+function buildDeterministicClusterSummary(
+  clusters: Array<{ name: string; jobs: Array<{ score: number }> }>,
+  totalRealistic: number
+): string {
+  if (clusters.length === 0) return "No realistic targets yet.";
+  const top = clusters[0];
+  const topPct = Math.round((top.jobs.length / totalRealistic) * 100);
+  if (clusters.length === 1) {
+    return `All ${totalRealistic} realistic targets fall in ${top.name}.`;
+  }
+  return `Your targets split into ${clusters.length} role profiles. ${top.name} dominates (${topPct}%).`;
+}
+
 export interface InsightsGuideRef {
   id: string;
   slug: string;
@@ -83,14 +94,18 @@ export interface InsightsMeta {
   gapCount: number;
   topFinding: string | null;
   cachedAt: string | null;
+  pendingClassificationCount: number;
+  taxonomyVersion: string;
 }
 
 export interface InsightsCluster {
+  id: string;
   name: string;
   description: string;
   jobIds: string[];
   jobs: Array<{ id: string; title: string; company: string; score: number }>;
   topSkills: string[];
+  topGaps: string[];
   avgScore: number;
 }
 
@@ -173,6 +188,8 @@ interface RealisticJob {
   bridges: Array<{ jobRequirement: string; yourSkill: string }>;
   directMatches: string[];
   terminologyMap: Array<{ jdTerm: string; resumeSynonyms: string[] }>;
+  roleCategory: string | null;
+  roleCategoryVersion: string | null;
 }
 
 export function computeInsightsFingerprint(
@@ -181,9 +198,16 @@ export function computeInsightsFingerprint(
     matchedAt: Date | null;
     applied?: boolean;
     score?: number;
+    roleCategory?: string | null;
+    roleCategoryVersion?: string | null;
   }>,
   guides: Array<{ id: string; slug: string; topic: string }>,
-  extra?: { profileSkillsHash?: string; jobCount?: number }
+  extra?: {
+    profileSkillsHash?: string;
+    jobCount?: number;
+    taxonomyVersion?: string;
+    settings?: InsightsSettings;
+  }
 ): string {
   const sortedJobs = [...jobs]
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -192,6 +216,8 @@ export function computeInsightsFingerprint(
       job.matchedAt?.toISOString() ?? null,
       job.applied ?? false,
       typeof job.score === "number" ? Math.round(job.score) : null,
+      job.roleCategory ?? null,
+      job.roleCategoryVersion ?? null,
     ]);
   const sortedGuides = [...guides]
     .map((guide) => ({
@@ -207,6 +233,8 @@ export function computeInsightsFingerprint(
       sortedGuides,
       profileSkillsHash: extra?.profileSkillsHash ?? null,
       jobCount: extra?.jobCount ?? null,
+      taxonomyVersion: extra?.taxonomyVersion ?? null,
+      settings: extra?.settings ?? null,
     })
   );
 }
@@ -357,6 +385,7 @@ export async function getInsightsData(
         id: true,
         cachedInsights: true,
         insightsCacheFingerprint: true,
+        insightsSettings: true,
       },
     }),
     prisma.job.findMany({
@@ -372,6 +401,8 @@ export async function getInsightsData(
         matchResult: true,
         matchedAt: true,
         terminologyMap: true,
+        roleCategory: true,
+        roleCategoryVersion: true,
       },
     }),
     prisma.skill.findMany({ select: { name: true } }),
@@ -380,12 +411,14 @@ export async function getInsightsData(
 
   if (!profile) return null;
 
+  const settings = loadInsightsSettingsFromProfile({ insightsSettings: profile.insightsSettings ?? null });
+
   const realisticJobs: RealisticJob[] = [];
   for (const job of allJobs) {
     const mr = safeJsonParse<MatchBreakdown | null>(job.matchResult, null);
     if (!mr) continue;
     const score = mr.score ?? mr.overallScore ?? 0;
-    if (score < INSIGHTS_SCORE_THRESHOLD) continue;
+    if (score < settings.realisticScoreThreshold) continue;
     realisticJobs.push({
       id: job.id,
       title: job.title,
@@ -406,6 +439,8 @@ export async function getInsightsData(
         job.terminologyMap,
         []
       ),
+      roleCategory: job.roleCategory ?? null,
+      roleCategoryVersion: job.roleCategoryVersion ?? null,
     });
   }
 
@@ -416,12 +451,14 @@ export async function getInsightsData(
       meta: {
         totalJobs,
         realisticJobs: realisticJobs.length,
-        threshold: INSIGHTS_SCORE_THRESHOLD,
+        threshold: settings.realisticScoreThreshold,
         avgScore: 0,
         clusterCount: 0,
         gapCount: 0,
         topFinding: null,
         cachedAt: null,
+        pendingClassificationCount: realisticJobs.filter((j) => !j.roleCategory).length,
+        taxonomyVersion: TAXONOMY_VERSION,
       },
       clusters: [],
       clusterSummary: "",
@@ -439,9 +476,16 @@ export async function getInsightsData(
       matchedAt: job.matchedAt,
       applied: job.applied,
       score: job.score,
+      roleCategory: job.roleCategory,
+      roleCategoryVersion: job.roleCategoryVersion,
     })),
     guides,
-    { profileSkillsHash, jobCount: allJobs.length }
+    {
+      profileSkillsHash,
+      jobCount: allJobs.length,
+      taxonomyVersion: TAXONOMY_VERSION,
+      settings,
+    }
   );
 
   if (!force && profile.insightsCacheFingerprint === fingerprint && profile.cachedInsights) {
@@ -557,86 +601,53 @@ export async function getInsightsData(
     }
   }
 
-  const fallbackClusterResult: ClusterResult = {
-    clusters: [
-      {
-        name: "All Targets",
-        description: "All your realistic job targets.",
-        jobIds: realisticJobs.map((job) => job.id),
-      },
-    ],
-    summary: `You have ${realisticJobs.length} realistic targets. Add more scored jobs to enable AI clustering.`,
-  };
-
-  let clusterResult: ClusterResult;
-  if (realisticJobs.length < 3) {
-    clusterResult = fallbackClusterResult;
-  } else {
-    try {
-      clusterResult = await withTimeout(
-        "clusterJobs",
-        CLUSTER_TIMEOUT_MS,
-        clusterJobs(
-          realisticJobs.map((job) => ({
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            skills: job.skills,
-            seniority: job.seniority || undefined,
-            descriptionExcerpt: buildDescriptionExcerpt(job.description),
-          }))
-        )
-      );
-    } catch (error) {
-      log.warn("cluster_jobs_failed", {
-        error: error instanceof Error ? error.message : String(error),
-        jobCount: realisticJobs.length,
-      });
-      clusterResult = {
-        ...fallbackClusterResult,
-        summary: `Clustering is temporarily unavailable — showing all ${realisticJobs.length} targets in a single group. Refresh to try again.`,
-      };
-    }
+  // Group realistic jobs by canonical role category.
+  const byCategory = new Map<string, typeof realisticJobs>();
+  for (const job of realisticJobs) {
+    const catId = job.roleCategory && getCategoryById(job.roleCategory)
+      ? job.roleCategory
+      : "other";
+    const list = byCategory.get(catId) ?? [];
+    list.push(job);
+    byCategory.set(catId, list);
   }
 
-  // Reconcile AI output with the authoritative realisticJobs set:
-  //  - filter jobIds to ones that actually exist in this set
-  //  - prevent any job from being claimed twice
-  //  - drop clusters that end up empty after filtering
-  //  - capture any unclaimed realistic jobs in an "Other Targets" cluster
-  const realisticJobById = new Map(realisticJobs.map((j) => [j.id, j]));
-  const claimedJobIds = new Set<string>();
-  const reconciledClusters: Array<{
+  type ReconciledCluster = {
+    id: string;
     name: string;
     description: string;
     jobs: typeof realisticJobs;
-  }> = [];
+  };
 
-  for (const cluster of clusterResult.clusters) {
-    const clusterJobsData: typeof realisticJobs = [];
-    for (const id of cluster.jobIds) {
-      if (claimedJobIds.has(id)) continue;
-      const job = realisticJobById.get(id);
-      if (!job) continue;
-      claimedJobIds.add(id);
-      clusterJobsData.push(job);
+  const reconciledClusters: ReconciledCluster[] = [];
+  for (const cat of ROLE_CATEGORIES) {
+    const jobsInCat = byCategory.get(cat.id);
+    if (!jobsInCat || jobsInCat.length === 0) continue;
+    reconciledClusters.push({
+      id: cat.id,
+      name: cat.displayName,
+      description: cat.description,
+      jobs: jobsInCat,
+    });
+  }
+
+  reconciledClusters.sort((a, b) => {
+    switch (settings.clusterSortOrder) {
+      case "alphabetical":
+        return a.name.localeCompare(b.name);
+      case "avgScore": {
+        const avgA = a.jobs.reduce((s, j) => s + (j.score || 0), 0) / a.jobs.length;
+        const avgB = b.jobs.reduce((s, j) => s + (j.score || 0), 0) / b.jobs.length;
+        return avgB - avgA;
+      }
+      case "jobCount":
+      default:
+        return b.jobs.length - a.jobs.length;
     }
-    if (clusterJobsData.length === 0) continue;
-    reconciledClusters.push({
-      name: cluster.name,
-      description: cluster.description,
-      jobs: clusterJobsData,
-    });
-  }
+  });
 
-  const unclaimed = realisticJobs.filter((j) => !claimedJobIds.has(j.id));
-  if (unclaimed.length > 0) {
-    reconciledClusters.push({
-      name: "Other Targets",
-      description: "Jobs the clusterer didn't group — review manually.",
-      jobs: unclaimed,
-    });
-  }
+  const pendingClassificationCount = realisticJobs.filter((j) => !j.roleCategory).length;
+  const clusterSummary = buildDeterministicClusterSummary(reconciledClusters, realisticJobs.length);
 
   const jobToCluster = new Map<string, string>();
   const clusters: InsightsCluster[] = reconciledClusters.map((cluster) => {
@@ -651,6 +662,7 @@ export async function getInsightsData(
     }
 
     return {
+      id: cluster.id,
       name: cluster.name,
       description: cluster.description,
       jobIds: cluster.jobs.map((j) => j.id),
@@ -664,6 +676,7 @@ export async function getInsightsData(
         .sort((a, b) => b[1] - a[1])
         .slice(0, 6)
         .map(([skill]) => skill),
+      topGaps: [],
       avgScore: Math.round(
         cluster.jobs.reduce((sum, job) => sum + job.score, 0) / cluster.jobs.length
       ),
@@ -705,6 +718,23 @@ export async function getInsightsData(
         coveredByGuide: Boolean(matchedGuide),
       };
     });
+
+  // Populate topGaps per cluster.
+  for (const cluster of clusters) {
+    const clusterJobIdSet = new Set(cluster.jobIds);
+    const perClusterGapFreq = new Map<string, number>();
+    for (const [gapSkill, data] of gapFreq) {
+      // Skip bridgeable gaps — same rule as the global `gaps` list.
+      if (bridgeFreq.has(gapSkill)) continue;
+      let count = 0;
+      for (const id of data.jobIds) if (clusterJobIdSet.has(id)) count++;
+      if (count > 0) perClusterGapFreq.set(gapSkill, count);
+    }
+    cluster.topGaps = Array.from(perClusterGapFreq.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([skill]) => skill);
+  }
 
   const bridges = Array.from(bridgeFreq.entries())
     .sort((a, b) => b[1].frequency - a[1].frequency)
@@ -768,15 +798,17 @@ export async function getInsightsData(
     meta: {
       totalJobs,
       realisticJobs: realisticJobs.length,
-      threshold: INSIGHTS_SCORE_THRESHOLD,
+      threshold: settings.realisticScoreThreshold,
       avgScore,
       clusterCount: clusters.length,
       gapCount: gaps.length,
       topFinding,
       cachedAt: new Date().toISOString(),
+      pendingClassificationCount,
+      taxonomyVersion: TAXONOMY_VERSION,
     },
     clusters,
-    clusterSummary: clusterResult.summary,
+    clusterSummary,
     demandPatterns,
     gapAnalysis: { gaps, bridges, strengths },
     learnTopics,
