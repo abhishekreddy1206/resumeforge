@@ -718,10 +718,21 @@ export async function getInsightsData(
 
   const userGapSet = new Set<string>(gaps.map((g) => g.skill.toLowerCase()));
 
+  // Build the set of taxonomy topic ids already covered by an existing guide,
+  // so the ranker can apply guidedPenalty and surface un-covered topics first.
+  const coveredByGuideIds = new Set<string>();
+  for (const cat of ROLE_CATEGORIES) {
+    for (const topic of cat.hotTopics) {
+      if (matchGuideToTopic(topic.title, guides)) {
+        coveredByGuideIds.add(topic.id);
+      }
+    }
+  }
+
   const ranked = rankTopicsForClusters(
     reconciledClusters.map((c) => ({ id: c.id, jobs: c.jobs })),
     userGapSet,
-    { topicsPerCluster: 3, totalLimit: 12 }
+    { topicsPerCluster: 3, totalLimit: 12, coveredByGuideIds }
   );
 
   const learnTopics = ranked.map((r, i) =>

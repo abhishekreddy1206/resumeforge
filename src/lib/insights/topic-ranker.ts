@@ -117,7 +117,7 @@ export function toInsightsLearnTopic(
       skill,
       frequency: gapFrequencyMap?.get(skill.toLowerCase()) ?? 1,
     })),
-    clusters: [r.clusterId],
+    clusters: [r.clusterName],
     matchedGuide,
     coveredByGuide: !!matchedGuide,
   };
