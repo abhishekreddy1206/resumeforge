@@ -4,6 +4,7 @@ import {
   listPendingRecommendations,
 } from "../src/lib/insights/taxonomy-recommendations";
 import { prisma } from "../src/lib/db";
+import { safeJsonParse } from "../src/lib/utils/json";
 
 async function main(): Promise<void> {
   const { created } = await computeTaxonomyGaps({ minJobs: 5 });
@@ -15,7 +16,7 @@ async function main(): Promise<void> {
   }
   console.log(`\nPending taxonomy recommendations (${pending.length}):\n`);
   for (const r of pending) {
-    const skills = JSON.parse(r.signalKeywords) as string[];
+    const skills = safeJsonParse<string[]>(r.signalKeywords, []);
     console.log(`- [${r.id}] ${r.suggestedName}`);
     console.log(`    supporting jobs: ${r.supportingJobCount}`);
     console.log(`    top signal keywords: ${skills.slice(0, 8).join(", ")}`);
