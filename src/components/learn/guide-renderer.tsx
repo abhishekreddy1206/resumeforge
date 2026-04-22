@@ -15,13 +15,14 @@ interface SectionProgress {
 interface GuideRendererProps {
   guideId: string;
   content: GuideContent;
+  generationStatuses?: Record<string, SectionGenStatus>;
   initialProgress: Record<string, SectionProgress>;
   onProgressUpdate: (progress: Record<string, SectionProgress>) => void;
   existingSources?: Array<{ id: string; type: string; url: string | null; title: string | null; createdAt: string }>;
   onRefined?: () => void;
 }
 
-export function GuideRenderer({ guideId, content, initialProgress, onProgressUpdate, existingSources, onRefined }: GuideRendererProps) {
+export function GuideRenderer({ guideId, content, generationStatuses, initialProgress, onProgressUpdate, existingSources, onRefined }: GuideRendererProps) {
   const [progress, setProgress] = useState<Record<string, SectionProgress>>(initialProgress);
   const [activeSection, setActiveSection] = useState(content.sections[0]?.id);
   const [expandedSection, setExpandedSection] = useState(content.sections[0]?.id ?? "");
@@ -75,7 +76,7 @@ export function GuideRenderer({ guideId, content, initialProgress, onProgressUpd
           progress={progress}
           activeSection={activeSection}
           onSectionClick={handleSectionClick}
-          generationStatuses={(content as GuideContent & { _sectionStatuses?: Record<string, SectionGenStatus> })._sectionStatuses}
+          generationStatuses={generationStatuses ?? (content as GuideContent & { _sectionStatuses?: Record<string, SectionGenStatus> })._sectionStatuses}
         />
       </aside>
 

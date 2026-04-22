@@ -91,9 +91,6 @@ export const POST = withLogging(async (
         })),
         references: outline.references,
         _sectionPlan: outline.sectionPlan,
-        _sectionStatuses: sectionStatuses,
-        _sectionErrors: {},
-        _sectionAttempts: {},
       };
 
       let slug = slugify(topic);

@@ -21,6 +21,9 @@ export type GuideGenerationState = "running" | "blocked" | "complete";
 
 export interface GuideContentStorage extends GuideContent {
   _sectionPlan?: Array<{ id: string; title: string; scope: string }>;
+  // Deprecated mirror — canonical state lives on Guide.sectionStatuses /
+  // sectionErrors / sectionAttempts columns. Readers fall back to these for
+  // pre-migration guides only; new writes must not populate them.
   _sectionStatuses?: Record<string, SectionGenStatus>;
   _sectionErrors?: Record<string, string>;
   _sectionAttempts?: Record<string, number>;

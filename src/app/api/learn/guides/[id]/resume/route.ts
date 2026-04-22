@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import type { GuideContentStorage } from "@/lib/claude";
+import type { GuideContentStorage, SectionGenStatus } from "@/lib/claude";
 import { enqueueJobs, cancelJobsByEntity } from "@/lib/job-queue";
-import { deriveGuideGenerationSnapshot, ensureGuideContentTracking, isSectionCurrentlyInteractive } from "@/lib/learn-guides";
+import { deriveGuideGenerationSnapshotFromColumns, ensureGuideContentTracking, isSectionCurrentlyInteractive, parseTrackingColumn } from "@/lib/learn-guides";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("guide-resume");
@@ -18,7 +18,16 @@ export async function POST(
       return NextResponse.json({ error: "Guide not found" }, { status: 404 });
     }
 
-    if (guide.status === "published") {
+    const content = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
+    const statuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
+      guide.sectionStatuses,
+      content._sectionStatuses ?? {},
+    );
+
+    // Only short-circuit when every section is genuinely completed — a
+    // "published" guide with a residual failed/core_complete section must
+    // still be retryable.
+    if (guide.status === "published" && content.sections.every((s) => statuses[s.id] === "completed")) {
       return NextResponse.json({
         status: "published",
         generationState: "complete",
@@ -27,11 +36,6 @@ export async function POST(
         failedSectionIds: [],
       });
     }
-
-    const content = ensureGuideContentTracking(JSON.parse(guide.content) as GuideContentStorage);
-    const statuses: Record<string, string> = guide.sectionStatuses
-      ? JSON.parse(guide.sectionStatuses)
-      : { ...(content._sectionStatuses || {}) };
 
     // Reset stuck "generating"/"generating_interactive" sections
     for (const section of content.sections) {
@@ -48,7 +52,8 @@ export async function POST(
     );
 
     if (eligibleSections.length === 0) {
-      const snapshot = deriveGuideGenerationSnapshot(content, guide.status);
+      const sectionIdsAll = content.sections.map((s) => s.id);
+      const snapshot = deriveGuideGenerationSnapshotFromColumns(sectionIdsAll, statuses, guide.status);
       if (snapshot.generationState === "complete") {
         await prisma.guide.update({
           where: { id },
@@ -154,9 +159,10 @@ export async function POST(
     await enqueueJobs(jobs);
 
     // Reset statuses and save
-    const errors: Record<string, string> = guide.sectionErrors
-      ? JSON.parse(guide.sectionErrors)
-      : { ...(content._sectionErrors || {}) };
+    const errors = parseTrackingColumn<Record<string, string>>(
+      guide.sectionErrors,
+      content._sectionErrors ?? {},
+    );
     for (const section of eligibleSections) {
       // Preserve core_complete status for sections that only need interactive retry
       if (statuses[section.id] === "core_complete") {
@@ -178,9 +184,8 @@ export async function POST(
       },
     });
 
-    const { deriveGuideGenerationSnapshotFromColumns } = await import("@/lib/learn-guides");
     const sectionIds = content.sections.map((s) => s.id);
-    const snapshot = deriveGuideGenerationSnapshotFromColumns(sectionIds, statuses as Record<string, import("@/lib/claude").SectionGenStatus>, "generating");
+    const snapshot = deriveGuideGenerationSnapshotFromColumns(sectionIds, statuses, "generating");
 
     log.info("guide_resumed", { guideId: id, jobCount: jobs.length, groupKey });
 

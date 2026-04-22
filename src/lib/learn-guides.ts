@@ -8,34 +8,13 @@ export interface GuideGenerationSnapshot {
   totalCount: number;
 }
 
+// Canonical per-section state lives on Guide.sectionStatuses/Errors/Attempts
+// columns. The _sectionStatuses / _sectionErrors / _sectionAttempts fields on
+// GuideContentStorage are a legacy mirror that we no longer write — this
+// function is a no-op shim kept so callers can still pass content through.
 export function ensureGuideContentTracking(
   content: GuideContentStorage
 ): GuideContentStorage {
-  if (!content._sectionStatuses) {
-    content._sectionStatuses = {};
-  }
-  if (!content._sectionErrors) {
-    content._sectionErrors = {};
-  }
-  if (!content._sectionAttempts) {
-    content._sectionAttempts = {};
-  }
-
-  for (const section of content.sections) {
-    if (!content._sectionStatuses[section.id]) {
-      content._sectionStatuses[section.id] =
-        section.explanation && section.explanation.trim().length > 0
-          ? "completed"
-          : "pending";
-    }
-    if (typeof content._sectionAttempts[section.id] !== "number") {
-      content._sectionAttempts[section.id] = 0;
-    }
-    if (!content._sectionErrors[section.id]) {
-      delete content._sectionErrors[section.id];
-    }
-  }
-
   return content;
 }
 
@@ -84,16 +63,17 @@ export function deriveGuideGenerationSnapshotFromColumns(
 }
 
 /**
- * Derive generation snapshot from a full GuideContentStorage.
- * Delegates to column-based implementation.
+ * Derive a generation snapshot from a content blob. Legacy callers only —
+ * prefer deriveGuideGenerationSnapshotFromColumns with the canonical column
+ * data. This variant falls back to the (deprecated) content blob mirror so
+ * pre-migration guides still render.
  */
 export function deriveGuideGenerationSnapshot(
   content: GuideContentStorage,
   persistedStatus: string
 ): GuideGenerationSnapshot {
-  const tracked = ensureGuideContentTracking(content);
-  const sectionIds = tracked.sections.map((s) => s.id);
-  const statuses = tracked._sectionStatuses || {};
+  const sectionIds = content.sections.map((s) => s.id);
+  const statuses = content._sectionStatuses || {};
   return deriveGuideGenerationSnapshotFromColumns(sectionIds, statuses, persistedStatus);
 }
 

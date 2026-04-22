@@ -9,14 +9,14 @@ import {
   classifyJobs,
 } from "@/lib/claude";
 import { loadInsightsSettingsFromProfile } from "@/lib/insights/settings";
-import type { GuideContentStorage } from "@/lib/claude";
+import type { GuideContentStorage, SectionGenStatus } from "@/lib/claude";
 import {
   getActiveGuideSourceTexts,
   getGuideVersionSourceRefs,
   serializeGuideVersionSourceRefs,
 } from "@/lib/learn-sources";
 import {
-  deriveGuideGenerationSnapshot,
+  deriveGuideGenerationSnapshotFromColumns,
   ensureGuideContentTracking,
   mergeTrackingStatus,
   mergeTrackingError,
@@ -285,24 +285,52 @@ export async function handleGuideFinalize(job: JobRecord): Promise<void> {
 
   const content = readGuideContent(guide);
 
-  // 2. Derive generation snapshot
-  const snapshot = deriveGuideGenerationSnapshot(content, guide.status);
+  // 2. Derive generation snapshot from the canonical column (blob may be stale)
+  const sectionStatuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
+    guide.sectionStatuses,
+    content._sectionStatuses ?? {},
+  );
+  const sectionIds = content.sections.map((s) => s.id);
+  const snapshot = deriveGuideGenerationSnapshotFromColumns(
+    sectionIds,
+    sectionStatuses,
+    guide.status,
+  );
+  const totalCount = snapshot.totalCount;
+  const completedCount = snapshot.completedCount;
+  const failedCount = snapshot.failedSectionIds.length;
   task.step("snapshot_derived", {
-    completedCount: snapshot.completedCount,
-    failedCount: snapshot.failedSectionIds.length,
-    totalCount: snapshot.totalCount,
+    completedCount,
+    failedCount,
+    totalCount,
     generationState: snapshot.generationState,
   });
 
-  // 3. Determine final status
-  const finalStatus =
-    snapshot.generationState === "complete" ? "published" : "generating";
-  const lastAsyncError =
-    snapshot.failedSectionIds.length > 0
-      ? `${snapshot.failedSectionIds.length} section${snapshot.failedSectionIds.length === 1 ? "" : "s"} blocked. Resume generation to retry.`
-      : null;
-  const lastAsyncStage =
-    snapshot.failedSectionIds.length > 0 ? "create_sections" : null;
+  // 3. Determine final status — trichotomy:
+  //    - all completed → published
+  //    - 0 completed, ≥1 failed → failed
+  //    - some completed + some failed → incomplete
+  //    - otherwise (pending remaining) → leave generating (finalize shouldn't have fired)
+  let finalStatus: string;
+  let lastAsyncError: string | null;
+  let lastAsyncStage: string | null;
+  if (completedCount === totalCount && totalCount > 0) {
+    finalStatus = "published";
+    lastAsyncError = null;
+    lastAsyncStage = null;
+  } else if (completedCount === 0 && failedCount > 0) {
+    finalStatus = "failed";
+    lastAsyncError = "Generation failed. Retry to regenerate this guide.";
+    lastAsyncStage = "create_sections";
+  } else if (failedCount > 0) {
+    finalStatus = "incomplete";
+    lastAsyncError = `${failedCount} of ${totalCount} section${totalCount === 1 ? "" : "s"} failed. Retry to complete.`;
+    lastAsyncStage = "create_sections";
+  } else {
+    // No failures and not all done → still waiting on jobs. Leave state alone.
+    task.complete({ finalStatus: "generating", note: "finalize fired with pending work" });
+    return;
+  }
 
   // 4. If publishing, save version in a transaction
   if (finalStatus === "published") {
@@ -519,14 +547,12 @@ export async function handleGuideRefineFull(job: JobRecord): Promise<void> {
     model,
   });
 
-  // 4. Build resultContent preserving tracking metadata from original
-  const resultContent = ensureGuideContentTracking({
+  // 4. Build resultContent preserving only _sectionPlan (canonical tracking
+  //    lives on Guide columns; no mirror on the content blob).
+  const resultContent: GuideContentStorage = {
     ...result.content,
     _sectionPlan: content._sectionPlan,
-    _sectionStatuses: content._sectionStatuses,
-    _sectionErrors: content._sectionErrors,
-    _sectionAttempts: content._sectionAttempts,
-  });
+  };
 
   // 5. Build tracking columns: mark all sections completed, clear errors
   const allStatuses: Record<string, string> = {};
@@ -574,6 +600,7 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
   const statuses = parseTrackingColumn<Record<string, string>>(
     guide.sectionStatuses, content._sectionStatuses || {}
   );
+  const totalCount = content.sections.length;
   let completedCount = 0;
   let failedCount = 0;
   for (const section of content.sections) {
@@ -581,35 +608,44 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
     if (status === "completed" || status === "core_complete") completedCount++;
     if (status === "failed") failedCount++;
   }
+  const wasPublished = guide.status === "published";
 
   task.step("section_counts", {
     completedCount,
     failedCount,
-    totalCount: content.sections.length,
+    totalCount,
+    wasPublished,
   });
 
-  // 3. If all failed (completedCount === 0): restore to published with error
+  // 3. If all failed (completedCount === 0): previously-published guides keep
+  //    published (don't regress — existing content is preserved); recovery
+  //    mode on unpublished guides marks failed so the UI can surface retry.
   if (completedCount === 0) {
     await prisma.guide.update({
       where: { id: guideId },
       data: {
-        status: "published",
-        lastAsyncError: `All ${failedCount} section${failedCount === 1 ? "" : "s"} could not be refined. Existing content was preserved.`,
+        status: wasPublished ? "published" : "failed",
+        lastAsyncError: `All ${failedCount} section${failedCount === 1 ? "" : "s"} could not be refined.${wasPublished ? " Existing content was preserved." : " Retry to regenerate."}`,
         lastAsyncStage: "refine_sections",
       },
     });
-    task.complete({ outcome: "all_failed_restored" });
+    task.complete({ outcome: wasPublished ? "all_failed_preserved_published" : "all_failed_marked_failed" });
     return;
   }
 
-  // 4. Increment version, create GuideVersion, mark published
+  // 4. Determine final status — trichotomy, with a guard that never regresses
+  //    a previously-published guide to "incomplete" (existing content is still
+  //    readable even if refine left some sections behind).
+  const partial = failedCount > 0;
+  const finalStatus = partial
+    ? (wasPublished ? "published" : "incomplete")
+    : "published";
   const newVersion = guide.version + 1;
   const sourceRefs = await getGuideVersionSourceRefs(guideId);
-  const lastAsyncError =
-    failedCount > 0
-      ? `${failedCount} section${failedCount === 1 ? "" : "s"} could not be refined. Existing content was preserved.`
-      : null;
-  const lastAsyncStage = failedCount > 0 ? "refine_sections" : null;
+  const lastAsyncError = partial
+    ? `${failedCount} section${failedCount === 1 ? "" : "s"} could not be refined. Existing content was preserved.`
+    : null;
+  const lastAsyncStage = partial ? "refine_sections" : null;
 
   await prisma.$transaction(async (tx) => {
     await tx.guideVersion.create({
@@ -628,7 +664,7 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
       data: {
         content: JSON.stringify(content),
         version: newVersion,
-        status: "published",
+        status: finalStatus,
         lastAsyncError,
         lastAsyncStage,
       },

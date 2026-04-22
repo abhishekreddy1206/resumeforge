@@ -43,6 +43,8 @@ export const GET = withLogging(async (request: NextRequest) => {
 
   const result = guides.map((g) => {
     let progressPercent = 0;
+    let failedSectionCount = 0;
+    let totalSectionCount = 0;
     try {
       const content = JSON.parse(g.content) as {
         sections?: Array<{ id: string }>;
@@ -50,14 +52,15 @@ export const GET = withLogging(async (request: NextRequest) => {
       };
       // Guide.sectionStatuses (column) is the canonical per-section
       // generation state — the worker updates it on every transition.
-      // content._sectionStatuses is only refreshed on full refine, so it
-      // stays "pending" for guides built section-by-section. Fall back to
-      // the content blob only when the column is empty (legacy guides).
+      // content._sectionStatuses is a legacy mirror we no longer write, so
+      // fall back to it only for pre-migration guides.
       const statuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
         g.sectionStatuses,
         content._sectionStatuses ?? {},
       );
       const sectionIds = (content.sections ?? []).map((s) => s.id);
+      totalSectionCount = sectionIds.length;
+      failedSectionCount = sectionIds.filter((id) => statuses[id] === "failed").length;
       progressPercent = getGuideGenerationPercent(sectionIds, statuses);
     } catch {
       progressPercent = 0;
@@ -77,6 +80,8 @@ export const GET = withLogging(async (request: NextRequest) => {
       sourceCount: g._count.sources,
       versionCount: g._count.versions,
       progressPercent,
+      failedSectionCount,
+      totalSectionCount,
     };
   });
 
@@ -148,7 +153,7 @@ export const POST = withLogging(async (request: NextRequest) => {
   // Build skeleton content with empty sections.
   // _sectionPlan preserves original scopes so the resume endpoint can pass
   // them to generateGuideSection (without it, scope is lost after creation).
-  // _sectionStatuses tracks per-section generation progress.
+  // Per-section status / errors / attempts live on Guide columns only.
   const sectionStatuses: Record<string, SectionGenStatus> = {};
   for (const sp of outline.sectionPlan) {
     sectionStatuses[sp.id] = "pending";
@@ -171,9 +176,6 @@ export const POST = withLogging(async (request: NextRequest) => {
     })),
     references: outline.references,
     _sectionPlan: outline.sectionPlan,
-    _sectionStatuses: sectionStatuses,
-    _sectionErrors: {},
-    _sectionAttempts: {},
   };
 
   let slug = slugify(topic);

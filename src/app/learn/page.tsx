@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw, Wand2, Loader2 } from "lucide-react";
+import { Plus, Sparkles, ArrowRight, ChevronRight, Link2, FileText, X, Upload, Search, BookmarkCheck, RefreshCw, Wand2, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { FileDropZone } from "@/components/learn/file-drop-zone";
 import { OrganizeOrphansModal, type OrganizeProposal } from "./_components/organize-orphans-modal";
@@ -29,6 +29,8 @@ interface GuideListItem {
   versionCount: number;
   updatedAt: string;
   progressPercent: number;
+  failedSectionCount: number;
+  totalSectionCount: number;
   learningPathId: string | null;
 }
 
@@ -89,6 +91,8 @@ export default function LearnPage() {
 function LearnPageContent() {
   const searchParams = useSearchParams();
   const [guides, setGuides] = useState<GuideListItem[]>([]);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryFailedId, setRetryFailedId] = useState<string | null>(null);
   const [paths, setPaths] = useState<LearningPathItem[]>([]);
   const [recommendations, setRecommendations] = useState<GuideRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,6 +149,28 @@ function LearnPageContent() {
     setGuides(g);
     setPaths(p);
   }, []);
+
+  const handleRetryGuide = useCallback(async (guideId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (retryingId) return;
+    setRetryingId(guideId);
+    setRetryFailedId(null);
+    try {
+      const res = await fetch(`/api/learn/guides/${guideId}/resume`, { method: "POST" });
+      if (!res.ok) {
+        setRetryFailedId(guideId);
+        setTimeout(() => setRetryFailedId((cur) => (cur === guideId ? null : cur)), 3000);
+        return;
+      }
+      await refreshGuidesAndPaths();
+    } catch {
+      setRetryFailedId(guideId);
+      setTimeout(() => setRetryFailedId((cur) => (cur === guideId ? null : cur)), 3000);
+    } finally {
+      setRetryingId(null);
+    }
+  }, [retryingId, refreshGuidesAndPaths]);
 
   const searchLower = search.toLowerCase().trim();
   const filteredGuides = searchLower
@@ -778,39 +804,63 @@ function LearnPageContent() {
           </div>
         ) : (
           <div className="space-y-1">
-            {filteredGuides.map((guide, i) => (
-              <a
-                key={guide.id}
-                href={`/learn/${guide.slug}`}
-                className="group flex items-center justify-between py-3 px-4 rounded hover:bg-card border border-transparent hover:border-border transition-all"
-                style={{ animationDelay: `${0.04 * i}s` }}
-              >
-                <div className="min-w-0">
-                  <div
-                    className="text-sm font-medium group-hover:text-primary transition-colors truncate"
-                    style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.05rem" }}
-                  >
-                    {guide.topic}
-                  </div>
-                  <div className="label-mono text-muted-foreground mt-0.5">
-                    v{guide.version} · {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""} · {new Date(guide.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            {filteredGuides.map((guide, i) => {
+              const isRetryable = guide.status === "failed" || guide.status === "incomplete";
+              const statusLabel =
+                guide.status === "failed" ? "Failed" :
+                guide.status === "incomplete" ? `Incomplete · ${guide.progressPercent}%` :
+                guide.status === "published" ? "Ready" :
+                guide.status === "generating" ? `Generating · ${guide.progressPercent}%` :
+                guide.progressPercent === 100 ? "Ready" :
+                guide.progressPercent > 0 ? `Generating · ${guide.progressPercent}%` :
+                "Not Started";
+              const statusClass =
+                guide.status === "failed" ? "text-destructive" :
+                guide.status === "incomplete" ? "text-amber-600 dark:text-amber-400" :
+                guide.status === "published" || guide.progressPercent === 100 ? "text-chart-3" :
+                guide.progressPercent > 0 || guide.status === "generating" ? "text-primary" :
+                "text-muted-foreground/40";
+              return (
+                <div
+                  key={guide.id}
+                  className="group flex items-center justify-between py-3 px-4 rounded hover:bg-card border border-transparent hover:border-border transition-all"
+                  style={{ animationDelay: `${0.04 * i}s` }}
+                >
+                  <a href={`/learn/${guide.slug}`} className="min-w-0 flex-1">
+                    <div
+                      className="text-sm font-medium group-hover:text-primary transition-colors truncate"
+                      style={{ fontFamily: "var(--font-cormorant)", fontWeight: 600, fontSize: "1.05rem" }}
+                    >
+                      {guide.topic}
+                    </div>
+                    <div className="label-mono text-muted-foreground mt-0.5">
+                      v{guide.version} · {guide.sourceCount} source{guide.sourceCount !== 1 ? "s" : ""} · {new Date(guide.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
+                  </a>
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    <span className={`label-mono ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                    {retryFailedId === guide.id && (
+                      <span className="label-mono text-destructive">Retry failed</span>
+                    )}
+                    {isRetryable && (
+                      <button
+                        onClick={(e) => handleRetryGuide(guide.id, e)}
+                        disabled={retryingId === guide.id}
+                        aria-label={`Regenerate ${guide.topic}`}
+                        className="text-muted-foreground hover:text-primary disabled:opacity-50 transition-colors p-1 -m-1"
+                      >
+                        <RotateCcw className={`w-3.5 h-3.5 ${retryingId === guide.id ? "animate-spin" : ""}`} />
+                      </button>
+                    )}
+                    <a href={`/learn/${guide.slug}`} aria-label="Open guide">
+                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                    </a>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0 ml-4">
-                  <span className={`label-mono ${
-                    guide.status === "failed" ? "text-destructive" :
-                    guide.progressPercent === 100 ? "text-chart-3" :
-                    guide.progressPercent > 0 ? "text-primary" : "text-muted-foreground/40"
-                  }`}>
-                    {guide.status === "failed" ? "Failed" :
-                     guide.progressPercent === 100 ? "Ready" :
-                     guide.progressPercent === 0 ? "Not Started" :
-                     `Generating · ${guide.progressPercent}%`}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                </div>
-              </a>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

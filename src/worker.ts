@@ -167,7 +167,12 @@ async function mainLoop(): Promise<void> {
       const errorMessage = err instanceof Error ? err.message : String(err);
       log.error("job_failed", { jobId: job.id, type: job.type, error: errorMessage.slice(0, 500) });
 
-      // Mark section as failed in tracking columns (no content blob r/w)
+      // Order matters: persist the BackgroundJob failure first, then mark the
+      // Guide section. If the Guide update throws, stale-recovery + finalize
+      // will surface the stall — safer than the reverse, where the job could
+      // look "running" forever while the section was marked failed.
+      await failJob(job.id, errorMessage.slice(0, 500));
+
       try {
         const payload = JSON.parse(job.payload) as { guideId?: string; sectionPlan?: { id: string }; sectionId?: string };
         const sectionId = payload.sectionPlan?.id || payload.sectionId;
@@ -194,8 +199,6 @@ async function mainLoop(): Promise<void> {
       } catch {
         // Ignore errors in error handling
       }
-
-      await failJob(job.id, errorMessage.slice(0, 500));
 
       // Still check finalize — the section failed but all siblings might be done
       try {

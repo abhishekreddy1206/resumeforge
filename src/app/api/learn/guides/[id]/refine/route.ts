@@ -188,10 +188,13 @@ export const POST = withLogging(async (
       sections: skeletonSections,
       references: outline.references,
       _sectionPlan: outline.sectionPlan,
-      _sectionStatuses: newStatuses,
-      _sectionErrors: {},
-      _sectionAttempts: {},
     };
+    // Intentionally drop legacy blob mirror fields (_sectionStatuses /
+    // _sectionErrors / _sectionAttempts) — canonical state lives on the
+    // Guide.sectionStatuses / sectionErrors / sectionAttempts columns below.
+    delete (skeletonContent as { _sectionStatuses?: unknown })._sectionStatuses;
+    delete (skeletonContent as { _sectionErrors?: unknown })._sectionErrors;
+    delete (skeletonContent as { _sectionAttempts?: unknown })._sectionAttempts;
 
     // Save skeleton immediately so SSE/polling shows the outline
     await prisma.guide.update({
