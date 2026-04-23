@@ -18,8 +18,15 @@ export async function PATCH(request: NextRequest) {
       data: {
         applied,
         appliedAt: applied ? new Date() : null,
+        ...(applied ? {} : { callbackReceived: false, callbackAt: null }),
       },
-      select: { id: true, applied: true, appliedAt: true },
+      select: {
+        id: true,
+        applied: true,
+        appliedAt: true,
+        callbackReceived: true,
+        callbackAt: true,
+      },
     });
 
     return NextResponse.json(job);

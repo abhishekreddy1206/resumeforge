@@ -173,6 +173,8 @@ model Job {
   canonicalUrl String?   // resolved employer ATS URL (from two-hop scraping)
   applied      Boolean  @default(false)
   appliedAt    DateTime?
+  callbackReceived Boolean   @default(false)
+  callbackAt       DateTime?
   coverLetter    String?  // JSON — cached generated cover letter (CoverLetterData)
   interviewPrep  String?  // JSON — cached STAR+R interview prep (InterviewPrep)
   pipelineStatus    String?   // null | "running" | "skipped" | "blocked" | "completed" | "failed"

@@ -20,12 +20,14 @@ export const GET = withLogging(async (request: NextRequest) => {
   const pageSize = Math.min(50, Math.max(1, parseInt(request.nextUrl.searchParams.get("pageSize") || "10", 10)));
   const hasResumes = request.nextUrl.searchParams.get("hasResumes") === "true";
   const excludeApplied = request.nextUrl.searchParams.get("excludeApplied") === "true";
+  const onlyApplied = request.nextUrl.searchParams.get("onlyApplied") === "true";
   const excludeNoSponsorship = request.nextUrl.searchParams.get("excludeNoSponsorship") === "true";
   const skip = (page - 1) * pageSize;
 
   const where: Record<string, unknown> = {};
   if (hasResumes) where.resumes = { some: {} };
   if (excludeApplied) where.applied = false;
+  if (onlyApplied) where.applied = true;
   if (excludeNoSponsorship) where.sponsorship = { not: "unavailable" };
 
   const [jobs, total] = await Promise.all([
