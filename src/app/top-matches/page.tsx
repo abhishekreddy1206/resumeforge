@@ -411,61 +411,63 @@ export default function TopMatchesPage() {
             </p>
           </div>
 
-          {/* Callback received — top */}
-          {callbackJobs.length > 0 && (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-px flex-1 bg-border" />
-                <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
-                  <PhoneCall className="w-3 h-3 inline mr-1 text-amber-600 dark:text-amber-400" />
-                  Callback received · {callbackJobs.length}
-                </p>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-              <div className="space-y-2" ref={listRef}>
-                {callbackJobs.map(({ job, score }, idx) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    score={score}
-                    idx={idx}
-                    togglingId={togglingId}
-                    togglingCallbackId={togglingCallbackId}
-                    toggleApplied={toggleApplied}
-                    toggleCallback={toggleCallback}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+          <div ref={listRef}>
+            {/* Callback received — top */}
+            {callbackJobs.length > 0 && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-px flex-1 bg-border" />
+                  <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
+                    <PhoneCall className="w-3 h-3 inline mr-1 text-amber-600 dark:text-amber-400" />
+                    Callback received · {callbackJobs.length}
+                  </p>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <div className="space-y-2">
+                  {callbackJobs.map(({ job, score }, idx) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      score={score}
+                      idx={idx}
+                      togglingId={togglingId}
+                      togglingCallbackId={togglingCallbackId}
+                      toggleApplied={toggleApplied}
+                      toggleCallback={toggleCallback}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
-          {/* Awaiting response */}
-          {awaitingJobs.length > 0 && (
-            <>
-              <div className={cn("flex items-center gap-3 mb-4", callbackJobs.length > 0 && "mt-10")}>
-                <div className="h-px flex-1 bg-border" />
-                <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
-                  <CheckCircle2 className="w-3 h-3 inline mr-1 text-emerald-600 dark:text-emerald-400" />
-                  Awaiting response · {awaitingJobs.length}
-                </p>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-              <div className="space-y-2">
-                {awaitingJobs.map(({ job, score }, idx) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    score={score}
-                    idx={idx}
-                    togglingId={togglingId}
-                    togglingCallbackId={togglingCallbackId}
-                    toggleApplied={toggleApplied}
-                    toggleCallback={toggleCallback}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+            {/* Awaiting response */}
+            {awaitingJobs.length > 0 && (
+              <>
+                <div className={cn("flex items-center gap-3 mb-4", callbackJobs.length > 0 && "mt-10")}>
+                  <div className="h-px flex-1 bg-border" />
+                  <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
+                    <CheckCircle2 className="w-3 h-3 inline mr-1 text-emerald-600 dark:text-emerald-400" />
+                    Awaiting response · {awaitingJobs.length}
+                  </p>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <div className="space-y-2">
+                  {awaitingJobs.map(({ job, score }, idx) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      score={score}
+                      idx={idx}
+                      togglingId={togglingId}
+                      togglingCallbackId={togglingCallbackId}
+                      toggleApplied={toggleApplied}
+                      toggleCallback={toggleCallback}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </section>
       )}
     </div>
