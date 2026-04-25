@@ -15,14 +15,13 @@ export interface RankOptions {
   topicsPerCluster: number;
   totalLimit: number;
   alwaysRelevantMinJobs?: number; // default 3
-  coveredByGuideIds?: Set<string>; // downrank topics matched to existing guides
+  coveredByGuideIds?: Set<string>; // exclude topics already matched to a guide (any status)
 }
 
 const WEIGHTS = {
   categoryJobCount: 1.0,
   gapOverlap: 5.0,
   alwaysRelevant: 2.0,
-  guidedPenalty: 3.0,
 };
 
 function normalizeGapSet(gaps: Set<string>): Set<string> {
@@ -55,12 +54,11 @@ export function rankTopicsForClusters(
       const alwaysHit = !!topic.alwaysRelevant && clusterJobCount >= minAlways;
       if (!hasGap && !alwaysHit) continue;
 
-      const covered = options.coveredByGuideIds?.has(topic.id) ?? false;
+      if (options.coveredByGuideIds?.has(topic.id)) continue;
       const relevance =
         clusterJobCount * WEIGHTS.categoryJobCount +
         matchedGaps.length * WEIGHTS.gapOverlap +
-        (alwaysHit ? WEIGHTS.alwaysRelevant : 0) -
-        (covered ? WEIGHTS.guidedPenalty : 0);
+        (alwaysHit ? WEIGHTS.alwaysRelevant : 0);
 
       allRanked.push({
         clusterId: cluster.id,

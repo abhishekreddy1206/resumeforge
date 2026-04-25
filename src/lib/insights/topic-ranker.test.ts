@@ -66,30 +66,21 @@ test("ranker is deterministic under different input cluster orders", () => {
   );
 });
 
-test("ranker downranks topics already covered by an existing guide", () => {
-  // Two clusters with slightly different job counts so that without penalty,
-  // ai-rag-advanced (alwaysRelevant, ai-engineering, 5 jobs) scores 7 and ranks above
-  // ml-finetuning-modern (alwaysRelevant, ml-engineering, 4 jobs) which scores 6.
-  // With penalty on ai-rag-advanced, its score drops to 4, below ml-finetuning at 6.
+test("ranker excludes topics already covered by an existing guide", () => {
   const clusters = [
     { id: "ai-engineering", jobs: new Array(5).fill(0).map((_, i) => ({ id: `j${i}` })) },
     { id: "ml-engineering", jobs: new Array(4).fill(0).map((_, i) => ({ id: `m${i}` })) },
   ];
-  const withoutPenalty = rankTopicsForClusters(clusters, new Set(), {
-    topicsPerCluster: 10,
-    totalLimit: 20,
-  });
-  const withPenalty = rankTopicsForClusters(clusters, new Set(), {
+  const withExclusion = rankTopicsForClusters(clusters, new Set(), {
     topicsPerCluster: 10,
     totalLimit: 20,
     coveredByGuideIds: new Set(["ai-rag-advanced"]),
   });
-  const rank = (arr: typeof withoutPenalty, id: string) =>
+  const rank = (arr: typeof withExclusion, id: string) =>
     arr.findIndex((t) => t.topic.id === id);
-  // ai-rag-advanced should drop in rank (or disappear) under guidedPenalty.
-  assert.ok(
-    rank(withPenalty, "ai-rag-advanced") > rank(withoutPenalty, "ai-rag-advanced") ||
-      rank(withPenalty, "ai-rag-advanced") === -1,
-    "guidedPenalty should lower the rank of covered topics"
+  assert.equal(
+    rank(withExclusion, "ai-rag-advanced"),
+    -1,
+    "covered topics should be excluded from results"
   );
 });
