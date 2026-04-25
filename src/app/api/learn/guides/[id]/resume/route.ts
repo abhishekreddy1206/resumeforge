@@ -24,6 +24,22 @@ export async function POST(
       content._sectionStatuses ?? {},
     );
 
+    // Self-heal: pre-migration guides can land here with empty tracking but
+    // partially-generated content. Without inference, every eligibility check
+    // fails on undefined and retry becomes a permanent no-op. Reconstruct
+    // status per section from what's actually in the blob.
+    for (const section of content.sections) {
+      if (statuses[section.id] !== undefined) continue;
+      const hasCore = Boolean(section.explanation?.trim());
+      if (!hasCore) {
+        statuses[section.id] = "pending";
+      } else if (isSectionCurrentlyInteractive(section)) {
+        statuses[section.id] = "completed";
+      } else {
+        statuses[section.id] = "core_complete";
+      }
+    }
+
     // Only short-circuit when every section is genuinely completed — a
     // "published" guide with a residual failed/core_complete section must
     // still be retryable.
