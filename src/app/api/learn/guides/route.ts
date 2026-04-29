@@ -10,7 +10,7 @@ import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
 import { getGuideGenerationPercent } from "@/lib/learn-progress";
-import { parseTrackingColumn } from "@/lib/learn-guides";
+import { parseTrackingColumn, publishGuide } from "@/lib/learn-guides";
 
 const log = createLogger("guides");
 
@@ -41,30 +41,138 @@ export const GET = withLogging(async (request: NextRequest) => {
     orderBy: { updatedAt: "desc" },
   });
 
-  const result = guides.map((g) => {
-    let progressPercent = 0;
-    let failedSectionCount = 0;
-    let totalSectionCount = 0;
+  // Reconcile any guides whose status doesn't match their per-section state:
+  //  - "generating" with no active work → finalize self-healed (stranded)
+  //  - "published" with sections still missing content → falsely-published
+  //    (can occur if finalize ran when a section was wrongly counted as done,
+  //    e.g. an interactive failure that left status="core_complete" without
+  //    real core content). The detail page must never claim "Ready" while
+  //    sections render with empty quizzes/scenarios.
+  const reconcileCandidateIds = guides
+    .filter((g) => g.status === "generating" || g.status === "published")
+    .map((g) => g.id);
+
+  const activeJobCounts = new Map<string, number>();
+  if (reconcileCandidateIds.length > 0) {
+    const rows = await prisma.backgroundJob.groupBy({
+      by: ["entityId"],
+      where: {
+        entityType: "guide",
+        entityId: { in: reconcileCandidateIds },
+        status: { in: ["pending", "running"] },
+      },
+      _count: { _all: true },
+    });
+    for (const row of rows) {
+      if (row.entityId) activeJobCounts.set(row.entityId, row._count._all);
+    }
+  }
+
+  type ReconciledGuide = typeof guides[number] & {
+    _statuses: Record<string, SectionGenStatus>;
+    _sectionIds: string[];
+  };
+
+  const reconciled: ReconciledGuide[] = [];
+  for (const g of guides) {
+    let statuses: Record<string, SectionGenStatus> = {};
+    let sectionIds: string[] = [];
     try {
       const content = JSON.parse(g.content) as {
         sections?: Array<{ id: string }>;
         _sectionStatuses?: Record<string, SectionGenStatus>;
       };
-      // Guide.sectionStatuses (column) is the canonical per-section
-      // generation state — the worker updates it on every transition.
-      // content._sectionStatuses is a legacy mirror we no longer write, so
-      // fall back to it only for pre-migration guides.
-      const statuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
+      statuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
         g.sectionStatuses,
         content._sectionStatuses ?? {},
       );
-      const sectionIds = (content.sections ?? []).map((s) => s.id);
-      totalSectionCount = sectionIds.length;
-      failedSectionCount = sectionIds.filter((id) => statuses[id] === "failed").length;
-      progressPercent = getGuideGenerationPercent(sectionIds, statuses);
+      sectionIds = (content.sections ?? []).map((s) => s.id);
     } catch {
-      progressPercent = 0;
+      // malformed content JSON — leave statuses empty and skip reconcile
     }
+
+    const hasActiveWork = (activeJobCounts.get(g.id) ?? 0) > 0;
+    const eligibleForReconcile =
+      sectionIds.length > 0 &&
+      !hasActiveWork &&
+      (g.status === "generating" || g.status === "published");
+
+    if (eligibleForReconcile) {
+      const allCompleted = sectionIds.every((id) => statuses[id] === "completed");
+      const anyFailed = sectionIds.some((id) => statuses[id] === "failed");
+      const anyCoreComplete = sectionIds.some((id) => statuses[id] === "core_complete");
+      const failedCount = sectionIds.filter((id) => statuses[id] === "failed").length;
+      const totalCount = sectionIds.length;
+
+      try {
+        if (g.status === "generating" && allCompleted) {
+          const content = JSON.parse(g.content) as GuideContentStorage;
+          await publishGuide({
+            guideId: g.id,
+            version: g.version,
+            content,
+            changeDescription: "Initial guide generation",
+          });
+          (g as { status: string }).status = "published";
+          log.info("guide_reconciled_published", { guideId: g.id });
+        } else if (g.status === "generating" && (anyFailed || anyCoreComplete)) {
+          const errorMessage = anyFailed
+            ? `${failedCount} of ${totalCount} section${totalCount === 1 ? "" : "s"} failed. Retry to complete.`
+            : "Some sections are missing quizzes and scenarios. Retry to complete.";
+          await prisma.guide.update({
+            where: { id: g.id },
+            data: {
+              status: "incomplete",
+              lastAsyncError: errorMessage,
+              lastAsyncStage: "create_sections",
+            },
+          });
+          (g as { status: string }).status = "incomplete";
+          log.info("guide_reconciled_incomplete", {
+            guideId: g.id,
+            failedCount,
+            anyCoreComplete,
+          });
+        } else if (g.status === "published" && !allCompleted) {
+          // Guide claims published but has sections that aren't completed.
+          // Demote to "incomplete" so the list badge and resume retry show
+          // the truth. Never demote published guides that have all sections
+          // completed (the all-completed branch above leaves them alone).
+          const errorMessage = anyFailed
+            ? `${failedCount} of ${totalCount} section${totalCount === 1 ? "" : "s"} failed. Retry to complete.`
+            : "Some sections are missing content. Retry to complete.";
+          await prisma.guide.update({
+            where: { id: g.id },
+            data: {
+              status: "incomplete",
+              lastAsyncError: errorMessage,
+              lastAsyncStage: "create_sections",
+            },
+          });
+          (g as { status: string }).status = "incomplete";
+          log.info("guide_reconciled_published_to_incomplete", {
+            guideId: g.id,
+            failedCount,
+            anyCoreComplete,
+          });
+        }
+      } catch (err) {
+        log.error("guide_reconcile_failed", {
+          guideId: g.id,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    reconciled.push({ ...g, _statuses: statuses, _sectionIds: sectionIds });
+  }
+
+  const result = reconciled.map((g) => {
+    const totalSectionCount = g._sectionIds.length;
+    const failedSectionCount = g._sectionIds.filter((id) => g._statuses[id] === "failed").length;
+    const progressPercent = totalSectionCount > 0
+      ? getGuideGenerationPercent(g._sectionIds, g._statuses)
+      : 0;
     return {
       id: g.id,
       topic: g.topic,

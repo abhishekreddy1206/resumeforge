@@ -22,6 +22,7 @@ import {
   mergeTrackingError,
   mergeTrackingAttempts,
   parseTrackingColumn,
+  publishGuide,
 } from "@/lib/learn-guides";
 import { runAutoPipeline } from "@/lib/utils/auto-pipeline";
 import { createTaskLogger } from "@/lib/logger";
@@ -334,41 +335,11 @@ export async function handleGuideFinalize(job: JobRecord): Promise<void> {
 
   // 4. If publishing, save version in a transaction
   if (finalStatus === "published") {
-    const sourceRefs = await getGuideVersionSourceRefs(guideId);
-
-    await prisma.$transaction(async (tx) => {
-      await tx.guide.update({
-        where: { id: guideId },
-        data: {
-          content: JSON.stringify(content),
-          status: finalStatus,
-          lastAsyncError,
-          lastAsyncStage,
-        },
-      });
-
-      await tx.guideVersion.upsert({
-        where: {
-          guideId_version: {
-            guideId,
-            version: guide.version,
-          },
-        },
-        create: {
-          guideId,
-          version: guide.version,
-          content: JSON.stringify(content),
-          changeDescription: "Initial guide generation",
-          snapshotSemantics: "current_head",
-          sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
-        },
-        update: {
-          content: JSON.stringify(content),
-          changeDescription: "Initial guide generation",
-          snapshotSemantics: "current_head",
-          sourceRefs: serializeGuideVersionSourceRefs(sourceRefs),
-        },
-      });
+    await publishGuide({
+      guideId,
+      version: guide.version,
+      content,
+      changeDescription: "Initial guide generation",
     });
   } else {
     // Not publishing — just update status fields
@@ -605,7 +576,7 @@ export async function handleGuideRefineFinalize(job: JobRecord): Promise<void> {
   let failedCount = 0;
   for (const section of content.sections) {
     const status = statuses[section.id] || "pending";
-    if (status === "completed" || status === "core_complete") completedCount++;
+    if (status === "completed") completedCount++;
     if (status === "failed") failedCount++;
   }
   const wasPublished = guide.status === "published";

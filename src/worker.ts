@@ -180,13 +180,29 @@ async function mainLoop(): Promise<void> {
           const { prisma } = await import("@/lib/db");
           const guide = await prisma.guide.findUnique({
             where: { id: payload.guideId },
-            select: { sectionStatuses: true, sectionErrors: true },
+            select: { content: true, sectionStatuses: true, sectionErrors: true },
           });
           if (guide) {
             const { mergeTrackingStatus, mergeTrackingError } = await import("@/lib/learn-guides");
-            // Phase-aware: interactive failures keep core content visible
+            // Phase-aware: interactive failures keep core content visible —
+            // BUT only when core content actually exists. If the section has
+            // no explanation (e.g. its core job already exhausted retries),
+            // marking it core_complete would lie about the content and let
+            // the finalize handler publish a blank section.
             const isInteractiveJob = job.type.includes("interactive");
-            const failStatus = isInteractiveJob ? "core_complete" : "failed";
+            let hasCoreContent = false;
+            if (isInteractiveJob) {
+              try {
+                const parsed = JSON.parse(guide.content) as {
+                  sections?: Array<{ id: string; explanation?: string }>;
+                };
+                const section = parsed.sections?.find((s) => s.id === sectionId);
+                hasCoreContent = Boolean(section?.explanation?.trim());
+              } catch {
+                hasCoreContent = false;
+              }
+            }
+            const failStatus = isInteractiveJob && hasCoreContent ? "core_complete" : "failed";
             await prisma.guide.update({
               where: { id: payload.guideId },
               data: {

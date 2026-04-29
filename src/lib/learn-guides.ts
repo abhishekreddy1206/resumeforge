@@ -1,3 +1,8 @@
+import { prisma } from "@/lib/db";
+import {
+  getGuideVersionSourceRefs,
+  serializeGuideVersionSourceRefs,
+} from "@/lib/learn-sources";
 import type { GuideContentStorage, GuideGenerationState, SectionGenStatus } from "@/lib/claude";
 
 export interface GuideGenerationSnapshot {
@@ -21,6 +26,12 @@ export function ensureGuideContentTracking(
 /**
  * Derive generation snapshot from column-based tracking data.
  * Avoids loading and parsing the entire content blob.
+ *
+ * Completion semantics: `generationState === "complete"` iff every section is
+ * `"completed"`. Half-finished states (`core_complete`, `generating_interactive`,
+ * `generating`, `pending`, `refining`) are explicitly NOT counted as done — a
+ * `core_complete` section has core text but no quizzes/scenarios yet, so a
+ * guide containing one is not ready to publish.
  */
 export function deriveGuideGenerationSnapshotFromColumns(
   sectionIds: string[],
@@ -29,12 +40,9 @@ export function deriveGuideGenerationSnapshotFromColumns(
 ): GuideGenerationSnapshot {
   const totalCount = sectionIds.length;
   const allStatuses = sectionIds.map((id) => statuses[id] || "pending");
-  const completedCount = allStatuses.filter(
-    (s) => s === "completed" || s === "core_complete"
-  ).length;
+  const completedCount = allStatuses.filter((s) => s === "completed").length;
   const remainingCount = allStatuses.filter(
-    (s) => s === "pending" || s === "generating" || s === "failed"
-      || s === "refining" || s === "generating_interactive"
+    (s) => s !== "completed" && s !== "failed"
   ).length;
   const failedSectionIds = sectionIds.filter((id) => statuses[id] === "failed");
   const hasRunningWork = allStatuses.some(
@@ -43,9 +51,7 @@ export function deriveGuideGenerationSnapshotFromColumns(
   );
 
   let generationState: GuideGenerationState = "running";
-  if (persistedStatus === "published" && completedCount === totalCount) {
-    generationState = "complete";
-  } else if (completedCount === totalCount && totalCount > 0) {
+  if (completedCount === totalCount && totalCount > 0) {
     generationState = "complete";
   } else if (failedSectionIds.length > 0 && !hasRunningWork) {
     generationState = "blocked";
@@ -164,4 +170,64 @@ export function mergeTrackingAttempts(
   const attempts = parseTrackingColumn<Record<string, number>>(columnValue, {});
   attempts[sectionId] = (attempts[sectionId] || 0) + increment;
   return JSON.stringify(attempts);
+}
+
+// ---------------------------------------------------------------------------
+// Publish path — shared between worker finalize and GET reconciler
+// ---------------------------------------------------------------------------
+
+/**
+ * Transactionally promote a guide to "published":
+ *  1. Guide.status = "published", clear lastAsyncError/Stage, overwrite content
+ *  2. Upsert GuideVersion at guide.version with current_head snapshot semantics
+ *
+ * Called by `handleGuideFinalize` when all sections finish, and by the GET
+ * /api/learn/guides reconciler when it discovers a guide stranded at
+ * status='generating' with every section completed and no active jobs.
+ */
+export async function publishGuide(args: {
+  guideId: string;
+  version: number;
+  content: GuideContentStorage;
+  changeDescription: string;
+}): Promise<void> {
+  const { guideId, version, content, changeDescription } = args;
+  const sourceRefs = await getGuideVersionSourceRefs(guideId);
+  const serializedContent = JSON.stringify(content);
+  const serializedSourceRefs = serializeGuideVersionSourceRefs(sourceRefs);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.guide.update({
+      where: { id: guideId },
+      data: {
+        content: serializedContent,
+        status: "published",
+        lastAsyncError: null,
+        lastAsyncStage: null,
+      },
+    });
+
+    await tx.guideVersion.upsert({
+      where: {
+        guideId_version: {
+          guideId,
+          version,
+        },
+      },
+      create: {
+        guideId,
+        version,
+        content: serializedContent,
+        changeDescription,
+        snapshotSemantics: "current_head",
+        sourceRefs: serializedSourceRefs,
+      },
+      update: {
+        content: serializedContent,
+        changeDescription,
+        snapshotSemantics: "current_head",
+        sourceRefs: serializedSourceRefs,
+      },
+    });
+  });
 }
