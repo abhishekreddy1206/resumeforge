@@ -60,7 +60,7 @@ export const POST = withLogging(async (
   const enqueued = await enqueueJob(
     "auto-pipeline",
     { jobId },
-    { entityId: jobId, entityType: "job", maxAttempts: 2 }
+    { entityId: jobId, entityType: "job", maxAttempts: 3 }
   );
 
   return NextResponse.json(

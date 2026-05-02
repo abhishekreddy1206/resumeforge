@@ -272,7 +272,7 @@ Rules for locationMatch:
           enqueueJob(
             "auto-pipeline",
             { jobId: created.id },
-            { entityId: created.id, entityType: "job", maxAttempts: 2 }
+            { entityId: created.id, entityType: "job", maxAttempts: 3 }
           ).catch((enqueueErr) => {
             log.error("auto_pipeline_enqueue_failed", {
               jobId: created.id,

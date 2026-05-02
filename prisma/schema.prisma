@@ -182,6 +182,7 @@ model Job {
   pipelineError     String?   // error message or blocker codes
   pipelineStartedAt DateTime?
   pipelineEndedAt   DateTime?
+  pipelineCheckpoint String?  // JSON — { fingerprint, stages: { match, plan, resumeData, evaluation } } for resumable v2 build
   createdAt      DateTime @default(now())
 
   resumes              Resume[]

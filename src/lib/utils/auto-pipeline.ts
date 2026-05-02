@@ -8,10 +8,18 @@ import {
   RESUME_QUALITY_SCORE_VERSION,
   buildJobAnalysisFromRecord,
   buildResumeQualityVersion,
+  type ResumeBuildCheckpoint,
 } from "@/lib/resume-quality";
 import { safeJsonParse } from "@/lib/utils/json";
 import { serializeProfile } from "@/lib/utils/profile-diff";
 import { getAppSettings } from "@/lib/app-settings";
+import {
+  clearCheckpoint,
+  computeCheckpointFingerprint,
+  isTransientPipelineError,
+  readValidCheckpoint,
+  writeStageCheckpoint,
+} from "@/lib/utils/pipeline-checkpoint";
 
 const sanitize = (value: string) =>
   value.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase();
@@ -97,28 +105,47 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     resumeSynonyms: string[];
   }>;
 
-  let match;
-  try {
-    match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
-      model: job.aiModel,
-    });
-  } catch (err) {
-    // Retry once for transient API failures (stream timeout, etc.)
-    task.step("match_retry", { error: String(err) });
+  const fingerprint = computeCheckpointFingerprint({
+    profileSnapshot: profileForMatch,
+    jobAnalysis,
+    aiModel: job.aiModel,
+    qualityVersion: RESUME_QUALITY_SCORE_VERSION,
+  });
+  const checkpoint = readValidCheckpoint(job.pipelineCheckpoint, fingerprint);
+
+  let match: Awaited<ReturnType<typeof matchProfileToJob>>;
+  if (checkpoint?.stages.match?.data) {
+    match = checkpoint.stages.match.data as unknown as Awaited<ReturnType<typeof matchProfileToJob>>;
+    task.step("match_skipped_from_checkpoint", { score: match.overallScore });
+  } else {
     try {
       match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
         model: job.aiModel,
       });
-    } catch (retryErr) {
-      task.fail(retryErr);
-      await setPipelineResult(
-        jobId,
-        "failed",
-        "match",
-        retryErr instanceof Error ? retryErr.message : String(retryErr)
-      );
-      return;
+    } catch (err) {
+      // Retry once inline for transient API failures (stream timeout, etc.).
+      // If both the inline retry and this attempt fail with a transient error,
+      // re-throw so the worker's failJob → BackgroundJob retry path engages
+      // (with the already-persisted checkpoint preserved).
+      task.step("match_retry", { error: String(err) });
+      try {
+        match = await matchProfileToJob(profileForMatch, jobAnalysis, terminologyMap, {
+          model: job.aiModel,
+        });
+      } catch (retryErr) {
+        task.fail(retryErr);
+        if (isTransientPipelineError(retryErr)) throw retryErr;
+        await setPipelineResult(
+          jobId,
+          "failed",
+          "match",
+          retryErr instanceof Error ? retryErr.message : String(retryErr)
+        );
+        return;
+      }
     }
+    await writeStageCheckpoint(jobId, "match", match, fingerprint);
+    task.step("match_complete", { score: match.overallScore });
   }
 
   await prisma.job.update({
@@ -129,12 +156,11 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     },
   });
 
-  task.step("match_complete", { score: match.overallScore });
-
   try {
     if (match.overallScore < settings.matchScoreFloor) {
       task.step("below_threshold", { score: match.overallScore, threshold: settings.matchScoreFloor });
       await setPipelineResult(jobId, "skipped", "match", `below_match_threshold:${match.overallScore}`);
+      await clearCheckpoint(jobId);
       return;
     }
 
@@ -142,11 +168,28 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
       .update({ where: { id: jobId }, data: { pipelineStage: "build" } })
       .catch(() => {});
 
+    const buildCheckpoint: ResumeBuildCheckpoint = {
+      plan: checkpoint?.stages.plan?.data,
+      resumeData: checkpoint?.stages.resumeData?.data,
+      evaluation: checkpoint?.stages.evaluation?.data,
+    };
+    if (buildCheckpoint.plan || buildCheckpoint.resumeData || buildCheckpoint.evaluation) {
+      task.step("build_resuming_from_checkpoint", {
+        plan: Boolean(buildCheckpoint.plan),
+        resumeData: Boolean(buildCheckpoint.resumeData),
+        evaluation: Boolean(buildCheckpoint.evaluation),
+      });
+    }
+
     const build = await buildResumeQualityVersion({
       profile: profile as unknown as Record<string, unknown>,
       jobAnalysis,
       matchResult: { ...match },
       model: job.aiModel,
+      checkpoint: buildCheckpoint,
+      onStageComplete: async (stage, value) => {
+        await writeStageCheckpoint(jobId, stage, value, fingerprint);
+      },
     });
 
     if (build.hardBlockers.length > 0 || !build.optimizationPlan || !build.resumeData || !build.evaluation) {
@@ -160,6 +203,9 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         build.blockedStage ?? "build",
         JSON.stringify(build.hardBlockers.map((entry) => entry.code))
       );
+      // Terminal: validators won't change between attempts on identical inputs.
+      // Clear so any future re-attempt (after profile/JD edit) starts fresh.
+      await clearCheckpoint(jobId);
       return;
     }
 
@@ -174,6 +220,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         "quality_gate",
         `score:${build.evaluation.overallScore}`
       );
+      await clearCheckpoint(jobId);
       return;
     }
 
@@ -204,6 +251,7 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         "quality_gate",
         `regression:prev=${previousV2Version.score},new=${build.evaluation.overallScore},delta=${delta}`
       );
+      await clearCheckpoint(jobId);
       return;
     }
 
@@ -264,8 +312,15 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
         qualityScore: build.evaluation.overallScore,
       });
       await setPipelineResult(jobId, "completed", "pdf");
+      // Success: artifact is now in ProfileVersion + Resume; checkpoint
+      // bundle can go away.
+      await clearCheckpoint(jobId);
     } catch (pdfError) {
       task.fail(pdfError, { phase: "pdf_generation" });
+      // PDF generation is local (no Claude), so a failure here is unlikely
+      // to be transient in the same sense — but propagate just in case
+      // (e.g. transient FS error) so the worker can retry.
+      if (isTransientPipelineError(pdfError)) throw pdfError;
       await setPipelineResult(
         jobId,
         "failed",
@@ -275,6 +330,10 @@ export async function runAutoPipeline(jobId: string): Promise<void> {
     }
   } catch (error) {
     task.fail(error);
+    // Re-throw transient errors so the worker's failJob → BackgroundJob retry
+    // mechanism kicks in; the persisted checkpoint will let the next attempt
+    // skip stages that already completed.
+    if (isTransientPipelineError(error)) throw error;
     await setPipelineResult(
       jobId,
       "failed",

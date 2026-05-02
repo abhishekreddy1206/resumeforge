@@ -12,6 +12,7 @@ import type {
 } from "@/lib/types";
 import { safeJsonParse } from "@/lib/utils/json";
 import { createLogger } from "@/lib/logger";
+import { isTransientPipelineError } from "@/lib/utils/pipeline-checkpoint";
 
 const log = createLogger("resume-quality");
 const QUALITY_EVALUATION_VERSION = 2;
@@ -770,23 +771,50 @@ function formatValidationFeedback(issues: ResumeValidationIssue[]): string {
     .join("\n");
 }
 
+export interface ResumeBuildCheckpoint {
+  plan?: ResumeOptimizationPlan;
+  resumeData?: ResumeData;
+  evaluation?: ResumeArtifactEvaluation;
+}
+
+export type ResumeBuildStage = "plan" | "resumeData" | "evaluation";
+
 export async function buildResumeQualityVersion(params: {
   profile: Record<string, unknown>;
   jobAnalysis: JobAnalysisData;
   matchResult: Record<string, unknown>;
   model?: string;
+  checkpoint?: ResumeBuildCheckpoint;
+  onStageComplete?: (stage: ResumeBuildStage, value: unknown) => Promise<void> | void;
 }): Promise<ResumeBuildResult> {
   const sourceSnapshot = createSourceProfileSnapshot(params.profile);
+  const checkpoint = params.checkpoint ?? {};
+  const emit = async (stage: ResumeBuildStage, value: unknown) => {
+    if (!params.onStageComplete) return;
+    try {
+      await params.onStageComplete(stage, value);
+    } catch (err) {
+      // Checkpoint persistence failures must not block the build itself —
+      // the pipeline can still finish; we just lose resumability for this run.
+      log.error("checkpoint_persist_failed", { stage, error: err });
+    }
+  };
 
-  let optimizationPlan = await planResumeOptimization(
-    sourceSnapshot,
-    params.jobAnalysis,
-    params.matchResult,
-    { model: params.model }
-  );
+  let optimizationPlan: ResumeOptimizationPlan;
+  if (checkpoint.plan) {
+    optimizationPlan = checkpoint.plan;
+  } else {
+    optimizationPlan = await planResumeOptimization(
+      sourceSnapshot,
+      params.jobAnalysis,
+      params.matchResult,
+      { model: params.model }
+    );
+  }
 
   let planIssues = validateOptimizationPlan(optimizationPlan, sourceSnapshot);
   if (planIssues.some((entry) => entry.severity === "hard")) {
+    // Cached plan failed validation — discard it and re-plan with feedback.
     optimizationPlan = await planResumeOptimization(
       sourceSnapshot,
       params.jobAnalysis,
@@ -809,14 +837,21 @@ export async function buildResumeQualityVersion(params: {
       };
     }
   }
+  // Persist plan only if it came from a fresh Claude call this run.
+  if (!checkpoint.plan) await emit("plan", optimizationPlan);
 
-  let resumeData = await generateResumeFromPlan(
-    sourceSnapshot,
-    params.jobAnalysis,
-    params.matchResult,
-    optimizationPlan,
-    { model: params.model }
-  );
+  let resumeData: ResumeData;
+  if (checkpoint.resumeData) {
+    resumeData = checkpoint.resumeData;
+  } else {
+    resumeData = await generateResumeFromPlan(
+      sourceSnapshot,
+      params.jobAnalysis,
+      params.matchResult,
+      optimizationPlan,
+      { model: params.model }
+    );
+  }
 
   let resumeIssues = validateResumeData(resumeData, sourceSnapshot, optimizationPlan, params.jobAnalysis);
   if (resumeIssues.some((entry) => entry.severity === "hard")) {
@@ -843,27 +878,37 @@ export async function buildResumeQualityVersion(params: {
       };
     }
   }
+  if (!checkpoint.resumeData) await emit("resumeData", resumeData);
 
   let llmEvaluation: ResumeArtifactEvaluation;
-  try {
-    llmEvaluation = await evaluateResumeArtifact(
-      resumeData,
-      sourceSnapshot,
-      params.jobAnalysis,
-      params.matchResult,
-      optimizationPlan
-    );
-  } catch (err) {
-    log.error("evaluator_failed", { error: err });
-    return {
-      sourceSnapshot,
-      optimizationPlan,
-      resumeData,
-      evaluation: null,
-      hardBlockers: [],
-      warnings: [...planIssues, ...resumeIssues].filter((e) => e.severity === "soft"),
-      blockedStage: "evaluator",
-    };
+  if (checkpoint.evaluation) {
+    llmEvaluation = checkpoint.evaluation;
+  } else {
+    try {
+      llmEvaluation = await evaluateResumeArtifact(
+        resumeData,
+        sourceSnapshot,
+        params.jobAnalysis,
+        params.matchResult,
+        optimizationPlan
+      );
+    } catch (err) {
+      // Transient subprocess failures (CLI exit / timeout / token limit) must
+      // propagate so the worker's failJob → retry path can resume from the
+      // already-persisted plan + resumeData checkpoint.
+      if (isTransientPipelineError(err)) throw err;
+      log.error("evaluator_failed", { error: err });
+      return {
+        sourceSnapshot,
+        optimizationPlan,
+        resumeData,
+        evaluation: null,
+        hardBlockers: [],
+        warnings: [...planIssues, ...resumeIssues].filter((e) => e.severity === "soft"),
+        blockedStage: "evaluator",
+      };
+    }
+    await emit("evaluation", llmEvaluation);
   }
 
   const evaluation = finalizeResumeArtifactEvaluation(

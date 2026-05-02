@@ -161,7 +161,7 @@ export const POST = withLogging(async (request: NextRequest) => {
           enqueueJob(
             "auto-pipeline",
             { jobId: job.id },
-            { entityId: job.id, entityType: "job", maxAttempts: 2 }
+            { entityId: job.id, entityType: "job", maxAttempts: 3 }
           ).catch((enqueueErr) => {
             log.error("auto_pipeline_enqueue_failed", {
               jobId: job.id,

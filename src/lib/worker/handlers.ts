@@ -663,6 +663,19 @@ export async function handleAutoPipeline(job: JobRecord): Promise<void> {
   const { jobId } = payload;
   if (!jobId) throw new Error("auto-pipeline payload missing jobId");
   await runAutoPipeline(jobId);
+
+  // Defensive post-condition: runAutoPipeline must always reach a terminal
+  // pipelineStatus (completed | failed | blocked | skipped) or throw. If it
+  // returned with status still "running", a future code change has dropped
+  // a setPipelineResult call — surface that as a failure so the worker's
+  // failJob/retry path engages instead of silently marking the job complete.
+  const after = await prisma.job.findUnique({
+    where: { id: jobId },
+    select: { pipelineStatus: true },
+  });
+  if (after?.pipelineStatus === "running") {
+    throw new Error("pipeline_returned_without_terminal_status");
+  }
 }
 
 // ---------------------------------------------------------------------------
