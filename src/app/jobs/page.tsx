@@ -1663,6 +1663,7 @@ function JobsPageInner() {
 
   async function fetchJobs(p: number) {
     const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
+    params.set("excludeArchived", "true");
     if (hideApplied) params.set("excludeApplied", "true");
     if (hideNoSponsorship) params.set("excludeNoSponsorship", "true");
     const res = await fetch(`/api/jobs?${params}`);
@@ -1759,6 +1760,7 @@ function JobsPageInner() {
 
   useEffect(() => {
     const params = new URLSearchParams({ page: "1", pageSize: String(PAGE_SIZE) });
+    params.set("excludeArchived", "true");
     if (hideApplied) params.set("excludeApplied", "true");
     if (hideNoSponsorship) params.set("excludeNoSponsorship", "true");
     Promise.all([
@@ -1809,6 +1811,7 @@ function JobsPageInner() {
     const interval = setInterval(async () => {
       try {
         const pollParams = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+        pollParams.set("excludeArchived", "true");
         if (hideApplied) pollParams.set("excludeApplied", "true");
         if (hideNoSponsorship) pollParams.set("excludeNoSponsorship", "true");
         const res = await fetch(`/api/jobs?${pollParams}`);

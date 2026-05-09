@@ -24,6 +24,8 @@ export const GET = withLogging(async (request: NextRequest) => {
   const excludeNoSponsorship = request.nextUrl.searchParams.get("excludeNoSponsorship") === "true";
   const excludeRejected = request.nextUrl.searchParams.get("excludeRejected") === "true";
   const onlyRejected = request.nextUrl.searchParams.get("onlyRejected") === "true";
+  const excludeArchived = request.nextUrl.searchParams.get("excludeArchived") === "true";
+  const onlyArchived = request.nextUrl.searchParams.get("onlyArchived") === "true";
   const skip = (page - 1) * pageSize;
 
   const where: Record<string, unknown> = {};
@@ -33,6 +35,8 @@ export const GET = withLogging(async (request: NextRequest) => {
   if (excludeNoSponsorship) where.sponsorship = { not: "unavailable" };
   if (excludeRejected) where.rejected = false;
   if (onlyRejected) where.rejected = true;
+  if (excludeArchived) where.archived = false;
+  if (onlyArchived) where.archived = true;
 
   const [jobs, total] = await Promise.all([
     prisma.job.findMany({

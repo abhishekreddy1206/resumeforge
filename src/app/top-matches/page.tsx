@@ -59,7 +59,7 @@ export default function TopMatchesPage() {
       let page = 1;
       while (true) {
         const res = await fetch(
-          `/api/jobs?onlyApplied=true&excludeRejected=true&pageSize=50&page=${page}`,
+          `/api/jobs?onlyApplied=true&excludeRejected=true&excludeArchived=true&pageSize=50&page=${page}`,
         );
         if (!res.ok) break;
         const data = await res.json();

@@ -177,6 +177,8 @@ model Job {
   callbackAt       DateTime?
   rejected         Boolean   @default(false)
   rejectedAt       DateTime?
+  archived         Boolean   @default(false)
+  archivedAt       DateTime?
   coverLetter    String?  // JSON — cached generated cover letter (CoverLetterData)
   interviewPrep  String?  // JSON — cached STAR+R interview prep (InterviewPrep)
   pipelineStatus    String?   // null | "running" | "skipped" | "blocked" | "completed" | "failed"
