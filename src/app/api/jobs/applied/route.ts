@@ -18,7 +18,14 @@ export async function PATCH(request: NextRequest) {
       data: {
         applied,
         appliedAt: applied ? new Date() : null,
-        ...(applied ? {} : { callbackReceived: false, callbackAt: null }),
+        ...(applied
+          ? {}
+          : {
+              callbackReceived: false,
+              callbackAt: null,
+              rejected: false,
+              rejectedAt: null,
+            }),
       },
       select: {
         id: true,
@@ -26,6 +33,8 @@ export async function PATCH(request: NextRequest) {
         appliedAt: true,
         callbackReceived: true,
         callbackAt: true,
+        rejected: true,
+        rejectedAt: true,
       },
     });
 

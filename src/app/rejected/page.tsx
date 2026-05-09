@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
-  CheckCircle2,
   Inbox,
   PhoneCall,
+  XCircle,
 } from "lucide-react";
 import {
   JobCard,
@@ -43,15 +43,19 @@ function PageSkeleton() {
   );
 }
 
-export default function TopMatchesPage() {
+export default function RejectedPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [togglingCallbackId, setTogglingCallbackId] = useState<string | null>(null);
   const [togglingRejectedId, setTogglingRejectedId] = useState<string | null>(null);
-  const [callbackVisible, setCallbackVisible] = useState(PAGE_SIZE);
-  const [awaitingVisible, setAwaitingVisible] = useState(PAGE_SIZE);
-  const listRef = useScrollReveal<HTMLDivElement>([jobs, callbackVisible, awaitingVisible]);
+  const [postCallbackVisible, setPostCallbackVisible] = useState(PAGE_SIZE);
+  const [silentVisible, setSilentVisible] = useState(PAGE_SIZE);
+  const listRef = useScrollReveal<HTMLDivElement>([
+    jobs,
+    postCallbackVisible,
+    silentVisible,
+  ]);
 
   async function fetchJobs() {
     try {
@@ -59,7 +63,7 @@ export default function TopMatchesPage() {
       let page = 1;
       while (true) {
         const res = await fetch(
-          `/api/jobs?onlyApplied=true&excludeRejected=true&pageSize=50&page=${page}`,
+          `/api/jobs?onlyApplied=true&onlyRejected=true&pageSize=50&page=${page}`,
         );
         if (!res.ok) break;
         const data = await res.json();
@@ -70,8 +74,8 @@ export default function TopMatchesPage() {
         if (page > 20) break; // safety cap: 1000 jobs
       }
       setJobs(all);
-      setCallbackVisible(PAGE_SIZE);
-      setAwaitingVisible(PAGE_SIZE);
+      setPostCallbackVisible(PAGE_SIZE);
+      setSilentVisible(PAGE_SIZE);
     } finally {
       setLoading(false);
     }
@@ -90,20 +94,9 @@ export default function TopMatchesPage() {
         body: JSON.stringify({ jobId, applied: !current }),
       });
       if (!res.ok) throw new Error("Failed to update");
-      if (!current) {
-        // marking applied — keep in list
-        setJobs((prev) =>
-          prev.map((j) =>
-            j.id === jobId
-              ? { ...j, applied: true, appliedAt: new Date().toISOString() }
-              : j
-          )
-        );
-      } else {
-        // un-applying — drop from list; server also cleared callback + rejected
-        setJobs((prev) => prev.filter((j) => j.id !== jobId));
-      }
-      toast.success(!current ? "Marked as applied" : "Unmarked");
+      // un-applying clears rejected too — drop from this page
+      setJobs((prev) => prev.filter((j) => j.id !== jobId));
+      toast.success("Unmarked");
     } catch {
       toast.error("Failed to update applied status");
     } finally {
@@ -112,6 +105,8 @@ export default function TopMatchesPage() {
   }
 
   async function toggleCallback(jobId: string, current: boolean) {
+    // No-op surface here: the JobCard hides the callback button on /rejected.
+    // Keeping the handler so the component contract is satisfied.
     setTogglingCallbackId(jobId);
     try {
       const res = await fetch("/api/jobs/callback", {
@@ -131,10 +126,9 @@ export default function TopMatchesPage() {
                 callbackReceived: !current,
                 callbackAt: !current ? new Date().toISOString() : undefined,
               }
-            : j
-        )
+            : j,
+        ),
       );
-      toast.success(!current ? "Callback logged" : "Callback cleared");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update callback");
     } finally {
@@ -154,9 +148,9 @@ export default function TopMatchesPage() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to update");
       }
-      // marking rejected from /top-matches — drop from list (it now lives on /rejected)
+      // restoring (current=true → rejected=false) drops from this page
       setJobs((prev) => prev.filter((j) => j.id !== jobId));
-      toast.success(!current ? "Marked rejected" : "Restored");
+      toast.success(current ? "Restored to shortlist" : "Marked rejected");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update");
     } finally {
@@ -164,27 +158,20 @@ export default function TopMatchesPage() {
     }
   }
 
-  const appliedJobs = jobs
-    .filter((j) => j.applied)
+  const rejectedJobs = jobs
+    .filter((j) => j.rejected)
     .map((job) => ({ job, score: getMatchScore(job) }))
     .sort((a, b) => {
-      const at = a.job.appliedAt ? new Date(a.job.appliedAt).getTime() : new Date(a.job.createdAt).getTime();
-      const bt = b.job.appliedAt ? new Date(b.job.appliedAt).getTime() : new Date(b.job.createdAt).getTime();
+      const at = a.job.rejectedAt ? new Date(a.job.rejectedAt).getTime() : 0;
+      const bt = b.job.rejectedAt ? new Date(b.job.rejectedAt).getTime() : 0;
       return bt - at;
     });
 
-  const callbackJobs = appliedJobs
-    .filter((t) => t.job.callbackReceived)
-    .sort((a, b) => {
-      const at = a.job.callbackAt ? new Date(a.job.callbackAt).getTime() : 0;
-      const bt = b.job.callbackAt ? new Date(b.job.callbackAt).getTime() : 0;
-      return bt - at;
-    });
-  const awaitingJobs = appliedJobs.filter((t) => !t.job.callbackReceived);
+  const postCallbackJobs = rejectedJobs.filter((t) => t.job.callbackReceived);
+  const silentJobs = rejectedJobs.filter((t) => !t.job.callbackReceived);
 
-  const appliedCount = appliedJobs.length;
-  const callbackCount = callbackJobs.length;
-  const responseRate = appliedCount > 0 ? Math.round((callbackCount / appliedCount) * 100) : 0;
+  const rejectedCount = rejectedJobs.length;
+  const hadCallbackCount = postCallbackJobs.length;
 
   if (loading) return <PageSkeleton />;
 
@@ -193,7 +180,7 @@ export default function TopMatchesPage() {
       {/* Header */}
       <section className="border-b border-border pb-10 pt-2 anim-fade-up">
         <p className="text-muted-foreground mb-6" style={monoStyle}>
-          Shortlist · Applied Jobs
+          Shortlist · Rejected
         </p>
         <h1
           className="text-foreground leading-tight mb-3"
@@ -204,14 +191,14 @@ export default function TopMatchesPage() {
             fontWeight: 300,
           }}
         >
-          Your <span className="text-primary">Applied</span> Roles
+          Rejected <span className="text-primary">Roles</span>
         </h1>
         <p className="text-muted-foreground max-w-lg leading-relaxed text-sm">
-          All roles you&apos;ve applied to. Mark the ones where you heard back to track your funnel — or mark rejections to keep this view focused.
+          Roles that didn&apos;t move forward. Use these to reflect on what to improve — the closest losses are the most informative.
         </p>
       </section>
 
-      {appliedCount === 0 ? (
+      {rejectedCount === 0 ? (
         <section className="pt-16 pb-20 text-center anim-fade-up">
           <Inbox className="w-10 h-10 mx-auto text-muted-foreground/30 mb-4" />
           <p
@@ -223,34 +210,34 @@ export default function TopMatchesPage() {
               fontWeight: 400,
             }}
           >
-            No applied jobs yet
+            No rejections yet — keep going
           </p>
           <p className="text-muted-foreground text-sm max-w-md mx-auto">
-            Mark jobs applied from the Jobs page to track them here and log callbacks as they come in.
+            Mark a job rejected from the Shortlist when you hear no, and it&apos;ll show up here for reflection.
           </p>
         </section>
       ) : (
         <section className="pt-8 anim-fade-up-2">
           <div className="flex items-center justify-between mb-5">
             <p className="text-muted-foreground" style={monoStyle}>
-              {appliedCount} active · {callbackCount} callback{callbackCount === 1 ? "" : "s"} · {responseRate}% response rate
+              {rejectedCount} rejected · {hadCallbackCount} reached callback stage
             </p>
           </div>
 
           <div ref={listRef}>
-            {/* Callback received — top */}
-            {callbackJobs.length > 0 && (
+            {/* Reached callback then rejected — highest-signal losses */}
+            {postCallbackJobs.length > 0 && (
               <>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-px flex-1 bg-border" />
                   <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
                     <PhoneCall className="w-3 h-3 inline mr-1 text-amber-600 dark:text-amber-400" />
-                    Callback received · {callbackJobs.length}
+                    Reached callback then rejected · {postCallbackJobs.length}
                   </p>
                   <div className="h-px flex-1 bg-border" />
                 </div>
                 <div className="space-y-2">
-                  {callbackJobs.slice(0, callbackVisible).map(({ job, score }, idx) => (
+                  {postCallbackJobs.slice(0, postCallbackVisible).map(({ job, score }, idx) => (
                     <JobCard
                       key={job.id}
                       job={job}
@@ -262,41 +249,43 @@ export default function TopMatchesPage() {
                       toggleApplied={toggleApplied}
                       toggleCallback={toggleCallback}
                       toggleRejected={toggleRejected}
+                      showCallbackButton={false}
+                      showAppliedButton={false}
                     />
                   ))}
                 </div>
-                {callbackVisible < callbackJobs.length && (
+                {postCallbackVisible < postCallbackJobs.length && (
                   <div className="flex justify-center mt-4">
                     <Button
                       variant="outline"
                       size="sm"
                       className="text-xs h-8"
                       onClick={() =>
-                        setCallbackVisible((v) =>
-                          Math.min(v + PAGE_SIZE, callbackJobs.length),
+                        setPostCallbackVisible((v) =>
+                          Math.min(v + PAGE_SIZE, postCallbackJobs.length),
                         )
                       }
                     >
-                      Show more ({callbackJobs.length - callbackVisible} remaining)
+                      Show more ({postCallbackJobs.length - postCallbackVisible} remaining)
                     </Button>
                   </div>
                 )}
               </>
             )}
 
-            {/* Awaiting response */}
-            {awaitingJobs.length > 0 && (
+            {/* Silent rejection */}
+            {silentJobs.length > 0 && (
               <>
-                <div className={cn("flex items-center gap-3 mb-4", callbackJobs.length > 0 && "mt-10")}>
+                <div className={cn("flex items-center gap-3 mb-4", postCallbackJobs.length > 0 && "mt-10")}>
                   <div className="h-px flex-1 bg-border" />
                   <p className="text-muted-foreground text-xs shrink-0" style={monoStyle}>
-                    <CheckCircle2 className="w-3 h-3 inline mr-1 text-emerald-600 dark:text-emerald-400" />
-                    Awaiting response · {awaitingJobs.length}
+                    <XCircle className="w-3 h-3 inline mr-1 text-red-600 dark:text-red-400" />
+                    Silent rejection · {silentJobs.length}
                   </p>
                   <div className="h-px flex-1 bg-border" />
                 </div>
                 <div className="space-y-2">
-                  {awaitingJobs.slice(0, awaitingVisible).map(({ job, score }, idx) => (
+                  {silentJobs.slice(0, silentVisible).map(({ job, score }, idx) => (
                     <JobCard
                       key={job.id}
                       job={job}
@@ -308,22 +297,24 @@ export default function TopMatchesPage() {
                       toggleApplied={toggleApplied}
                       toggleCallback={toggleCallback}
                       toggleRejected={toggleRejected}
+                      showCallbackButton={false}
+                      showAppliedButton={false}
                     />
                   ))}
                 </div>
-                {awaitingVisible < awaitingJobs.length && (
+                {silentVisible < silentJobs.length && (
                   <div className="flex justify-center mt-4">
                     <Button
                       variant="outline"
                       size="sm"
                       className="text-xs h-8"
                       onClick={() =>
-                        setAwaitingVisible((v) =>
-                          Math.min(v + PAGE_SIZE, awaitingJobs.length),
+                        setSilentVisible((v) =>
+                          Math.min(v + PAGE_SIZE, silentJobs.length),
                         )
                       }
                     >
-                      Show more ({awaitingJobs.length - awaitingVisible} remaining)
+                      Show more ({silentJobs.length - silentVisible} remaining)
                     </Button>
                   </div>
                 )}

@@ -22,6 +22,8 @@ export const GET = withLogging(async (request: NextRequest) => {
   const excludeApplied = request.nextUrl.searchParams.get("excludeApplied") === "true";
   const onlyApplied = request.nextUrl.searchParams.get("onlyApplied") === "true";
   const excludeNoSponsorship = request.nextUrl.searchParams.get("excludeNoSponsorship") === "true";
+  const excludeRejected = request.nextUrl.searchParams.get("excludeRejected") === "true";
+  const onlyRejected = request.nextUrl.searchParams.get("onlyRejected") === "true";
   const skip = (page - 1) * pageSize;
 
   const where: Record<string, unknown> = {};
@@ -29,6 +31,8 @@ export const GET = withLogging(async (request: NextRequest) => {
   if (excludeApplied) where.applied = false;
   if (onlyApplied) where.applied = true;
   if (excludeNoSponsorship) where.sponsorship = { not: "unavailable" };
+  if (excludeRejected) where.rejected = false;
+  if (onlyRejected) where.rejected = true;
 
   const [jobs, total] = await Promise.all([
     prisma.job.findMany({

@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/jobs", label: "Jobs" },
   { href: "/skills", label: "Skills" },
   { href: "/top-matches", label: "Shortlist" },
+  { href: "/rejected", label: "Rejected" },
   { href: "/learn", label: "Study" },
   { href: "/insights", label: "Market" },
   { href: "/versions", label: "Archive" },
