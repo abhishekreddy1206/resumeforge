@@ -20,7 +20,8 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Recommendations** — Store professional recommendations with recommender name, title, relationship, and optional LinkedIn URL.
 - **Batch Job Import** — Paste multiple job URLs at once; jobs are scraped and analyzed in parallel.
 - **Application Tracking** — Mark jobs as applied and track application dates directly in the jobs list.
-- **Top Matches** — Dedicated view of jobs where your profile scores above 75%, ranked by compatibility.
+- **Rejection Tracking** — Mark applied jobs as rejected; they move to a dedicated `/rejected` page split into "Reached callback then rejected" and "Silent rejection" sections. Restore a job to the shortlist with one click.
+- **Top Matches** — Dedicated view of jobs where your profile scores above 75%, ranked by compatibility. Rejected jobs are automatically excluded.
 - **Cross-Job Gap Analysis** — Aggregate gaps and leverage scores across all matched jobs to identify which skills to develop for maximum impact.
 - **Experience Discovery** — AI generates targeted questions based on your matched job gaps to surface forgotten or underrepresented experiences in your profile.
 - **Cover Letter Generation** — AI writes a tailored, structured cover letter for each job, grounded in your profile and the job description.
@@ -161,7 +162,8 @@ resumeforge/
     │   ├── profile/page.tsx            # Upload resume, enrich profile, chat editor, application settings
     │   ├── jobs/page.tsx               # Add/view job descriptions, match scoring, job chat
     │   ├── skills/page.tsx             # Skills dashboard
-    │   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility
+    │   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility; excludes rejected jobs
+    │   ├── rejected/page.tsx           # Rejected jobs: callback-then-rejected and silent rejection sections
     │   ├── generate/page.tsx           # Generate tailored resumes
     │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
     │   ├── insights/page.tsx           # Market insights: job clusters, demand patterns, gap analysis
@@ -198,7 +200,8 @@ resumeforge/
     │       │   ├── [id]/route.ts       # Single job detail (GET)
     │       │   ├── match/              # Profile-to-job compatibility scoring
     │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
-    │       │   ├── applied/            # Toggle job application status (applied/not applied)
+    │       │   ├── applied/            # Toggle job application status (applied/not applied); un-applying clears rejected state
+    │       │   ├── rejected/           # Toggle rejected status on an applied job; sets/clears rejectedAt
     │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
     │       │   ├── chat/               # Per-job resume advisory chat
     │       │   │   ├── apply-tips/     # Apply AI-suggested tips to profile
@@ -295,6 +298,8 @@ resumeforge/
     │   └── db.ts                      # Prisma client singleton
     ├── components/
     │   ├── nav-links.tsx              # App navigation
+    │   ├── jobs/
+    │   │   └── JobCard.tsx            # Shared job card component (used by /top-matches and /rejected); exports JobCard, Job type, getMatchScore, ScoreBadge, monoStyle
     │   ├── profile-chat-panel.tsx     # Conversational profile editor UI
     │   ├── job-chat-panel.tsx         # Per-job resume advisory chat UI
     │   ├── skills-chat-panel.tsx      # Conversational skills editor UI
@@ -364,7 +369,7 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, AI model selection |
+| `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, rejected status with timestamp, AI model selection |
 | `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with quality score, score delta, optional label, and optional v2 optimization plan and resume artifact |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
@@ -389,7 +394,7 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating (results cached on Job)
 6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
 7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
-8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied
+8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied; use the Reject button to move a job to `/rejected` once you hear back negatively; `/rejected` splits rejections into "Reached callback then rejected" and "Silent rejection" and lets you Restore a job to the shortlist
 9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
 10. **Versions** — Browse saved profile versions, compare quality scores, and generate resumes from any version
 11. **Learn** (optional) — Generate AI study guides on technical topics using the background worker (`npm run worker`); guides are built section-by-section asynchronously and can be refined with saved sources; follow learning paths and practice with interactive quizzes and scenarios
