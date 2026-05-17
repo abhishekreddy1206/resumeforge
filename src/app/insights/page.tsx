@@ -341,7 +341,12 @@ export default function InsightsPage() {
             <GapsTab analysis={data.gapAnalysis} clusters={data.clusters} />
           </TabsContent>
           <TabsContent value="study">
-            <StudyTab topics={data.learnTopics} realisticJobCount={meta.realisticJobs} clusters={data.clusters} />
+            <StudyTab
+              topics={data.learnTopics}
+              realisticJobCount={meta.realisticJobs}
+              clusters={data.clusters}
+              pendingClassificationCount={meta.pendingClassificationCount ?? 0}
+            />
           </TabsContent>
         </Tabs>
       </div>

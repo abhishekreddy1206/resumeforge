@@ -28,10 +28,12 @@ export function StudyTab({
   topics,
   realisticJobCount,
   clusters,
+  pendingClassificationCount,
 }: {
   topics: LearnTopic[];
   realisticJobCount: number;
   clusters: Cluster[];
+  pendingClassificationCount: number;
 }) {
   const clusterIndex = new Map(clusters.map((c, i) => [c.name, i]));
   const [generating, setGenerating] = useState<number | null>(null);
@@ -166,7 +168,15 @@ export function StudyTab({
         ))}
       </div>
 
-      {topics.length === 0 && (
+      {topics.length === 0 && pendingClassificationCount > 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          {pendingClassificationCount} job{pendingClassificationCount === 1 ? "" : "s"} still need
+          classification before study topics can surface. Use the{" "}
+          <strong className="text-foreground">Retry</strong> button at the top of the page.
+        </p>
+      )}
+
+      {topics.length === 0 && pendingClassificationCount === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
           No study topics needed — you&apos;re a strong match across all
           realistic targets.
