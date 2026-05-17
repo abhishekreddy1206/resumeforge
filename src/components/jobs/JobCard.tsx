@@ -19,6 +19,7 @@ import {
   XCircle,
   RotateCcw,
 } from "lucide-react";
+import type { RejectionReasonKey } from "@/lib/rejection-reasons";
 
 export interface Job {
   id: string;
@@ -32,6 +33,7 @@ export interface Job {
   callbackAt?: string;
   rejected?: boolean;
   rejectedAt?: string;
+  rejectionReason?: RejectionReasonKey | null;
   matchResult?: string;
   createdAt: string;
   resumes: Array<{ id: string; format: string; createdAt: string }>;
