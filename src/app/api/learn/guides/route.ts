@@ -10,7 +10,7 @@ import { createLogger } from "@/lib/logger";
 import { withLogging } from "@/lib/api-handler";
 import { enqueueJobs } from "@/lib/job-queue";
 import { getGuideGenerationPercent } from "@/lib/learn-progress";
-import { parseTrackingColumn, publishGuide } from "@/lib/learn-guides";
+import { deriveStatusesFromContent, parseTrackingColumn, publishGuide } from "@/lib/learn-guides";
 
 const log = createLogger("guides");
 
@@ -77,18 +77,48 @@ export const GET = withLogging(async (request: NextRequest) => {
   for (const g of guides) {
     let statuses: Record<string, SectionGenStatus> = {};
     let sectionIds: string[] = [];
+    let backfilledStatuses: Record<string, SectionGenStatus> | null = null;
     try {
-      const content = JSON.parse(g.content) as {
-        sections?: Array<{ id: string }>;
-        _sectionStatuses?: Record<string, SectionGenStatus>;
-      };
-      statuses = parseTrackingColumn<Record<string, SectionGenStatus>>(
+      const content = JSON.parse(g.content) as GuideContentStorage;
+      sectionIds = (content.sections ?? []).map((s) => s.id);
+
+      const fromColumn = parseTrackingColumn<Record<string, SectionGenStatus>>(
         g.sectionStatuses,
         content._sectionStatuses ?? {},
       );
-      sectionIds = (content.sections ?? []).map((s) => s.id);
+
+      // Legacy rows: tracking column was never populated but content was
+      // generated. Inspect the content shape to recover the truth so the
+      // reconciler and progress calc see an accurate picture.
+      if (Object.keys(fromColumn).length === 0 && sectionIds.length > 0) {
+        const derived = deriveStatusesFromContent(content);
+        if (Object.keys(derived).length > 0) {
+          statuses = derived;
+          backfilledStatuses = derived;
+        }
+      } else {
+        statuses = fromColumn;
+      }
     } catch {
       // malformed content JSON — leave statuses empty and skip reconcile
+    }
+
+    if (backfilledStatuses) {
+      try {
+        await prisma.guide.update({
+          where: { id: g.id },
+          data: { sectionStatuses: JSON.stringify(backfilledStatuses) },
+        });
+        log.info("guide_tracking_backfilled", {
+          guideId: g.id,
+          sectionCount: Object.keys(backfilledStatuses).length,
+        });
+      } catch (err) {
+        log.error("guide_tracking_backfill_failed", {
+          guideId: g.id,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
     }
 
     const hasActiveWork = (activeJobCounts.get(g.id) ?? 0) > 0;

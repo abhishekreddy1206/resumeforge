@@ -95,6 +95,33 @@ export function isSectionCurrentlyInteractive(section: {
     (section.keyTakeaways?.length ?? 0) > 0;
 }
 
+/**
+ * Derive per-section generation status by inspecting the content blob.
+ * Used as a fallback when Guide.sectionStatuses is missing (legacy rows
+ * created before tracking columns were reliably populated). Reading the
+ * content tells us what was actually generated, regardless of what the
+ * tracking columns claim.
+ *
+ *   completed     — explanation + quizzes + scenarios + takeaways all present
+ *   core_complete — explanation present, one or more interactive fields missing
+ *   pending       — explanation empty/whitespace
+ */
+export function deriveStatusesFromContent(
+  content: GuideContentStorage
+): Record<string, SectionGenStatus> {
+  const out: Record<string, SectionGenStatus> = {};
+  for (const s of content.sections ?? []) {
+    if (isSectionCurrentlyInteractive(s)) {
+      out[s.id] = "completed";
+    } else if (s.explanation?.trim()) {
+      out[s.id] = "core_complete";
+    } else {
+      out[s.id] = "pending";
+    }
+  }
+  return out;
+}
+
 export function statusLabel(status: SectionGenStatus): string {
   switch (status) {
     case "completed":
