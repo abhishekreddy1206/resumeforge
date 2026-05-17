@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { cn } from "@/lib/utils";
+import { RejectReasonModal } from "@/components/jobs/RejectReasonModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,6 +106,7 @@ export function JobCard({
 }: JobCardProps) {
   const hasCallback = !!job.callbackReceived;
   const isRejected = !!job.rejected;
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
   return (
     <div
       className={cn(
@@ -235,7 +237,13 @@ export function JobCard({
                   ? "bg-red-50 hover:bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-300 dark:border-red-800"
                   : "text-muted-foreground hover:text-red-700 hover:border-red-300 dark:hover:text-red-400 dark:hover:border-red-700"
               )}
-              onClick={() => toggleRejected(job.id, isRejected)}
+              onClick={() => {
+                if (isRejected) {
+                  toggleRejected(job.id, true);
+                } else {
+                  setRejectModalOpen(true);
+                }
+              }}
               disabled={togglingRejectedId === job.id}
               title={isRejected ? "Restore to shortlist" : "Mark as rejected"}
             >
@@ -273,6 +281,16 @@ export function JobCard({
           )}
         </div>
       </div>
+      <RejectReasonModal
+        open={rejectModalOpen}
+        onOpenChange={setRejectModalOpen}
+        jobTitle={job.title}
+        jobCompany={job.company}
+        currentReason={job.rejectionReason ?? null}
+        onSubmit={async (reason) => {
+          await toggleRejected(job.id, false, reason);
+        }}
+      />
     </div>
   );
 }
