@@ -21,6 +21,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import type { RejectionReasonKey } from "@/lib/rejection-reasons";
+import { RejectionReasonChip } from "@/components/jobs/RejectionReasonChip";
 
 export interface Job {
   id: string;
@@ -88,6 +89,8 @@ export interface JobCardProps {
   showCallbackButton?: boolean;
   showRejectButton?: boolean;
   showAppliedButton?: boolean;
+  showRejectionChip?: boolean;
+  onEditReason?: (job: Job) => void;
 }
 
 export function JobCard({
@@ -103,6 +106,8 @@ export function JobCard({
   showCallbackButton = true,
   showRejectButton = true,
   showAppliedButton = true,
+  showRejectionChip = false,
+  onEditReason,
 }: JobCardProps) {
   const hasCallback = !!job.callbackReceived;
   const isRejected = !!job.rejected;
@@ -137,6 +142,12 @@ export function JobCard({
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 font-semibold">
                 <XCircle className="w-2.5 h-2.5" /> Rejected
               </Badge>
+            )}
+            {isRejected && showRejectionChip && (
+              <RejectionReasonChip
+                reason={job.rejectionReason ?? null}
+                onEditClick={onEditReason ? () => onEditReason(job) : undefined}
+              />
             )}
             {job.sponsorship === "available" && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-sm gap-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">

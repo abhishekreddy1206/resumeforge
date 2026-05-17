@@ -12,7 +12,7 @@ import { REASON_COLORS } from "@/components/jobs/RejectionReasonChip";
 export type SummaryFilterValue = RejectionReasonKey | "unspecified" | null;
 
 export interface RejectionSummaryBarProps {
-  jobs: Array<{ rejectionReason: RejectionReasonKey | null | undefined }>;
+  jobs: Array<{ rejectionReason?: RejectionReasonKey | null }>;
   selectedReason: SummaryFilterValue;
   onSelectReason: (reason: SummaryFilterValue) => void;
 }

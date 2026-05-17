@@ -17,6 +17,12 @@ import {
   monoStyle,
   type Job,
 } from "@/components/jobs/JobCard";
+import {
+  RejectionSummaryBar,
+  type SummaryFilterValue,
+} from "@/components/jobs/RejectionSummaryBar";
+import type { RejectionReasonKey } from "@/lib/rejection-reasons";
+import { RejectReasonModal } from "@/components/jobs/RejectReasonModal";
 
 const PAGE_SIZE = 10;
 
@@ -51,6 +57,8 @@ export default function RejectedPage() {
   const [togglingRejectedId, setTogglingRejectedId] = useState<string | null>(null);
   const [postCallbackVisible, setPostCallbackVisible] = useState(PAGE_SIZE);
   const [silentVisible, setSilentVisible] = useState(PAGE_SIZE);
+  const [filterReason, setFilterReason] = useState<SummaryFilterValue>(null);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const listRef = useScrollReveal<HTMLDivElement>([
     jobs,
     postCallbackVisible,
@@ -158,8 +166,37 @@ export default function RejectedPage() {
     }
   }
 
-  const rejectedJobs = jobs
-    .filter((j) => j.rejected)
+  async function submitEditedReason(reason: RejectionReasonKey) {
+    if (!editingJob) return;
+    // PATCH with rejected:true on an already-rejected job is treated as an
+    // edit by the API — it updates rejectionReason and leaves rejectedAt alone.
+    const res = await fetch("/api/jobs/rejected", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: editingJob.id, rejected: true, reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Failed to update reason");
+    }
+    const updated = await res.json();
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === editingJob.id ? { ...j, rejectionReason: updated.rejectionReason } : j,
+      ),
+    );
+    toast.success("Reason updated");
+  }
+
+  const allRejected = jobs.filter((j) => j.rejected);
+  const filteredRejected = filterReason
+    ? allRejected.filter((j) =>
+        filterReason === "unspecified"
+          ? !j.rejectionReason
+          : j.rejectionReason === filterReason,
+      )
+    : allRejected;
+  const rejectedJobs = filteredRejected
     .map((job) => ({ job, score: getMatchScore(job) }))
     .sort((a, b) => {
       const at = a.job.rejectedAt ? new Date(a.job.rejectedAt).getTime() : 0;
@@ -170,7 +207,8 @@ export default function RejectedPage() {
   const postCallbackJobs = rejectedJobs.filter((t) => t.job.callbackReceived);
   const silentJobs = rejectedJobs.filter((t) => !t.job.callbackReceived);
 
-  const rejectedCount = rejectedJobs.length;
+  const rejectedCount = rejectedJobs.length; // filtered count
+  const totalRejectedCount = allRejected.length;
   const hadCallbackCount = postCallbackJobs.length;
 
   if (loading) return <PageSkeleton />;
@@ -198,7 +236,7 @@ export default function RejectedPage() {
         </p>
       </section>
 
-      {rejectedCount === 0 ? (
+      {totalRejectedCount === 0 ? (
         <section className="pt-16 pb-20 text-center anim-fade-up">
           <Inbox className="w-10 h-10 mx-auto text-muted-foreground/30 mb-4" />
           <p
@@ -216,8 +254,26 @@ export default function RejectedPage() {
             Mark a job rejected from the Shortlist when you hear no, and it&apos;ll show up here for reflection.
           </p>
         </section>
+      ) : rejectedCount === 0 ? (
+        <section className="pt-12 pb-12 text-center anim-fade-up">
+          <p className="text-muted-foreground text-sm">
+            No rejections match the current filter.{" "}
+            <button
+              type="button"
+              onClick={() => setFilterReason(null)}
+              className="underline hover:text-foreground"
+            >
+              Clear filter
+            </button>
+          </p>
+        </section>
       ) : (
         <section className="pt-8 anim-fade-up-2">
+          <RejectionSummaryBar
+            jobs={allRejected}
+            selectedReason={filterReason}
+            onSelectReason={setFilterReason}
+          />
           <div className="flex items-center justify-between mb-5">
             <p className="text-muted-foreground" style={monoStyle}>
               {rejectedCount} rejected · {hadCallbackCount} reached callback stage
@@ -251,6 +307,8 @@ export default function RejectedPage() {
                       toggleRejected={toggleRejected}
                       showCallbackButton={false}
                       showAppliedButton={false}
+                      showRejectionChip
+                      onEditReason={(j) => setEditingJob(j)}
                     />
                   ))}
                 </div>
@@ -299,6 +357,8 @@ export default function RejectedPage() {
                       toggleRejected={toggleRejected}
                       showCallbackButton={false}
                       showAppliedButton={false}
+                      showRejectionChip
+                      onEditReason={(j) => setEditingJob(j)}
                     />
                   ))}
                 </div>
@@ -323,6 +383,16 @@ export default function RejectedPage() {
           </div>
         </section>
       )}
+      <RejectReasonModal
+        open={editingJob !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingJob(null);
+        }}
+        jobTitle={editingJob?.title ?? ""}
+        jobCompany={editingJob?.company}
+        currentReason={editingJob?.rejectionReason ?? null}
+        onSubmit={submitEditedReason}
+      />
     </div>
   );
 }
