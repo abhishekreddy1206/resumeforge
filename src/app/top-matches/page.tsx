@@ -142,13 +142,13 @@ export default function TopMatchesPage() {
     }
   }
 
-  async function toggleRejected(jobId: string, current: boolean) {
+  async function toggleRejected(jobId: string, current: boolean, reason?: import("@/lib/rejection-reasons").RejectionReasonKey) {
     setTogglingRejectedId(jobId);
     try {
       const res = await fetch("/api/jobs/rejected", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId, rejected: !current }),
+        body: JSON.stringify({ jobId, rejected: !current, ...(reason ? { reason } : {}) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

@@ -83,7 +83,7 @@ export interface JobCardProps {
   togglingRejectedId: string | null;
   toggleApplied: (id: string, current: boolean) => void;
   toggleCallback: (id: string, current: boolean) => void;
-  toggleRejected: (id: string, current: boolean) => void;
+  toggleRejected: (id: string, current: boolean, reason?: import("@/lib/rejection-reasons").RejectionReasonKey) => void;
   showCallbackButton?: boolean;
   showRejectButton?: boolean;
   showAppliedButton?: boolean;
