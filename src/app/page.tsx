@@ -215,15 +215,55 @@ export default function Dashboard() {
         if (!cancelled) setLoading(false);
       });
 
-    fetch("/api/analytics")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((a) => {
-        if (!cancelled) setAnalytics(a);
-      })
-      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/analytics");
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setAnalytics(data);
+      } catch {
+        // network blip — wait for next interval
+      }
+    }
+
+    function startPolling() {
+      if (intervalId !== null) return;
+      intervalId = setInterval(refresh, 30_000);
+    }
+
+    function stopPolling() {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    void refresh();
+    if (document.visibilityState === "visible") startPolling();
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelled = true;
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
