@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma as db } from "@/lib/db";
 import { summarizeInsightsForAnalytics, getInsightsData } from "@/lib/insights";
 import {
@@ -14,6 +14,7 @@ import { safeJsonParse } from "@/lib/utils/json";
 export async function GET() {
   const [
     insights,
+    insightsProfileMeta,
     tokenRows,
     totalTokenAgg,
     bySkill,
@@ -37,6 +38,7 @@ export async function GET() {
     manualEdits,
   ] = await Promise.all([
     getInsightsData({ cacheOnly: true }),
+    db.profile.findFirst({ select: { cachedInsightsAt: true } }),
     db.$queryRaw<Array<{ day: string; totalCost: number; totalInput: number; totalOutput: number; calls: number }>>`
       SELECT
         date(createdAt) as day,
@@ -134,6 +136,21 @@ export async function GET() {
     }),
     db.savedSourceVersion.count({ where: { changeType: SavedSourceChangeType.manual_edit } }),
   ]);
+
+  // Mirror /api/insights: if we served cached insights, kick off a background
+  // refresh so subsequent polls see fresh data. The home page polls every 30s,
+  // so the revalidating window closes quickly.
+  let insightsRevalidating = false;
+  if (insights !== null) {
+    insightsRevalidating = true;
+    after(async () => {
+      try {
+        await getInsightsData({ force: true });
+      } catch {
+        // background refresh failure is non-fatal — next poll will retry
+      }
+    });
+  }
 
   const matchedJobs = allJobs.filter((job) => job.matchResult !== null).length;
   const optimizedJobs = new Set(allVersions.filter((version) => version.scoreVersion === 2).map((version) => version.jobId)).size;
@@ -275,5 +292,9 @@ export async function GET() {
       jobsBySource: summarizeJobsBySource(allJobs.map((job) => ({ source: job.source }))),
       placeholderJobs,
     },
+    cachedAt: {
+      insights: insightsProfileMeta?.cachedInsightsAt?.toISOString() ?? null,
+    },
+    sectionsRevalidating: insightsRevalidating ? ["insights"] : [],
   });
 }
