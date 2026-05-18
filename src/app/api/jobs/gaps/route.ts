@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         matchResult: true,
         matchedAt: true,
         terminologyMap: true,
+        description: true,
       },
     });
 
@@ -89,7 +90,15 @@ export async function POST(request: NextRequest) {
     if (isUnfiltered) {
       const profile = await prisma.profile.findFirst({ select: { id: true } });
       if (profile) {
-        const gapsFp = computeGapsFingerprint(jobs.map((j) => ({ id: j.id, matchedAt: j.matchedAt })));
+        const gapsFp = computeGapsFingerprint(
+          jobs.map((j) => ({
+            id: j.id,
+            matchedAt: j.matchedAt,
+            matchResult: j.matchResult ?? null,
+            terminologyMap: j.terminologyMap ?? null,
+            description: j.description ?? null,
+          })),
+        );
         const cached = await getCachedGaps(profile.id, gapsFp);
         if (cached) {
           console.log("[gaps] Cache hit — returning cached gap aggregation");

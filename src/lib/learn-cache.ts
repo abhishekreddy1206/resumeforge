@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { GapAggregation } from "@/lib/claude/skills/gap-aggregator";
+import { hashJobSubstance } from "@/lib/cache-fingerprints";
 
 function hashString(s: string): string {
   let hash = 0;
@@ -10,10 +11,29 @@ function hashString(s: string): string {
 }
 
 export function computeGapsFingerprint(
-  jobs: Array<{ id: string; matchedAt: Date | null }>
+  jobs: Array<{
+    id: string;
+    matchedAt: Date | null;
+    matchResult?: string | null;
+    terminologyMap?: string | null;
+    description?: string | null;
+  }>
 ): string {
   const sorted = [...jobs].sort((a, b) => a.id.localeCompare(b.id));
-  return hashString(JSON.stringify(sorted.map((j) => [j.id, j.matchedAt?.toISOString()])));
+  return hashString(
+    JSON.stringify(
+      sorted.map((j) => [
+        j.id,
+        hashJobSubstance({
+          id: j.id,
+          matchedAt: j.matchedAt,
+          matchResult: j.matchResult ?? null,
+          terminologyMap: j.terminologyMap ?? null,
+          description: j.description ?? null,
+        }),
+      ]),
+    ),
+  );
 }
 
 export async function getCachedGaps(
