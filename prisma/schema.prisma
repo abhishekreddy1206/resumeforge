@@ -71,6 +71,11 @@ model Profile {
   cachedInsightsAt         DateTime?
   insightsCacheFingerprint String?
   insightsSettings         String?
+
+  // Briefing prompts cache (Phase C of home analytics)
+  cachedBriefingPrompts   String?
+  cachedBriefingPromptsAt DateTime?
+  briefingFingerprint     String?
 }
 
 model Experience {
