@@ -10,11 +10,13 @@ import {
 } from "@/lib/dashboard-analytics";
 import { SavedSourceChangeType } from "@/generated/prisma/enums";
 import { safeJsonParse } from "@/lib/utils/json";
+import { computeSourceEffectiveness } from "@/lib/source-effectiveness";
 
 export async function GET() {
   const [
     insights,
     insightsProfileMeta,
+    sourceEffectiveness,
     tokenRows,
     totalTokenAgg,
     bySkill,
@@ -39,6 +41,7 @@ export async function GET() {
   ] = await Promise.all([
     getInsightsData({ cacheOnly: true }),
     db.profile.findFirst({ select: { cachedInsightsAt: true } }),
+    computeSourceEffectiveness(),
     db.$queryRaw<Array<{ day: string; totalCost: number; totalInput: number; totalOutput: number; calls: number }>>`
       SELECT
         date(createdAt) as day,
@@ -296,5 +299,6 @@ export async function GET() {
       insights: insightsProfileMeta?.cachedInsightsAt?.toISOString() ?? null,
     },
     sectionsRevalidating: insightsRevalidating ? ["insights"] : [],
+    sourceEffectiveness,
   });
 }
