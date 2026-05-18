@@ -6,6 +6,7 @@ import { StatCard } from "@/components/analytics/stat-card";
 import { FunnelChart } from "@/components/analytics/funnel-chart";
 import { SkillGapChart } from "@/components/analytics/skill-gap-chart";
 import { ATSTrendChart } from "@/components/analytics/ats-trend-chart";
+import { BriefingHero } from "@/components/home/BriefingHero";
 import { FreshnessChip } from "@/components/home/FreshnessChip";
 import { SourceEffectivenessTable } from "@/components/home/SourceEffectivenessTable";
 import {
@@ -295,6 +296,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-12">
+      <BriefingHero />
       {/* ─── FRONT-PAGE FLAG ─── */}
       <section className="anim-fade-up">
         <div className="folio">
