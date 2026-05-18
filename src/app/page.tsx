@@ -6,6 +6,7 @@ import { StatCard } from "@/components/analytics/stat-card";
 import { FunnelChart } from "@/components/analytics/funnel-chart";
 import { SkillGapChart } from "@/components/analytics/skill-gap-chart";
 import { ATSTrendChart } from "@/components/analytics/ats-trend-chart";
+import { FreshnessChip } from "@/components/home/FreshnessChip";
 import {
   Briefcase,
   CheckCircle,
@@ -122,6 +123,8 @@ interface AnalyticsData {
     jobsBySource: Array<{ source: string; count: number }>;
     placeholderJobs: number;
   };
+  cachedAt?: { insights?: string | null };
+  sectionsRevalidating?: string[];
 }
 
 function DashboardSkeleton() {
@@ -582,6 +585,10 @@ export default function Dashboard() {
                 >
                   The Market Reads You
                 </h2>
+                <FreshnessChip
+                  cachedAt={analytics?.cachedAt?.insights ?? null}
+                  revalidating={analytics?.sectionsRevalidating?.includes("insights") ?? false}
+                />
               </div>
               <span className="label-mono-sm text-primary">Full Story →</span>
             </div>
