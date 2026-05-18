@@ -169,3 +169,48 @@ test("hashProfileSkills is stable and case/order insensitive", () => {
   const c = hashProfileSkills([{ name: "TypeScript" }, { name: "Python" }, { name: "Go" }]);
   assert.notEqual(a, c);
 });
+
+// --- Sensitivity to matchResult / terminologyMap / description content ---
+
+test("fingerprint changes when matchResult content changes even if matchedAt is unchanged", () => {
+  const sameMatchedAt = new Date("2026-04-01T12:00:00Z");
+  const baseJob = {
+    id: "j1",
+    matchedAt: sameMatchedAt,
+    matchResult: JSON.stringify({ score: 80, breakdown: { gaps: ["k8s"] } }),
+    terminologyMap: null,
+    description: "Desc",
+    applied: false,
+    score: 80,
+    roleCategory: null,
+    roleCategoryVersion: null,
+  };
+  const beforeFp = computeInsightsFingerprint([baseJob], [], { jobCount: 1 });
+  const updated = {
+    ...baseJob,
+    matchResult: JSON.stringify({ score: 80, breakdown: { gaps: ["docker"] } }),
+  };
+  const afterFp = computeInsightsFingerprint([updated], [], { jobCount: 1 });
+  assert.notEqual(beforeFp, afterFp, "fingerprint must change when matchResult body changes");
+});
+
+test("fingerprint is STABLE when only matchedAt changes (substance hash supersedes the timestamp)", () => {
+  const job = {
+    id: "j1",
+    matchedAt: new Date("2026-04-01T12:00:00Z"),
+    matchResult: JSON.stringify({ score: 75 }),
+    terminologyMap: null,
+    description: "Desc",
+    applied: false,
+    score: 75,
+    roleCategory: null,
+    roleCategoryVersion: null,
+  };
+  const fpA = computeInsightsFingerprint([job], [], { jobCount: 1 });
+  const fpB = computeInsightsFingerprint(
+    [{ ...job, matchedAt: new Date("2026-05-15T00:00:00Z") }],
+    [],
+    { jobCount: 1 },
+  );
+  assert.equal(fpA, fpB, "fingerprint should not depend on matchedAt when substance is unchanged");
+});

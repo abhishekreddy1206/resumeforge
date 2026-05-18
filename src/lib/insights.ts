@@ -10,6 +10,7 @@ import {
 } from "@/lib/insights/role-taxonomy";
 import { loadInsightsSettingsFromProfile } from "@/lib/insights/settings";
 import type { InsightsSettings } from "@/lib/insights/settings";
+import { hashJobSubstance } from "@/lib/cache-fingerprints";
 
 const log = createLogger("insights");
 
@@ -174,12 +175,18 @@ interface RealisticJob {
   terminologyMap: Array<{ jdTerm: string; resumeSynonyms: string[] }>;
   roleCategory: string | null;
   roleCategoryVersion: string | null;
+  matchResult?: string | null;        // raw JSON string for fingerprinting
+  terminologyMapRaw?: string | null;
+  descriptionRaw?: string | null;
 }
 
 export function computeInsightsFingerprint(
   jobs: Array<{
     id: string;
     matchedAt: Date | null;
+    matchResult?: string | null;
+    terminologyMap?: string | null;
+    description?: string | null;
     applied?: boolean;
     score?: number;
     roleCategory?: string | null;
@@ -197,7 +204,13 @@ export function computeInsightsFingerprint(
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((job) => [
       job.id,
-      job.matchedAt?.toISOString() ?? null,
+      hashJobSubstance({
+        id: job.id,
+        matchedAt: job.matchedAt,
+        matchResult: job.matchResult ?? null,
+        terminologyMap: job.terminologyMap ?? null,
+        description: job.description ?? null,
+      }),
       job.applied ?? false,
       typeof job.score === "number" ? Math.round(job.score) : null,
       job.roleCategory ?? null,
@@ -370,6 +383,9 @@ export async function getInsightsData(
       ),
       roleCategory: job.roleCategory ?? null,
       roleCategoryVersion: job.roleCategoryVersion ?? null,
+      matchResult: job.matchResult,
+      terminologyMapRaw: job.terminologyMap,
+      descriptionRaw: job.description,
     });
   }
 
@@ -403,6 +419,9 @@ export async function getInsightsData(
     realisticJobs.map((job) => ({
       id: job.id,
       matchedAt: job.matchedAt,
+      matchResult: job.matchResult ?? null,
+      terminologyMap: job.terminologyMapRaw ?? null,
+      description: job.descriptionRaw ?? null,
       applied: job.applied,
       score: job.score,
       roleCategory: job.roleCategory,
