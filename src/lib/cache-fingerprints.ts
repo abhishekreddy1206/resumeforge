@@ -22,6 +22,6 @@ export function hashJobSubstance(job: JobSubstanceInput): string {
     job.matchResult ?? "",
     job.terminologyMap ?? "",
     job.description ?? "",
-  ].join(" "); // null byte as separator — won't appear in JSON text
+  ].join("\0"); // null byte as separator — won't appear in JSON text
   return createHash("sha256").update(parts).digest("hex").slice(0, 16);
 }
