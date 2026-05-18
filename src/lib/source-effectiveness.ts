@@ -128,11 +128,11 @@ function computeRowForBucket(source: string, sourceJobs: SourceJobInput[]): Sour
 
 /**
  * Convenience wrapper that pulls the right shape from Prisma.
- * Called by the /api/analytics route.
+ * Called by the /api/analytics route. Single-user app: no profile filter
+ * needed — all jobs in the DB belong to the (only) Profile.
  */
-export async function computeSourceEffectiveness(profileId: string): Promise<SourceRow[]> {
+export async function computeSourceEffectiveness(): Promise<SourceRow[]> {
   const jobs = await prisma.job.findMany({
-    where: { profileId },
     select: {
       source: true,
       applied: true,
