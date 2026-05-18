@@ -7,6 +7,7 @@ import { FunnelChart } from "@/components/analytics/funnel-chart";
 import { SkillGapChart } from "@/components/analytics/skill-gap-chart";
 import { ATSTrendChart } from "@/components/analytics/ats-trend-chart";
 import { FreshnessChip } from "@/components/home/FreshnessChip";
+import { SourceEffectivenessTable } from "@/components/home/SourceEffectivenessTable";
 import {
   Briefcase,
   CheckCircle,
@@ -125,6 +126,7 @@ interface AnalyticsData {
   };
   cachedAt?: { insights?: string | null };
   sectionsRevalidating?: string[];
+  sourceEffectiveness?: import("@/lib/source-effectiveness").SourceRow[];
 }
 
 function DashboardSkeleton() {
@@ -438,6 +440,14 @@ export default function Dashboard() {
         <section className="anim-fade-up-3">
           <SectionHead index={sectionIndex++} title="The Pipeline" kicker="From lead to letter" />
           <FunnelChart data={analytics.funnel} />
+        </section>
+      )}
+
+      {/* ─── Source Effectiveness ─── */}
+      {hasAnalytics && (
+        <section>
+          <SectionHead index={sectionIndex++} title="Source Effectiveness" kicker="Where your leads convert" />
+          <SourceEffectivenessTable rows={analytics?.sourceEffectiveness ?? []} />
         </section>
       )}
 
