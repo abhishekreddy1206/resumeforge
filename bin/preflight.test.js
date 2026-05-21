@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { repoRoot, ensureEnv } = require("./preflight");
+const { repoRoot, ensureEnv, needsInstall } = require("./preflight");
 
 const createdTmpDirs = [];
 
@@ -54,4 +54,39 @@ test("ensureEnv reports missing when neither file exists", () => {
   const dir = tmpDir();
   const result = ensureEnv(dir);
   assert.strictEqual(result.status, "missing");
+});
+
+test("needsInstall is true when node_modules is absent", () => {
+  const dir = tmpDir();
+  assert.strictEqual(needsInstall(dir), true);
+});
+
+test("needsInstall is false when the install marker is current", () => {
+  const dir = tmpDir();
+  const nm = path.join(dir, "node_modules");
+  fs.mkdirSync(nm);
+  fs.writeFileSync(path.join(dir, "package-lock.json"), "{}");
+  fs.writeFileSync(path.join(nm, ".package-lock.json"), "{}");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(path.join(dir, "package-lock.json"), old, old);
+  // marker keeps its "now" mtime → newer than the lockfile → not stale
+  assert.strictEqual(needsInstall(dir), false);
+});
+
+test("needsInstall is true when package-lock.json is newer than the install marker", () => {
+  const dir = tmpDir();
+  const nm = path.join(dir, "node_modules");
+  fs.mkdirSync(nm);
+  fs.writeFileSync(path.join(nm, ".package-lock.json"), "{}");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(path.join(nm, ".package-lock.json"), old, old);
+  fs.writeFileSync(path.join(dir, "package-lock.json"), "{}"); // written "now" → newer
+  assert.strictEqual(needsInstall(dir), true);
+});
+
+test("needsInstall is true when node_modules exists but the install marker is missing", () => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, "node_modules"));
+  fs.writeFileSync(path.join(dir, "package-lock.json"), "{}");
+  assert.strictEqual(needsInstall(dir), true);
 });
