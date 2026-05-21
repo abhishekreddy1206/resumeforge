@@ -10,10 +10,15 @@ Usage:
   resumeforge up    Start the dev server + background worker
 `;
 
-/** Spawn a command, inheriting stdio. Resolves with its exit code. */
+/**
+ * Spawn a command, inheriting stdio. Resolves with its exit code.
+ * Rejects if the process fails to spawn (e.g. the binary is not on PATH),
+ * since no `exit` event fires in that case.
+ */
 function run(cmd, args, cwd, env) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, env, stdio: "inherit" });
+    child.on("error", reject);
     child.on("exit", (code) => resolve(code == null ? 1 : code));
   });
 }
