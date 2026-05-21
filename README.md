@@ -37,6 +37,12 @@ AI-powered resume builder for software engineers. Upload your resume, add target
 - **Saved Sources** — Capture articles, Medium posts, and Substack pieces as versioned saved sources; each capture records content hash, word count, capture method (server scrape vs. DOM fallback), and review flags. Source versions are snapshotted on replace or refresh so guide refinements reference specific content states.
 - **Source Detail View** — Review individual saved sources, inspect capture diagnostics, see which guides use each source, and identify stale guide attachments that need re-refinement.
 - **Curriculum Planner** — AI generates an ordered learning curriculum from your skill gaps, mapping topics to difficulty levels and suggested guides.
+- **Home Briefing** — The home dashboard displays rule-based urgency prompts (stale jobs, pending applications, unmatched jobs) and AI-generated forward-looking nudges, alongside week-over-week trend metrics for applications, callbacks, rejections, and scores.
+- **Callback Tracking** — Mark applied jobs as having received a callback; the home briefing and insights pages use this signal for funnel analysis.
+- **Job Archiving** — Archive stale unapplied jobs individually or in bulk via a date cutoff to keep the jobs list focused.
+- **Auto-Pipeline** — Trigger a background end-to-end pipeline (match → plan → generate → evaluate → save) for a job in one click; pipeline state is tracked on the job and recovered automatically on worker restart.
+- **App Settings** — Configure global defaults from the Settings page: match score floor, quality score floor, default AI model, and Claude CLI concurrency.
+- **Orphan Guide Organizer** — AI suggests how to assign guides without a learning path into existing paths or new ones; the plan can be previewed and applied.
 
 ## Tech Stack
 
@@ -165,7 +171,9 @@ resumeforge/
     │   ├── top-matches/page.tsx        # High-scoring jobs (75%+), ranked by compatibility; excludes rejected jobs
     │   ├── rejected/page.tsx           # Rejected jobs: callback-then-rejected and silent rejection sections
     │   ├── generate/page.tsx           # Generate tailored resumes
-    │   ├── versions/page.tsx           # Browse saved profile versions, generate from versions
+    │   ├── versions/page.tsx           # Browse all saved profile versions, generate from versions
+    │   ├── versions/[jobId]/page.tsx   # Per-job version history view
+    │   ├── settings/page.tsx           # App settings (score floors, AI model, concurrency)
     │   ├── insights/page.tsx           # Market insights: job clusters, demand patterns, gap analysis
     │   ├── learn/page.tsx              # Learn tab: guides, paths, sources
     │   ├── learn/[slug]/page.tsx       # Individual guide view
@@ -187,6 +195,9 @@ resumeforge/
     │       │   ├── recommendations/    # Recommendations CRUD
     │       │   │   └── parse/          # AI parse of recommendation text
     │       │   └── versions/           # Profile version CRUD (GET/POST, GET/DELETE by id)
+    │       ├── home/
+    │       │   └── briefing/           # Home page briefing prompts (rules + AI) and W/W trends
+    │       ├── settings/               # App settings CRUD (score floors, AI model, concurrency)
     │       ├── application-profile/    # Application settings CRUD (work auth, salary, EEO, preferences)
     │       ├── applications/
     │       │   ├── prefill/            # Merge all data for auto-fill payload
@@ -198,10 +209,14 @@ resumeforge/
     │       ├── jobs/
     │       │   ├── route.ts            # Job list + create
     │       │   ├── [id]/route.ts       # Single job detail (GET)
+    │       │   ├── [id]/pipeline/      # Trigger auto-pipeline for a job (match → plan → generate → save)
     │       │   ├── match/              # Profile-to-job compatibility scoring
     │       │   ├── batch/              # Bulk import jobs from multiple URLs in parallel
     │       │   ├── applied/            # Toggle job application status (applied/not applied); un-applying clears rejected state
-    │       │   ├── rejected/           # Toggle rejected status on an applied job; sets/clears rejectedAt
+    │       │   ├── rejected/           # Toggle rejected status on an applied job; sets/clears rejectedAt + rejectionReason
+    │       │   ├── callback/           # Toggle callback-received status on an applied job
+    │       │   ├── archived/           # Toggle archived status on a job
+    │       │   ├── archive-stale/      # Bulk-archive unapplied jobs created before a cutoff date
     │       │   ├── gaps/               # Cross-job gap aggregation and leverage scores
     │       │   ├── chat/               # Per-job resume advisory chat
     │       │   │   ├── apply-tips/     # Apply AI-suggested tips to profile
@@ -218,6 +233,9 @@ resumeforge/
     │       │   └── chat/               # Conversational skills editor (chat + apply)
     │       ├── analytics/              # Token usage and cost analytics
     │       ├── insights/               # Market insights: job clustering, demand patterns, gap analysis
+    │       │   ├── route.ts
+    │       │   └── retry-classifications/ # Retry failed/missing job role classifications
+    │       ├── insights-settings/      # Insights display settings CRUD
     │       ├── learn/
     │       │   ├── guides/             # Guide CRUD and listing
     │       │   │   └── [id]/
@@ -233,6 +251,9 @@ resumeforge/
     │       │   │       ├── cross-link/ # AI cross-link suggestions between guides in a path
     │       │   │       └── generate/   # AI-generate guides for a learning path
     │       │   ├── recommendations/    # AI-suggested study topics from gap analysis
+    │       │   ├── orphans/
+    │       │   │   ├── organize/       # AI plan for organizing orphaned guides into paths
+    │       │   │   └── apply/          # Apply an orphan organization plan
     │       │   └── sources/            # Saved source CRUD and listing
     │       │       └── [id]/
     │       │           ├── route.ts    # Single saved source CRUD
@@ -241,13 +262,22 @@ resumeforge/
     │       └── chats/                  # Chat session CRUD (list/get/delete by id)
     ├── lib/
     │   ├── gmail.ts                    # Gmail API client (OAuth2) for email job scanning
+    │   ├── app-settings.ts             # App settings singleton helpers (score floors, AI model, concurrency)
+    │   ├── briefing-rules.ts           # Hand-coded rules for home page briefing prompts (pure functions over BriefingState)
+    │   ├── home-trends.ts              # Week-over-week trend metrics for the home page dashboard
     │   ├── capture-constants.ts        # Shared constants for article capture (max chars, etc.)
     │   ├── saved-sources.ts            # Saved source capture, review, versioning logic
+    │   ├── source-effectiveness.ts     # Per-source effectiveness stats (apply rate, callback rate) for home page
     │   ├── learn-sources.ts            # Guide source ingestion and suggestion helpers
     │   ├── learn-guides.ts             # Guide generation tracking helpers (section statuses, snapshots)
+    │   ├── learn-progress.ts           # Guide generation progress computation helpers
     │   ├── learn-cache.ts              # Caching helpers for gaps and recommendations
     │   ├── resume-quality.ts           # Resume quality scoring pipeline (plan → generate → evaluate)
     │   ├── job-queue.ts                # Background job queue: enqueue, dequeue, complete, fail
+    │   ├── job-rejection.ts            # Business logic for rejection state updates (with reason support)
+    │   ├── rejection-reasons.ts        # Rejection reason enum and type constants
+    │   ├── pipeline-recovery.ts        # Recovers stalled in-flight auto-pipelines on worker startup
+    │   ├── cache-fingerprints.ts       # Cache fingerprinting helpers for invalidation
     │   ├── dashboard-analytics.ts      # Dashboard metric helpers (job source summaries, study topic coverage)
     │   ├── insights.ts                 # Insights computation helpers
     │   ├── applications/
@@ -287,7 +317,11 @@ resumeforge/
     │   │       ├── curriculum-planner.ts   # Plan an ordered learning curriculum from skill gaps
     │   │       ├── source-cross-linker.ts  # Suggest cross-links between guide sources in a path
     │   │       ├── path-matcher.ts         # Match an existing guide to a learning path
-    │   │       └── job-clusterer.ts        # Cluster matched jobs into role profiles for Insights
+    │   │       ├── job-clusterer.ts        # Cluster matched jobs into role profiles for Insights
+    │   │       ├── job-classifier.ts       # Classify jobs into role taxonomy categories (used by Insights)
+    │   │       ├── orphan-organizer.ts     # AI plan for organizing orphaned guides into learning paths
+    │   │       ├── other-subclusterer.ts   # Sub-cluster "Other" jobs within Insights
+    │   │       └── briefing-advisor.ts     # Generate forward-looking briefing prompts for the home page
     │   ├── parsers/
     │   │   ├── pdf.ts                 # PDF text extraction
     │   │   ├── docx.ts                # DOCX text extraction
@@ -369,7 +403,7 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `Skill` | Name and category (unique per profile), extracted from resume and external sources |
 | `Publication` | Academic publications with publisher, date, URL, DOI, and description |
 | `Certification` | Professional certifications with issuer, date, expiry, credential ID, and URL |
-| `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied status with timestamp, rejected status with timestamp, AI model selection |
+| `Job` | Job title, company, description, required skills, sponsorship flag, source (e.g. `email-linkedin`), canonical ATS URL, terminology map (JSON), cached match result, cached cover letter (JSON), cached interview prep (JSON), applied/callback/rejected/archived status with timestamps, rejection reason, role category classification, auto-pipeline state (`pipelineStatus`, `pipelineStage`, `pipelineCheckpoint`), AI model selection |
 | `TokenUsage` | Per-call AI token usage log: skill name, model, input/output tokens (including cache), cost in USD, and duration |
 | `ProfileVersion` | Optimized profile snapshot tied to a job, with quality score, score delta, optional label, and optional v2 optimization plan and resume artifact |
 | `ChatSession` | Persisted chat session for profile, job, or skills conversations, with full message history |
@@ -384,6 +418,8 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 | `GuideSource` | Source attachment for a guide (URL, PDF, text, Medium, Substack); links to `SavedSource`/`SavedSourceVersion` and tracks active/superseded state |
 | `SavedSource` | Versioned article/post saved for guide refinement; stores content hash, word count, capture method, review flags, and capture diagnostics; unique per profile + URL |
 | `SavedSourceVersion` | Content snapshot of a `SavedSource` created on each replace or refresh; records change type (`initial`, `replace`, `refresh`, `migrated`) and full capture metadata |
+| `AppSettings` | Singleton app-wide settings: match score floor, quality score floor, default AI model, and Claude CLI concurrency limit |
+| `TaxonomyRecommendation` | AI-suggested new role taxonomy categories, with supporting job count and example signals; reviewed and accepted/rejected manually |
 
 ## Workflow
 
@@ -394,9 +430,11 @@ All helpers invoke the **Claude Code CLI** (`claude -p`) as a subprocess. The CL
 5. **Match** (optional) — Score profile compatibility against a job; review gaps before generating (results cached on Job)
 6. **Job Chat** (optional) — Get per-job resume improvement tips, apply them, rescore, and save optimized profile versions when ATS score improves
 7. **Cross-Job Analysis** (optional) — Aggregate gaps across all matched jobs to identify the highest-leverage skills to develop; use experience discovery to surface forgotten experiences
-8. **Top Matches** (optional) — Review jobs where your profile scores above 75% and mark applications as applied; use the Reject button to move a job to `/rejected` once you hear back negatively; `/rejected` splits rejections into "Reached callback then rejected" and "Silent rejection" and lets you Restore a job to the shortlist
-9. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
-10. **Versions** — Browse saved profile versions, compare quality scores, and generate resumes from any version
-11. **Learn** (optional) — Generate AI study guides on technical topics using the background worker (`npm run worker`); guides are built section-by-section asynchronously and can be refined with saved sources; follow learning paths and practice with interactive quizzes and scenarios
-12. **Insights** (optional) — Visit `/insights` to see AI-clustered job role profiles, skill demand patterns, gap analysis, and prioritized study topic recommendations across all matched jobs
-13. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI
+8. **Track Applications** (optional) — Mark jobs as applied and record callbacks; use the Reject button to move a job to `/rejected` once you hear back negatively; `/rejected` splits rejections into "Reached callback then rejected" and "Silent rejection" and lets you Restore a job to the shortlist; archive stale unapplied jobs to keep the list focused
+9. **Home Dashboard** — The home page shows funnel metrics, skill gap heatmap, ATS score trends, week-over-week trend indicators, source effectiveness stats, and a Briefing Hero with urgency prompts and AI-generated nudges based on your current job search state
+10. **Generate** — Profile + Job sent to Claude, tailored content generated, PDF/DOCX created, saved to `resumes/{company}/{role}/`; can also generate from a saved profile version
+11. **Versions** — Browse saved profile versions, compare quality scores, and generate resumes from any version; drill into per-job version history
+12. **Learn** (optional) — Generate AI study guides on technical topics using the background worker (`npm run worker`); guides are built section-by-section asynchronously and can be refined with saved sources; follow learning paths and practice with interactive quizzes and scenarios; use Orphan Organizer to assign stray guides into paths
+13. **Insights** (optional) — Visit `/insights` to see AI-clustered job role profiles, skill demand patterns, gap analysis, and prioritized study topic recommendations across all matched jobs
+14. **Apply** (optional) — Use the Chrome extension to auto-fill ATS application forms (Greenhouse, Lever, Workday, etc.) with your profile and application settings data; use the job view to answer and cache screening questions via AI
+15. **Settings** (optional) — Configure global defaults from `/settings`: match score floor, quality score floor, default AI model, and Claude CLI concurrency
