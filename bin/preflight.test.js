@@ -8,9 +8,19 @@ const path = require("node:path");
 
 const { repoRoot, ensureEnv } = require("./preflight");
 
+const createdTmpDirs = [];
+
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "rf-preflight-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rf-preflight-"));
+  createdTmpDirs.push(dir);
+  return dir;
 }
+
+test.after(() => {
+  for (const dir of createdTmpDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("repoRoot points at the directory containing package.json", () => {
   const root = repoRoot();
