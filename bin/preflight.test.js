@@ -90,3 +90,9 @@ test("needsInstall is true when node_modules exists but the install marker is mi
   fs.writeFileSync(path.join(dir, "package-lock.json"), "{}");
   assert.strictEqual(needsInstall(dir), true);
 });
+
+test("needsInstall is false when node_modules exists and there is no lockfile", () => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, "node_modules"));
+  assert.strictEqual(needsInstall(dir), false);
+});
