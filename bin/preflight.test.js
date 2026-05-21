@@ -5,8 +5,9 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const net = require("node:net");
 
-const { repoRoot, ensureEnv, needsInstall } = require("./preflight");
+const { repoRoot, ensureEnv, needsInstall, findOpenPort } = require("./preflight");
 
 const createdTmpDirs = [];
 
@@ -95,4 +96,31 @@ test("needsInstall is false when node_modules exists and there is no lockfile", 
   const dir = tmpDir();
   fs.mkdirSync(path.join(dir, "node_modules"));
   assert.strictEqual(needsInstall(dir), false);
+});
+
+test("findOpenPort skips an occupied port and returns a free one", async () => {
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const busy = server.address().port;
+  try {
+    const port = await findOpenPort(busy, busy + 20);
+    assert.notStrictEqual(port, busy);
+    assert.ok(port > busy && port <= busy + 20, `got ${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("findOpenPort throws when the whole range is occupied", async () => {
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const busy = server.address().port;
+  try {
+    await assert.rejects(
+      () => findOpenPort(busy, busy),
+      /No open port/,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const net = require("node:net");
 
 /** Absolute path to the repo root, resolved from this file's location. */
 function repoRoot() {
@@ -46,4 +47,29 @@ function needsInstall(root) {
   return fs.statSync(lockPath).mtimeMs > fs.statSync(markerPath).mtimeMs;
 }
 
-module.exports = { repoRoot, ensureEnv, needsInstall };
+/** Resolve true if `port` can be bound on 127.0.0.1, false otherwise. */
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+/**
+ * Return the first free port in [start, max] inclusive.
+ * Throws if every port in the range is occupied.
+ */
+async function findOpenPort(start, max) {
+  for (let port = start; port <= max; port++) {
+    if (await isPortFree(port)) {
+      return port;
+    }
+  }
+  throw new Error(`No open port in range ${start}-${max}`);
+}
+
+module.exports = { repoRoot, ensureEnv, needsInstall, findOpenPort };
