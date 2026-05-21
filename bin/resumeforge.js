@@ -45,6 +45,9 @@ async function up() {
   }
 
   // 3. port selection
+  // Inherent probe-then-bind gap: another process could claim the port
+  // between findOpenPort closing its probe and next dev binding it. next
+  // dev fails loudly if that happens, so no extra locking is warranted.
   const port = await findOpenPort(3000, 3010);
   if (port !== 3000) {
     console.log(`Port 3000 in use — starting on ${port}`);
