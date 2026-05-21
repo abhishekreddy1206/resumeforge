@@ -2,6 +2,9 @@
   "name": "resumeforge",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "resumeforge": "bin/resumeforge.js"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:tailscale": "next dev -H 127.0.0.1 -p 3000",
