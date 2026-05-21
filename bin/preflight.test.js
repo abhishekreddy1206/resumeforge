@@ -100,7 +100,7 @@ test("needsInstall is false when node_modules exists and there is no lockfile", 
 
 test("findOpenPort skips an occupied port and returns a free one", async () => {
   const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(0, resolve));
   const busy = server.address().port;
   try {
     const port = await findOpenPort(busy, busy + 20);
@@ -113,13 +113,36 @@ test("findOpenPort skips an occupied port and returns a free one", async () => {
 
 test("findOpenPort throws when the whole range is occupied", async () => {
   const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(0, resolve));
   const busy = server.address().port;
   try {
     await assert.rejects(
       () => findOpenPort(busy, busy),
       /No open port/,
     );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("findOpenPort detects a port occupied on IPv6 only", async (t) => {
+  // A server bound to the IPv6 wildcard with ipv6Only leaves the IPv4
+  // loopback (127.0.0.1) free. findOpenPort must still treat the port as
+  // occupied, because the dev server (next dev) binds the unspecified
+  // address — so the probe must too, not just IPv4 loopback.
+  const server = net.createServer();
+  const bound = await new Promise((resolve) => {
+    server.once("error", () => resolve(false));
+    server.once("listening", () => resolve(true));
+    server.listen({ port: 0, host: "::", ipv6Only: true });
+  });
+  if (!bound) {
+    t.skip("IPv6 not available on this host");
+    return;
+  }
+  const busy = server.address().port;
+  try {
+    await assert.rejects(() => findOpenPort(busy, busy), /No open port/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

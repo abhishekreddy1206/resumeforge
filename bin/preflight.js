@@ -47,7 +47,12 @@ function needsInstall(root) {
   return fs.statSync(lockPath).mtimeMs > fs.statSync(markerPath).mtimeMs;
 }
 
-/** Resolve true if `port` can be bound on 127.0.0.1, false otherwise. */
+/**
+ * Resolve true if `port` is free, false otherwise.
+ * Binds the unspecified address (no host) so the probe matches how
+ * `next dev` binds — a port occupied on IPv6 only would slip past an
+ * IPv4-loopback-only probe.
+ */
 function isPortFree(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -55,7 +60,7 @@ function isPortFree(port) {
     server.once("listening", () => {
       server.close(() => resolve(true));
     });
-    server.listen(port, "127.0.0.1");
+    server.listen(port);
   });
 }
 
